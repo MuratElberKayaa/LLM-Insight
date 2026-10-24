@@ -77,8 +77,30 @@ def too_many_requests(retry_after: int) -> IngestError:
     return IngestError(429, "too many requests; retry later", retry_after=retry_after)
 
 
+# The body was not read to the end: the server closes the connection after responding
+# instead of draining the rest (no keep-alive reuse of a half-read request).
+_CLOSE = {"Connection": "close"}
+
+
 def body_too_large() -> IngestError:
-    return IngestError(413, "request body exceeds the size limit")
+    return IngestError(413, "request body exceeds the size limit", headers=dict(_CLOSE))
+
+
+def body_read_timeout() -> IngestError:
+    # 408 is not retryable for OTLP clients (only 429/502/503/504 are), like 413.
+    return IngestError(
+        408, "request body was not received within the time limit", headers=dict(_CLOSE)
+    )
+
+
+def client_disconnected() -> IngestError:
+    # Never delivered (the client is gone); it keeps the handler's control flow uniform.
+    return IngestError(
+        400,
+        "request body was not fully received",
+        [Violation("body", "INCOMPLETE_BODY", "must be sent completely")],
+        headers=dict(_CLOSE),
+    )
 
 
 def decompressed_too_large() -> IngestError:

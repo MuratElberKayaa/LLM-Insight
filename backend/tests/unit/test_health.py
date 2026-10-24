@@ -62,7 +62,18 @@ def test_ready_503_with_real_driver_against_closed_port(client):
     assert r.json() == {"status": "not_ready"}
 
 
-def test_routes_are_health_and_otlp_ingest_only(client):
-    # Phase 1B adds POST /v1/traces; /api/v1 does not exist yet.
-    assert set(client.app.openapi()["paths"]) == {"/health/live", "/health/ready", "/v1/traces"}
-    assert client.get("/api/v1/traces").status_code == 404
+def test_routes_are_health_otlp_ingest_and_trace_read_api(client):
+    # Phase 1B adds POST /v1/traces; Phase 1C adds the two /api/v1 trace read endpoints.
+    assert set(client.app.openapi()["paths"]) == {
+        "/health/live",
+        "/health/ready",
+        "/v1/traces",
+        "/api/v1/traces",
+        "/api/v1/traces/{trace_id}",
+    }
+    # Authentication comes first: no DB access and no route detail without the token.
+    r = client.get("/api/v1/traces")
+    assert r.status_code == 401
+    assert r.json() == {
+        "error": {"code": "unauthorized", "message": "missing or invalid credentials"}
+    }

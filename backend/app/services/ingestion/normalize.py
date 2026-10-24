@@ -19,10 +19,15 @@ STATUS_CODES = {0: "UNSET", 1: "OK", 2: "ERROR"}
 # spans.name is LEN(256) (non-empty); OTLP calls an empty name "unknown", so we store that marker.
 EMPTY_NAME = "unknown_span"
 MAX_SCOPE_VERSION = 64
+MAX_DROPPED_COUNT = attrmap.INT32_MAX  # spans.server_dropped_attributes_count is INT; saturates
 
 
 @dataclass(frozen=True)
 class NormalizedSpan:
+    """No `status_message`: OTLP `Status.message` is free text that may quote credentials or
+    content, so it is never carried past this point (R21). Errors are described by the span
+    status and the validated `error_type` identifier only."""
+
     trace_id: str
     span_id: str
     parent_span_id: str | None
@@ -31,7 +36,6 @@ class NormalizedSpan:
     start_ns: int
     end_ns: int
     status: str
-    status_message: str | None
     error_type: str | None
     scope_name: str | None
     scope_version: str | None
@@ -92,19 +96,25 @@ def validate_span(span: SpanPb, path: str) -> list[Violation]:
 
 
 def _exception_type(span: SpanPb) -> str | None:
-    """§2: an `exception` event contributes only `exception.type`."""
+    """§2: an `exception` event contributes only `exception.type`, and only when it is a
+    type identifier under the same rule as `error.type` (never a description)."""
     for ev in span.events:
         if ev.name != "exception":
             continue
         for kv in ev.attributes:
             if kv.key == "exception.type" and kv.value.WhichOneof("value") == "string_value":
-                return attrmap.clean_str(kv.value.string_value) or None
+                value = kv.value.string_value
+                if len(value) <= attrmap.MAX_STRING and attrmap.ERROR_TYPE_RE.fullmatch(value):
+                    return value
+                return None
     return None
 
 
 def _span_provenance(attributes: dict[str, Any], status: str) -> str:
     """§5: only inference spans carry provenance. A successful inference span claiming `real`
-    without a provider response ID is downgraded to `unknown`."""
+    without a provider response ID is downgraded to `unknown`. The rule only ever downgrades:
+    a response ID never creates or verifies a `real` claim, and a stored `real` remains a
+    client assertion (the read API reports `provenance_verified: false`)."""
     if not attrmap.is_inference(attributes):
         return "unknown"
     claimed = attributes.get("llminsight.provenance", "unknown")
@@ -118,7 +128,6 @@ def _normalize_span(
 ) -> NormalizedSpan:
     mapped = attrmap.map_span(span.attributes)
     status = STATUS_CODES[span.status.code]
-    message = attrmap.scrub_free_text(span.status.message) if span.status.message else None
     error_type = mapped.values.get("error.type") or _exception_type(span)
     return NormalizedSpan(
         trace_id=span.trace_id.hex(),
@@ -129,7 +138,6 @@ def _normalize_span(
         start_ns=span.start_time_unix_nano,
         end_ns=span.end_time_unix_nano,
         status=status,
-        status_message=message or None,
         error_type=error_type,
         scope_name=scope_name,
         scope_version=scope_version,
@@ -137,7 +145,7 @@ def _normalize_span(
         attributes=mapped.values,
         provenance=_span_provenance(mapped.values, status),
         # Resource attributes are stored per span, so resource drops count on every span.
-        server_dropped_attributes_count=mapped.dropped + resource.dropped,
+        server_dropped_attributes_count=min(mapped.dropped + resource.dropped, MAX_DROPPED_COUNT),
     )
 
 

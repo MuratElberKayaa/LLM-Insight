@@ -1,9 +1,9 @@
 """Attribute allowlist and GenAI normalization: `llminsight.attrmap.v1`.
 
 TELEMETRY_CONTRACT.md §3 (ADR-14, ADR-15, ADR-19). Everything not allowlisted, every
-always-denied key, every value of the wrong type or out of range, every duplicate key and
-every alias shadowed by its standard name is dropped before persistence and counted. A
-dropped value is never stored, logged or echoed.
+always-denied key, every value of the wrong type, out of range or of the wrong format, every
+duplicate key and every alias shadowed by its standard name is dropped before persistence and
+counted. A dropped value is never stored, logged or echoed.
 
 The GenAI conventions are Development status: all mapping lives in this module, and a
 change to the tables below needs a new mapping version.
@@ -43,6 +43,7 @@ class Spec:
     max_value: int | None = None
     choices: frozenset[str] | None = None
     non_empty: bool = False
+    pattern: re.Pattern[str] | None = None  # full match; a mismatch is dropped, never repaired
 
 
 STR = Spec("str")
@@ -51,6 +52,17 @@ NUM = Spec("num")
 BOOL = Spec("bool")
 STR_ARRAY = Spec("str_array")
 TOKENS = Spec("int", min_value=0)
+
+# Bounded identifiers instead of free text (Phase 1C). A prompt version is a label that
+# Phase 4 compares with experiment versions (LEN(64)); truncating it would merge versions.
+PROMPT_VERSION = Spec(
+    "str", exact_max=64, non_empty=True, pattern=re.compile(r"[A-Za-z0-9][A-Za-z0-9._:+/-]*")
+)
+# semconv `error.type` is a low-cardinality identifier ("timeout", "500",
+# "openai.RateLimitError", "_OTHER"); anything with spaces or control characters is a
+# description, not a type, and is dropped (R21).
+ERROR_TYPE_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:$/-]*")
+ERROR_TYPE = Spec("str", exact_max=MAX_STRING, non_empty=True, pattern=ERROR_TYPE_RE)
 
 RESOURCE_ALLOWLIST: dict[str, Spec] = {
     k: STR
@@ -74,21 +86,21 @@ SPAN_ALLOWLIST: dict[str, Spec] = {
     "gen_ai.response.model": STR,
     "gen_ai.response.id": Spec("str", exact_max=MAX_STRING, non_empty=True),
     "gen_ai.response.finish_reasons": STR_ARRAY,
-    "gen_ai.request.max_tokens": INT,  # also matched by the always-deny "token" rule: see below
+    "gen_ai.request.max_tokens": Spec("int", min_value=0),  # a count, not a credential
     "gen_ai.request.temperature": NUM,
     "gen_ai.request.top_p": NUM,
     "gen_ai.request.seed": INT,
     "gen_ai.request.stream": BOOL,
     "gen_ai.output.type": STR,
     "gen_ai.prompt.name": STR,
-    "gen_ai.prompt.version": STR,
+    "gen_ai.prompt.version": PROMPT_VERSION,
     "gen_ai.usage.input_tokens": TOKENS,
     "gen_ai.usage.output_tokens": TOKENS,
     "gen_ai.usage.cache_read.input_tokens": TOKENS,
     "gen_ai.usage.cache_write.input_tokens": TOKENS,
     "gen_ai.usage.reasoning.output_tokens": TOKENS,
     # Stable core
-    "error.type": STR,
+    "error.type": ERROR_TYPE,
     "server.address": STR,
     "server.port": INT,
     # OpenAI conventions
@@ -133,13 +145,51 @@ _DENY_EXACT = (
     "exception.stacktrace",
 )
 _DENY_PREFIX = ("http.request.header.", "http.response.header.", "user.", "enduser.")
-_DENY_SUBSTRING = ("authorization", "api_key", "apikey", "password", "secret", "token")
-# The contract's only exception to the substring rule: the explicit gen_ai.usage.*_tokens keys
-# (standard and legacy alias names). `gen_ai.request.max_tokens` is NOT one of them, so the
-# literal deny rule drops it even though §3 also allowlists it (deny overrides, SECURITY.md §1).
-_TOKEN_COUNT_KEYS = frozenset(
-    k for k in (*SPAN_ALLOWLIST, *SPAN_ALIASES) if k.startswith("gen_ai.usage.")
+
+# Credential classification (Phase 1C), replacing the substring rule that also matched
+# token *counters* such as `gen_ai.request.max_tokens`. A key is split into lower-case words
+# at '.', '_', '-' and camelCase boundaries, then:
+# - a credential stem anywhere in the key (no counter or metadata key contains one);
+# - a credential word, e.g. `token` (singular: `auth.token`, `access_token`);
+# - `tokens` / `key(s)` qualified by a credential word (`access_tokens`, `signing_key`).
+# Plural `tokens` after any other word is a count (`input_tokens`, `max_tokens`) and passes.
+_CREDENTIAL_STEMS = (
+    "password",
+    "passwd",
+    "secret",
+    "authorization",
+    "apikey",
+    "api_key",
+    "credential",
+    "cookie",
+    "privatekey",
+    "private_key",
 )
+_CREDENTIAL_WORDS = frozenset({"token", "auth", "bearer", "jwt", "pwd"})
+_CREDENTIAL_QUALIFIERS = frozenset(
+    {"access", "refresh", "id", "session", "auth", "bearer", "api", "oauth", "csrf", "xsrf"}
+    | {"secret", "private", "signing", "encryption", "client", "master", "security"}
+)
+_QUALIFIED_WORDS = frozenset({"tokens", "key", "keys"})
+_CAMEL = re.compile(r"([a-z0-9])([A-Z])")
+_WORD_SPLIT = re.compile(r"[._\-\s/:]+")
+
+
+def _words(key: str) -> list[str]:
+    return [w for w in _WORD_SPLIT.split(_CAMEL.sub(r"\1_\2", key).lower()) if w]
+
+
+def is_credential_key(key: str) -> bool:
+    flat = key.lower().replace("-", "_")
+    if any(stem in flat for stem in _CREDENTIAL_STEMS):
+        return True
+    words = _words(key)
+    for i, w in enumerate(words):
+        if w in _CREDENTIAL_WORDS:
+            return True
+        if w in _QUALIFIED_WORDS and i > 0 and words[i - 1] in _CREDENTIAL_QUALIFIERS:
+            return True
+    return False
 
 
 def is_denied(key: str) -> bool:
@@ -148,35 +198,13 @@ def is_denied(key: str) -> bool:
         return True
     if k.startswith(_DENY_PREFIX):
         return True
-    if key in _TOKEN_COUNT_KEYS:
-        return False
-    return any(s in k for s in _DENY_SUBSTRING)
+    return is_credential_key(key)
 
 
 # ---------------------------------------------------------------- value handling
 def clean_str(s: str, limit: int = MAX_STRING) -> str:
     """Truncate to `limit` characters; PostgreSQL TEXT/JSONB cannot hold U+0000."""
     return s[:limit].replace("\x00", "�")
-
-
-_SECRETISH = re.compile(
-    r"(?i)(bearer\s+)[^\s,;]+"
-    r"|\bsk-[A-Za-z0-9_\-]{8,}"
-    r"|\blli_[A-Za-z0-9]{8}_[A-Za-z0-9_\-]+"
-    r"|((?:api[_-]?key|authorization|password|secret|token)\s*[=:]\s*(?:bearer\s+|basic\s+)?)"
-    r"[^\s,;]+"
-)
-
-
-def scrub_free_text(s: str, limit: int = MAX_STRING) -> str:
-    """Best-effort masking of credential-like substrings in free text (span status messages).
-    Not a guarantee: SECURITY.md §1 treats redaction as best effort."""
-
-    def _mask(m: re.Match[str]) -> str:
-        keep = m.group(1) or m.group(2) or ""
-        return f"{keep}[REDACTED]"
-
-    return clean_str(_SECRETISH.sub(_mask, s), limit)
 
 
 _MISSING = object()
@@ -192,6 +220,8 @@ def _coerce(spec: Spec, v: AnyValue) -> Any:
             return _MISSING
         if spec.exact_max is not None:
             if len(s) > spec.exact_max or "\x00" in s:
+                return _MISSING
+            if spec.pattern is not None and not spec.pattern.fullmatch(s):
                 return _MISSING
             return s
         if spec.choices is not None and s not in spec.choices:

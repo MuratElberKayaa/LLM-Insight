@@ -52,9 +52,21 @@ async def export_traces(request: Request) -> Response:
             ingestor.authenticate, request.headers.getlist("x-project-key"), client
         )  # step 5
         ingestor.check_ingest_limit(project)  # step 6
-        wire = await body.read_bounded(  # step 7
-            request.headers.get("content-length"), request.stream(), settings.otlp_max_body_bytes
-        )
+        try:
+            wire = await body.read_bounded(  # step 7: size limit and overall read deadline
+                request.headers.get("content-length"),
+                request.stream(),
+                settings.otlp_max_body_bytes,
+                settings.otlp_body_read_timeout_s,
+            )
+        except IngestError as err:
+            logger.warning(
+                "ingest body rejected status=%d key_id=%s client=%s",
+                err.status_code,
+                project.key_id,
+                client,
+            )
+            raise
         await run_in_threadpool(ingestor.process, project, wire, gzipped)  # steps 8–13
     except IngestError as err:
         return _error_response(err, content_type)

@@ -1,10 +1,14 @@
 """Request headers and body: media type, content encoding, bounded read and bounded gunzip.
 
-TELEMETRY_CONTRACT.md §1.1 steps 2, 3, 7 and 8. Limits come from ADR-17.
+TELEMETRY_CONTRACT.md §1.1 steps 2, 3, 7 and 8. Size limits come from ADR-17; the body-read
+deadline is the Phase 1C control for R22.
 """
 
+import asyncio
 import zlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable
+
+from starlette.requests import ClientDisconnect
 
 from app.services.ingestion import errors
 from app.services.ingestion.errors import JSON, PROTOBUF
@@ -39,17 +43,33 @@ def is_gzip(content_encoding: str | None) -> bool:
 
 
 async def read_bounded(
-    content_length: str | None, chunks: AsyncIterator[bytes], max_bytes: int
+    content_length: str | None, chunks: AsyncIterable[bytes], max_bytes: int, timeout_s: float
 ) -> bytes:
-    """Read the wire body, failing with 413 as soon as it exceeds `max_bytes` (step 7)."""
+    """Read the wire body (step 7): 413 as soon as it exceeds `max_bytes`, 408 if the whole
+    body has not arrived within `timeout_s` (one overall deadline, so a client trickling one
+    byte at a time cannot extend it), 400 if the client disconnects first.
+
+    Every exit closes the body stream and drops the partial buffer. Nothing has touched the
+    database yet, so no exit can leave a partial write."""
     declared = (content_length or "").strip()
     if declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
         raise errors.body_too_large()
     buf = bytearray()
-    async for chunk in chunks:
-        buf += chunk
-        if len(buf) > max_bytes:
-            raise errors.body_too_large()
+    stream = aiter(chunks)
+    try:
+        async with asyncio.timeout(timeout_s):
+            async for chunk in stream:
+                buf += chunk
+                if len(buf) > max_bytes:
+                    raise errors.body_too_large()
+    except TimeoutError:
+        raise errors.body_read_timeout() from None
+    except ClientDisconnect:
+        raise errors.client_disconnected() from None
+    finally:
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            await aclose()
     return bytes(buf)
 
 

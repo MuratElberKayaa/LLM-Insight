@@ -67,8 +67,8 @@ async def _chunks(parts):
         yield p
 
 
-def read(content_length, parts, limit):
-    return asyncio.run(body.read_bounded(content_length, _chunks(parts), limit))
+def read(content_length, parts, limit, timeout_s=5.0):
+    return asyncio.run(body.read_bounded(content_length, _chunks(parts), limit, timeout_s))
 
 
 def test_read_bounded_accepts_exactly_the_limit():
@@ -83,7 +83,7 @@ def test_declared_content_length_over_limit_is_413_before_reading():
         yield b"x"
 
     with pytest.raises(IngestError) as e:
-        asyncio.run(body.read_bounded("11", tracking(), 10))
+        asyncio.run(body.read_bounded("11", tracking(), 10, 5.0))
     assert e.value.status_code == 413 and consumed == []
 
 

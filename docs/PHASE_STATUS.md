@@ -1,19 +1,19 @@
 # LLM Insight — Phase Status
 
-Last updated: 2026-10-24 (Phase 1B delivered, awaiting review). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
+Last updated: 2026-10-24 (Phase 1C delivered, awaiting review). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
 
 | Phase | Window (target) | State |
 |---|---|---|
 | 0 Definition | 24 Oct | **Closed.** ADR-13…21 accepted; closure commit `0929a14` approved by the user |
 | 1A Backend foundation | 24 Oct | Delivered (`reports/phase-1a.md`); reviewed by the user (Phase 1B instruction) |
-| 1B OTLP ingest | 25–27 Oct | **Delivered; awaiting user review** (`reports/phase-1b.md`) |
-| 1C Phase 1 integration and acceptance | 25–27 Oct | Not started. Waits for the Phase 1B review |
+| 1B OTLP ingest | 25–27 Oct | Delivered (`reports/phase-1b.md`); accepted conditionally by the user (Phase 1C instruction), the conditions being the 1C tasks |
+| 1C Phase 1 integration and acceptance | 25–27 Oct | **Delivered; awaiting user review** (`reports/phase-1c.md`). Phase 1 is complete only after that review; the `phase-1` tag is not created yet |
 | 2 SDK / usage & cost | 28–30 Oct | Not started |
 | 3 Dashboard | 31 Oct–2 Nov | Not started |
 | 4 Review / dataset / experiments | 3–4 Nov | Not started |
 | 5 QA & delivery | 5–7 Nov | Not started |
 
-**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. There is **no** `/api/v1`, no SDK, no pricing and no frontend yet.
+**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. There is **no** SDK, no pricing, no other `/api/v1` endpoint and no frontend yet.
 
 ## Phase 0 — Definition
 - [x] Independent repo initialized; `git rev-parse --show-toplevel` = project folder; no remotes
@@ -50,13 +50,18 @@ Last updated: 2026-10-24 (Phase 1B delivered, awaiting review). Update this file
 - [x] Idempotent span insert, derived trace recompute, orphan support, usage rows for inference spans only with response-ID-first call keys, collision counter, provenance downgrade; no cost computed (every row `unknown` with a reason)
 - [x] Tests pass with real Postgres: T01–T08, T30, T31, T44 plus sub-cases T01-S1…S3, T03-S1/S2, T06-S1…S6, T08-S1…S3, T30-S1 (counts in the report). Partial evidence only: T14, T16, T18, T23 (S1/S2), T26, T27, T28, T43, T48 (S1/S2)
 - [x] The standard OTel exporter (1.45.1) reaches the DB; the same spans exported twice leave counts unchanged; the real `python -m app` process smoke matches the contract
-- [ ] **User review of Phase 1B**, including the contract clarifications listed in `reports/phase-1b.md` §7
+- [x] User review of Phase 1B: accepted conditionally (Phase 1C instruction, 2026-10-24). The §7 clarifications were decided in that instruction and applied in 1C
 
-## Phase 1C — Phase 1 integration and acceptance (not started)
-- [ ] `/api/v1/traces` and `/{trace_id}` stubs with the admin bearer token, project scope and cursor pagination (T25, and the API halves of T26, T27, T28)
-- [ ] Decisions on the Phase 1B contract clarifications applied (contract text or code)
-- [ ] Hardening candidates from the Phase 1B report (e.g. body-read timeout, R22)
-- [ ] `reports/phase-1.md` (Phase 1 gate: T01–T08, T25–T28, T30, T31, T44 and their sub-cases), this file updated, commit + `phase-1` tag
+## Phase 1C — Phase 1 integration and acceptance (evidence: `reports/phase-1c.md`)
+- [x] Prerequisites: clean tree at `9a09e44`; PostgreSQL healthy; dev DB at `0001 (head)`; baseline 374/374; `reports/phase-1b.md` §7 decisions checked against ADR-01…21 (no conflict needing a stop; report §2)
+- [x] Task A: normalization hardening. `gen_ai.request.max_tokens` kept; explicit credential classification replaces substring matching; bounded `gen_ai.prompt.version`; identifier-only `error.type`; all-unknown trace → `unknown`; IDs never truncated; saturating drop count; provider namespace escaped in call keys; `real` only ever downgraded
+- [x] Task B (R21): `Status.message` no longer stored (schema unchanged, column always `NULL`); adversarial DB/log/API test
+- [x] Task C (R22): overall body-read deadline (`LLMI_OTLP_BODY_READ_TIMEOUT_S`, `408` + `Connection: close`), disconnect and cancellation handling, auth still before any body read; raw-socket tests against uvicorn
+- [x] Task D: `GET /api/v1/traces` and `/{trace_id}`: admin bearer token, auth before validation, shared auth-failure bucket plus `/api/v1` bucket, project scope with one indistinguishable `404`, keyset pagination, validated filters and 31-day window, ns-exact ISO `Z` timestamps, unknown cost as `null`, `provenance_verified: false`, read-only snapshot transactions, index use verified by `EXPLAIN ANALYZE`
+- [x] Task E: idempotent re-exports, separate retry attempts, provider-namespaced keys, differing payloads under one identity counted (first write kept)
+- [x] Task F: full suite **626 passed, 0 failed, 0 skipped** with a real database required; official exporter round trip; Ruff; `pip check`; compose; migration cycle + `alembic check`; live `python -m app` smoke; doc check (report §3)
+- [x] Test matrix: T01–T08, T25–T28, T30, T31, T44 `PASS (phase-1c)`; T14, T16, T18, T23, T43, T48 still `PARTIAL` (owned by Phases 2–4)
+- [ ] **User review of Phase 1C** (the Phase 1 gate), then the `phase-1` tag and, if wanted, a `reports/phase-1.md` gate summary
 
 ## Phase 2 — SDK, usage and cost
 - [ ] Semconv pin re-checked (ADR-15)
@@ -105,6 +110,6 @@ Last updated: 2026-10-24 (Phase 1B delivered, awaiting review). Update this file
 | `alembic upgrade head` / `alembic downgrade base` / `alembic check` (backend) | yes | Migrations (URL from `.env`) |
 | `LLMI_TEST_REQUIRE_DB=1 python -m pytest` (backend) | yes | Unit + integration tests; integration uses disposable `*_test` DBs. Without the variable, integration tests skip with a reason if PostgreSQL is unreachable |
 | `ruff check .` / `ruff format --check .` (backend) | yes | Lint / format |
-| `python -m app` (backend) | yes | Dev server on `127.0.0.1:8000`, single worker; serves `/health/*` and `POST /v1/traces` |
+| `python -m app` (backend) | yes | Dev server on `127.0.0.1:8000`, single worker; serves `/health/*`, `POST /v1/traces` and `GET /api/v1/traces[/{trace_id}]?project=<id>` (header `Authorization: Bearer $LLMI_ADMIN_TOKEN`) |
 | `python -m app.cli create-key --project <name>` / `list-keys` / `revoke-key --prefix <p>` (backend) | yes | Create a project and ingest key (the key is printed once; only its HMAC is stored), list prefixes, revoke |
 | `npm run lint/typecheck/build`, `npx playwright test` | no | Planned (Phase 3) |

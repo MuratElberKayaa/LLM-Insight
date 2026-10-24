@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     otlp_max_body_bytes: int = Field(default=4 * 1024 * 1024, gt=0)
     otlp_max_decompressed_bytes: int = Field(default=16 * 1024 * 1024, gt=0)
     otlp_max_spans_per_request: int = Field(default=2048, gt=0)
+    # Overall deadline for receiving one request body after authentication (R22, Phase 1C).
+    otlp_body_read_timeout_s: float = Field(default=10.0, gt=0, le=300)
     rate_limit_ingest_rps: float = Field(default=20, gt=0)
     rate_limit_ingest_burst: int = Field(default=40, gt=0)
     rate_limit_api_rps: float = Field(default=10, gt=0)
