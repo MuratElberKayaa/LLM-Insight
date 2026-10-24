@@ -10,7 +10,9 @@
 | GenAI client inference semconv | https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/client-inference.md | **Development**. Repo has no releases; HEAD `9ffc7e00c639` (2026-10-21). Links core semconv v1.44.0 | Span name / kind, `gen_ai.*` attributes, usage subset notes, metric names |
 | GenAI spans semconv | https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md | Development | Span scope, content-capture guidance |
 | GenAI OpenAI semconv | https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/openai.md | Development | `gen_ai.provider.name=openai`, `openai.*` attributes |
-| Old GenAI location | https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/README.md | Page states "Moved" | PADR-03 |
+| Old GenAI location | https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/README.md | Page states "Moved" | ADR-15 |
+| `google.rpc` error details | https://raw.githubusercontent.com/googleapis/googleapis/master/google/rpc/error_details.proto | `BadRequest.field_violations{field, description, reason, localized_message}`, read 2026-10-24 | ADR-16/18, `BadRequest` contract |
+| OTLP failure / encoding sections (re-read for the ADR gate) | raw `specification.md` §OTLP/HTTP Response, §Failures, §Binary/JSON Protobuf Encoding | 1.11.1, re-read 2026-10-24 | Response Content-Type rule, Status body rule, JSON `application/json` rule |
 | PyPI JSON API | https://pypi.org/pypi/{package}/json | Read 2026-10-24 | Version pins |
 | npm registry | https://registry.npmjs.org/{package} | Read 2026-10-24 | Version pins |
 | endoflife.date | https://endoflife.date/api/{python,nodejs,postgresql}.json | Read 2026-10-24 | Runtime support windows |
@@ -24,11 +26,11 @@ Some content was read through an AI page summarizer, so the key statements were 
 | ID | Risk | Likelihood | Impact | Mitigation | Owner phase |
 |---|---|---|---|---|---|
 | R01 | The enclosing home-directory Git repo (`C:/Users/PC`, DailyDietAPP remote, 0-byte index) receives project files by mistake | Med | High | The project has its own `.git`. Check `git rev-parse --show-toplevel` before every commit. The home repo is never touched | All |
-| R02 | GenAI semconv (Development) renames attributes during the MVP | Med | Med | Versioned mapping adapter, `attributes_schema_version`, alias rows (PADR-02/03) | 1–2 |
+| R02 | GenAI semconv (Development) renames attributes during the MVP | Med | Med | Versioned mapping adapter, `attributes_schema_version`, alias rows (ADR-14/15) | 1–2 |
 | R03 | The OTel Python exporter's timeout env-var units are ambiguous (spec says ms; the Python SDK historically used seconds) | Med | Med | Verify against the pinned SDK in Phase 2 before setting it, and test fail-open timing (T13) | 2 |
 | R04 | No verified OpenAI price available, so every cost shows `unknown` | Med | Med (demo) | Seed only verified official prices with source URL and date. `unknown` is a correct outcome, not a bug | 2 |
 | R05 | Real OpenAI spend during development | Low | Med | Mock by default, `LLMI_ALLOW_REAL_LLM` flag, per-run approval and budget | 2, 4 |
-| R06 | Docker daemon not running or Docker Desktop resource limits | Unknown | High (P1 blocked) | Check `docker info` at the start of Phase 1 | 1 |
+| R06 | Docker Desktop resource limits (disk / memory for `postgres:17`) | Unknown | Med | Check `docker info` and `docker system df` at the start of Phase 1. Daemon state is tracked as R18 | 1 |
 | R07 | TypeScript 7 / ESLint 10 incompatibility with Next 16 tooling | Med | Low | Decide in Phase 3, falling back to TS 5.9 / 6.0 | 3 |
 | R08 | Allowlisted free-form strings carry PII (e.g. a non-template `http.route`) | Low | Med | Truncation, always-deny list, T16 / variants | 1–2 |
 | R09 | In-process rate limiter ineffective with more than one worker | Low (single worker) | Low | Document it and run one worker (CR-08) | 3 |
@@ -36,3 +38,8 @@ Some content was read through an AI page summarizer, so the key statements were 
 | R11 | Percentile disagreement between SQL and the UI or NumPy | Low | Med | One definition (`percentile_cont`), T24 cross-check | 2–3 |
 | R12 | Installed Node 22.11.0 is an old patch level | Med | Low | Update to the latest 22.x before Phase 3 (needs user action) | 3 |
 | R13 | A protobuf JSON parser misreads hex IDs in the fixture as base64 | Med | Low | Hex-decode in the fixture loader (`docs/fixtures/README.md`) | 1 |
+| R14 | Exact-match pricing: provider snapshot names (e.g. `gpt-4o-mini-2024-07-18`) don't match a seeded base name, so costs show `unknown` | High | Med (demo) | Seed verified prices per exact model name. No fuzzy matching, because a wrong price is worse than an unknown one | 2 |
+| R15 | Limited OTLP interoperability (no JSON/gRPC, atomic 400, smaller limits) surprises third-party clients | Med | Low (MVP) | Support statement in `TELEMETRY_CONTRACT.md` §0; T01-S3 exporter smoke | 1 |
+| R16 | Provenance is client-asserted; a misconfigured client could label synthetic data `real` | Low | Med | Server consistency downgrade, "reported real" wording, mixed/unknown never real | 2–3 |
+| R17 | Failed attempts reported by two instrumentations are not deduplicated | Low | Low | Documented; unknown cost doesn't affect the known total | 2 |
+| R18 | Docker Engine was not running on 2026-10-24 (`docker info`: pipe `dockerDesktopLinuxEngine` not found) | Confirmed | High (Phase 1 blocked) | The user starts Docker Desktop before Phase 1 | 1 |

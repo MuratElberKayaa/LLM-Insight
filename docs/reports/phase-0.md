@@ -1,5 +1,7 @@
 # Phase 0 — Delivery Report
 
+> **Reading note:** §1–§10 are the original delivery record at tag `phase-0` (commit `a16d64b`) and are kept unchanged as history. Some of them are now superseded: PADR-01…09 are accepted as ADR-13…21, there are 42 critical tests (not 39), and the Docker Engine was found not running. **§11 is the current state** after the ADR gate closure.
+
 - **Date:** 2026-10-24
 - **Commit/tag:** recorded in the Phase 0 Completion Report message. The commit cannot contain its own hash. Look it up with `git log -1 phase-0`.
 - **Scope executed:** Phase 0 only (definition). No implementation code was written, no dependencies were installed, no paid APIs were called, and Phase 1 was not started.
@@ -103,3 +105,76 @@ No paid API calls were made. Infrastructure cost: $0.
 ## 10. Verdict
 
 **PASS (Phase 0 documentation gate), pending user review.** This verdict rests on the verification output in §4, item 5. It says nothing about any implementation, which does not exist yet.
+
+## 11. Phase 0 closure — ADR decision gate (2026-10-24)
+
+The user approved the final ADRs on 2026-10-24. This work is a separate documentation commit on top of `phase-0`. The `phase-0` tag was **not** moved or amended.
+
+### 11.1 Files changed in the closure commit
+
+| File | Change |
+|---|---|
+| `docs/ADR.md` | PADR-01…09 → accepted ADR-13…21, each with context, decision, alternatives, consequences, affected files and tests. CR-04 amended to 42 critical tests |
+| `docs/TELEMETRY_CONTRACT.md` | New §0 support statement (limited interoperability). Processing order. Response encoding that honours the request Content-Type. `415` behaviour. `BadRequest` details without values. Count-based `413` policy. 200 only after commit. Alias precedence. Call identity with retry-versus-re-export rules and fallback limitations. Provenance with `mixed` |
+| `docs/ARCHITECTURE.md` | §4 is now a column-level DB contract: type, nullability, default, check, uniqueness/index, origin (§E / ADD with reason / CR-03) and tests for every column. BIGSERIAL surrogate keys, with OTel IDs as TEXT external identifiers. `server_dropped_attributes_count`. Added `googleapis-common-protos` pin |
+| `docs/METRICS_CATALOG.md` | Provenance aggregation rules; event-time windows; M02 retry/re-export note; M19 rename |
+| `docs/TEST_MATRIX.md` | T15, T16, T44 ★ (42 critical); 17 protocol / dedup / provenance sub-cases |
+| `docs/SECURITY.md` | Auth-failure limiter; key-scoped ingest bucket; redaction of review text; new threat rows |
+| `docs/SOURCES_AND_RISKS.md` | `google.rpc` and OTLP re-read sources; risks R14–R18; R06 narrowed |
+| `docs/PRD.md`, `docs/PHASE_STATUS.md`, `CLAUDE.md`, `.env.example`, `docs/fixtures/README.md` | 42 critical; status; doc index; `LLMI_RATE_LIMIT_AUTHFAIL_PER_MIN`; fixture expectations (response-ID key, provenance, renamed counter) |
+| `scripts/verify_phase0.py` | **New.** Reproducible, stdlib-only documentation check |
+| `docs/reports/phase-0.md` | Reading note and this §11 |
+
+### 11.2 Final ADR status
+
+All of these are accepted, and none is open.
+- **Locked:** ADR-01…12.
+- **Contract resolutions:** CR-01…09 (CR-04 amended by ADR-20).
+- **Phase 0 proposals:** ADR-13 (span naming/detection), ADR-14 (provider attribute; the standard name beats the alias), ADR-15 (semconv pin `9ffc7e00c639`, `llminsight.attrmap.v1`), ADR-16 (binary protobuf only), ADR-17 (4 MiB / 16 MiB / 2048 spans → 413), ADR-18 (atomic, 200 after commit, no partial success), ADR-19 (never persist content), ADR-20 (42 critical), ADR-21 (complete DB contract).
+
+### 11.3 OTLP 1.11.1 conformance after the corrections (re-verified from the raw spec on 2026-10-24)
+
+| Spec rule | Status |
+|---|---|
+| Success: `200` + `ExportTraceServiceResponse`, `partial_success` unset | Compliant |
+| Response uses the request's Content-Type; `application/json` for JSON payloads | Compliant for both OTLP media types: a JSON request gets a JSON-encoded `415` Status. **Limitation:** for non-OTLP media types, both MUSTs can't be met, so a binary Status is returned |
+| 4xx/5xx body is a `Status` message | Compliant |
+| `400` for bad data, `BadRequest` in details (SHOULD) | Compliant; field paths, rule text and reason codes only |
+| MUST limit size incl. after decompression → `413` | Compliant. 4/16 MiB is below the RECOMMENDED 64 MiB (allowed). The count-based `413` is our policy |
+| Servers SHOULD accept JSON | **Deviation** (ADR-16): documented as limited interoperability |
+| Retryable codes 429/502/503/504; others not retried | Compliant (`429` and `503` carry Retry-After) |
+| Empty request → success (SHOULD) | Compliant |
+
+### 11.4 Verification commands and results
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `python -I scripts/verify_phase0.py --quiet` (first run) | exit 1: 658 PASS, 2 FAIL. (a) The check treated PRD's master-plan floor "At least 24 critical" as a stale count, so the check was narrowed to exclude "at least N" floors. (b) PHASE_STATUS referenced PADR without the former-name mapping, so the **doc** was fixed |
+| 2 | `python -I scripts/verify_phase0.py --quiet` (after fixes) | exit 0: **660 PASS, 0 FAIL** |
+| 3 | Mutation test on scratch copies (not committed), one defect each: T15 star removed; `cost_status=zero`; §E column `evidence` deleted; `ADD` without reason; `sk-…` key in a doc; real value in `.env.example`; `ADR-99` reference; stale `PADR-04`; bare `dropped_attributes_count`; UUID primary key | All 10 mutations → exit 1 with the expected FAIL line. Unmodified baseline → exit 0 |
+| 4 | `docker info` (during the ADR review) | exit 1. Client 28.5.1 present. Server: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.` Engine not running (R18). Nothing was started |
+
+The final run on the committed tree is recorded in the closure hand-off message together with the commit hash.
+
+### 11.5 Remaining risks
+
+- **R18:** Docker Engine not running (blocks Phase 1).
+- **R14:** exact-match pricing can leave cost `unknown`.
+- **R15:** limited OTLP interoperability.
+- **R16:** provenance is client-asserted.
+- **R17:** double-instrumented failed attempts are not deduplicated.
+- **R03:** exporter timeout units.
+- **R07:** TypeScript version.
+- **R12:** Node patch level.
+- **R01:** home-directory repo, still untouched.
+
+### 11.6 Phase 1 prerequisites
+
+- [ ] The user reviews this closure commit
+- [ ] Docker Desktop started; `docker info` shows a Server section
+- [ ] Approval to install the pinned backend dependencies (`ARCHITECTURE.md` §6), re-checked at install time
+- [ ] A local `.env` created from `.env.example` with generated secrets (user-side, never committed)
+
+### 11.7 Verdict
+
+**Phase 0 documentation gate: PASS. ADR gate: CLOSED.** Both rest on the verification output in §11.4. **Phase 1 has not started:** no application code, migrations, dependencies or containers.

@@ -9,14 +9,27 @@ Master plan §D3 says the earlier report's 64-metric catalog is a reference, not
 - **Units:** durations come from `end_ns - start_ns` and are shown in ms. Money is shown in USD as `Decimal`.
 - **Counting:** "Inference call" means a distinct `usage_records.canonical_call_key`, which is one physical attempt. "Trace" means a distinct `trace_id`. The two counts are never mixed.
 - **Percentiles:** PostgreSQL `percentile_cont` (linear interpolation) over the stated population. The UI always shows `n`, and flags *low sample* when `n < 20` for p95 and `n < 100` for p99. The NumPy `linear` method gives the same result and is used for cross-checks in T24.
-- **Filters:** project (mandatory), time window on span start, model, status, prompt_version.
+- **Filters:** project (mandatory), time window, model, status, prompt_version, provenance.
+- **Time windows use event time:** `usage_records.started_at` or `traces.started_at`. They never use ingest time (`created_at` / `ingested_at`), because delayed exports would otherwise land in the wrong window.
+
+## Provenance aggregation (ADR-21)
+
+Provenance values are defined in `TELEMETRY_CONTRACT.md` §5. Usage rows and spans are `real` | `synthetic` | `unknown`; traces add `mixed`.
+
+1. **Usage-level metrics** (M02, M04, M08–M12) aggregate by `usage_records.provenance`, row by row. That value is exact per physical attempt.
+2. **Trace-level metrics** (M01, M05, M07) aggregate by `traces.provenance`.
+3. **"Reported real" figures** count only `real`. A `mixed` trace is never counted as real, even though it contains real spans; its real usage rows still count in usage-level real metrics (rule 1). `unknown` never counts as real.
+4. **Every KPI response** returns a breakdown `{real, synthetic, mixed, unknown}` (with `mixed` at trace level only), plus a `total`. The UI headline shows the active provenance filter. With no filter, the headline is labeled "all provenance", never "real".
+5. **Percentiles (M06, M07)** are computed per provenance bucket when filtered. The unfiltered value is shown with the bucket `n`s next to it.
+6. **No inference from absence:** a trace with no inference spans is `unknown`, not `real`.
+7. **Trust caveat:** `real` is asserted by the instrumentation and checked only by the server consistency downgrade (`TELEMETRY_CONTRACT.md` §5). It is not cryptographic proof.
 
 ## P0 metrics
 
 | ID | Metric | Definition / formula | Source | Null / provenance rule |
 |---|---|---|---|---|
 | M01 | Trace count | `COUNT(DISTINCT trace_id)` | traces | — |
-| M02 | Inference calls | `COUNT(DISTINCT canonical_call_key)` | usage_records | Retries count as separate attempts; `call_id` groups them into logical calls |
+| M02 | Inference calls (physical attempts) | `COUNT(DISTINCT canonical_call_key)` | usage_records | Retry attempts count separately. Re-exports never add rows (`TELEMETRY_CONTRACT.md` §4). `call_id` groups attempts into logical calls (M03) |
 | M03 | Logical LLM calls | `COUNT(DISTINCT llminsight.call_id)` | spans | Only where `call_id` is present; otherwise shown "n/a" |
 | M04 | Inference error rate | inference spans with `status=ERROR` ÷ M02 | spans + usage | `n` = M02; `error_type` breakdown |
 | M05 | Trace error rate | traces with `status=error` ÷ M01 | traces | Labeled separately from M04 |
@@ -33,7 +46,7 @@ Master plan §D3 says the earlier report's 64-metric catalog is a reference, not
 | M16 | Eval pass rate per prompt_version | `passed=true` ÷ evaluated results | experiment_results | `passed IS NULL` means "not evaluated" and is excluded from the denominator and shown separately |
 | M17 | Experiment cost & latency per version | M06 / M10-style aggregates over experiment_results | experiment_results | `mode=mock` results labeled SYNTHETIC |
 | M18 | Review counts | count by `issue_type`, `review_status`, `reviewer_decision` | failure_reviews | Counts of hypotheses, not of root causes |
-| M19 | Dropped attribute count | `SUM(dropped_attributes_count)` | spans | Privacy health signal |
+| M19 | Server-dropped attribute count | `SUM(server_dropped_attributes_count)` | spans | Privacy health signal. Excludes the client's own OTLP `dropped_attributes_count`, which is not stored |
 
 ## P1 metrics (only if P0 is complete)
 

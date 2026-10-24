@@ -23,14 +23,18 @@ POST /v1/summarize          SERVER   b7ad6b7169203331  0 → 1240 ms   (scope: f
 
 1. `POST /v1/traces` with a valid key returns HTTP `200` and an `ExportTraceServiceResponse` with `partial_success` unset.
 2. `traces`: 1 row. `service_name=demo-summarizer`, `status=ok`, `prompt_version=v1`, `provenance=synthetic`, duration 1240 ms.
-3. `spans`: 3 rows. Both children have `parent_span_id=b7ad6b7169203331`, and the CLIENT span's duration is 1200 ms.
+3. `spans`: 3 rows.
+   - Both children have `parent_span_id=b7ad6b7169203331`, and the CLIENT span's `duration_ns` is 1,200,000,000.
+   - Every span has `server_dropped_attributes_count=0`, because all of the fixture's attributes are allowlisted.
+   - Provenance is `synthetic` on the CLIENT span and `unknown` on the other two, which are not inference spans. The trace-level provenance (`synthetic`) is derived only from inference spans.
 4. `usage_records`: exactly 1 row, for span `00f067aa0ba902b7`:
-   - `canonical_call_key=sdk:5f0c6e1a-3b7d-4c2e-9a41-7d2b8e6f1c03:1`, `call_key_source=sdk_attempt`
+   - `canonical_call_key=resp:openai:chatcmpl-SYNTHETIC-0001`, `call_key_source=provider_response_id`. The response ID takes precedence (master plan §E, ADR-21).
+   - `call_id=5f0c6e1a-3b7d-4c2e-9a41-7d2b8e6f1c03`, `attempt_id=1`, `operation_name=chat`, `provenance=synthetic`
    - `provider=openai`, `requested_model=gpt-4o-mini`, `response_model=gpt-4o-mini-2024-07-18`
    - `input_tokens=1250`, of which `cached_input_tokens=1024` (uncached = 226)
    - `output_tokens=180`, `reasoning_output_tokens=NULL` (not reported)
    - `usage_source=provider_reported`
-   - No verified price is seeded in Phase 0, so `cost_usd=NULL`, `cost_status=unknown` and `cost_unknown_reason=price_missing`.
+   - No verified price is seeded in Phase 0, so `cost_usd=NULL`, `cost_status=unknown`, `cost_unknown_reason=price_missing`, and `price_version` / `model_price_id` are NULL. The cost is **not** 0.
 5. Sending the identical request again returns `200`, and the row counts stay 1 / 3 / 1 (T04, T23).
 
 ### Planned variants (Phase 1–2, created with the tests)
@@ -39,6 +43,8 @@ POST /v1/summarize          SERVER   b7ad6b7169203331  0 → 1240 ms   (scope: f
 |---|---|---|---|
 | Orphan | Parent ID not present | Span stored and shown as orphan | T27 |
 | Corrupt | Truncated protobuf body | `400`, nothing persisted | T06 |
-| Forbidden content | Adds `gen_ai.input.messages` | Attribute dropped and counted in `dropped_attributes_count` | T16 |
+| Forbidden content | Adds `gen_ai.input.messages` | Attribute dropped and counted in `server_dropped_attributes_count` | T16 |
+| Mixed provenance | Adds a second inference span marked `real` | Trace `mixed`, never counted as real | T48-S1 |
+| Retry | Second CLIENT span, same `call_id`, `attempt=2` | Second usage row; re-sending the same request adds nothing | T14, T04 |
 | Legacy aliases | Uses `gen_ai.system` / `prompt_tokens` | Values mapped to normalized fields | T03/T17 |
 | Missing usage | No `gen_ai.usage.*` | `NULL` tokens, `usage_source=unknown`, cost unknown | T18 |
