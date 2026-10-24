@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-insight-backend"
+version = "0.1.0"
+description = "LLM Insight backend: FastAPI modular monolith (local-only MVP)"
+requires-python = ">=3.12,<3.13"
+# Exact pins from docs/ARCHITECTURE.md §6 (CR-09), re-checked on PyPI at install time.
+# Transitive versions are frozen in requirements.lock.
+dependencies = [
+    "fastapi==0.143.0",
+    "uvicorn==0.54.0",
+    "pydantic==2.14.0",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy==2.1.4",
+    "alembic==1.20.0",
+    "psycopg[binary]==3.3.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "httpx==0.28.1",
+    "ruff==0.17.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: needs the local PostgreSQL from docker-compose.yml (disposable *_test database)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+
+[tool.ruff.lint.isort]
+# backend/alembic/ (migration scripts) must not make the alembic package look first-party.
+known-third-party = ["alembic"]
+known-first-party = ["app", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert and fixed dummy secrets on purpose.
+"tests/**" = ["S101", "S105", "S106"]
+# Generated migrations keep long CHECK expressions on one line.
+"alembic/versions/*" = ["E501"]
