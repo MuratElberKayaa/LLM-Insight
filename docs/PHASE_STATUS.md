@@ -1,6 +1,6 @@
 # LLM Insight — Phase Status
 
-Last updated: 2026-10-24 (Phase 2A delivered: Python telemetry SDK and deterministic mock integration; awaiting review. No `phase-2` tag). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
+Last updated: 2026-10-24 UTC (Phase 2B delivered: OpenAI adapter, verified pricing catalogue and Decimal cost engine; awaiting review. Phase 2 is not complete; no `phase-2` tag). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
 
 | Phase | Window (target) | State |
 |---|---|---|
@@ -9,13 +9,14 @@ Last updated: 2026-10-24 (Phase 2A delivered: Python telemetry SDK and determini
 | 1B OTLP ingest | 25–27 Oct | Delivered (`reports/phase-1b.md`); accepted conditionally by the user (Phase 1C instruction), the conditions being the 1C tasks |
 | 1C Phase 1 integration and acceptance | 25–27 Oct | Delivered (`reports/phase-1c.md`); accepted by the user subject to closing R08 |
 | 1 Final security hardening and closure | 24 Oct | **Closed** (`reports/phase-1-final.md`): R08 mitigated, protocol decisions recorded, all Phase 1 gates pass, `phase-1` tag on the closure commit. Awaiting architectural review before Phase 2 |
-| 2A SDK + mock integration | 24 Oct | Delivered (`reports/phase-2a.md`); awaiting user review |
-| 2 (rest) OpenAI adapter / pricing & cost / aggregates | 28–30 Oct | Not started |
+| 2A SDK + mock integration | 24 Oct | Delivered (`reports/phase-2a.md`); reviewed by the user (Phase 2B instruction) |
+| 2B OpenAI adapter, pricing & cost engine | 24 Oct | Delivered (`reports/phase-2b.md`); awaiting user review |
+| 2 (rest) aggregates, FastAPI demo root, real smoke | 28–30 Oct | Not started (Phase 2C) |
 | 3 Dashboard | 31 Oct–2 Nov | Not started |
 | 4 Review / dataset / experiments | 3–4 Nov | Not started |
 | 5 QA & delivery | 5–7 Nov | Not started |
 
-**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. Phase 2A added `sdk/` (the installable `llm-insight-sdk` 0.1.0: config contract, OTLP/HTTP protobuf export through a bounded BatchSpanProcessor, GenAI CLIENT inference spans, deterministic mock provider, sync and async) and `demo_app/` (CLI demo, scenarios A–E). There is **no** OpenAI adapter, no pricing or cost calculation, no aggregate service, no other `/api/v1` endpoint and no frontend yet.
+**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. Phase 2A added `sdk/` (the installable `llm-insight-sdk` 0.1.0: config contract, OTLP/HTTP protobuf export through a bounded BatchSpanProcessor, GenAI CLIENT inference spans, deterministic mock provider, sync and async) and `demo_app/` (CLI demo, scenarios A–E). Phase 2B added migration `0002` (`model_prices`, append-only, plus the `usage_records.model_price_id` FK), the verified OpenAI catalogue `openai-2026-10-24` with `python -m app.cli seed-prices`, the Decimal cost engine applied once at ingest, and the offline-tested OpenAI Chat Completions adapter (`llm-insight-sdk` 0.2.0, extra `openai`). The dev database is at `0002 (head)` with **no** price rows seeded. There is **no** aggregate service, no other `/api/v1` endpoint, no FastAPI demo root span, no real OpenAI call and no frontend yet.
 
 ## Phase 0 — Definition
 - [x] Independent repo initialized; `git rev-parse --show-toplevel` = project folder; no remotes
@@ -83,16 +84,24 @@ Last updated: 2026-10-24 (Phase 2A delivered: Python telemetry SDK and determini
 - [x] Demo app A–E against the real `python -m app` and PostgreSQL; verified by SQL and the read API
 - [x] Tests: SDK 247 passed (237 unit + 10 live backend), 0 skipped; backend 876 passed; Ruff; strict mypy; `pip check`; `alembic check`; compose; doc check; `git diff --check`; mutation check 9/9
 - [x] Test matrix: T13, T14 `PASS (phase-2a)`; T09–T12, T15, T16, T18, T23 `PARTIAL (phase-2a)`
-- [ ] User review of Phase 2A
+- [x] User review of Phase 2A (Phase 2B instruction, 2026-10-24)
 
-## Phase 2 — remaining (not started)
-- [ ] Demo FastAPI root span → CLIENT inference span (completes T10); OpenAI wrapper
-- [ ] `usage_records` and `model_prices` per `ARCHITECTURE.md` §4.6–4.7; response-ID-first keys; verified prices only
-- [ ] Decimal cost, cached/reasoning subsets, unknown = NULL + reason
+## Phase 2B — OpenAI adapter, model pricing and cost engine (evidence: `reports/phase-2b.md`)
+- [x] Prerequisites: clean tree at `169e6d0`; PostgreSQL healthy; backend 876/876 and SDK 247/247 before any edit; no ADR conflict and no contract gap requiring a stop (report §2)
+- [x] Migration `0002`: `model_prices` column for column (§4.7), FK `usage_records.model_price_id → model_prices(id) ON DELETE RESTRICT`, non-negative NUMERIC prices, no overlap (`UNIQUE(provider, model, effective_from)`), append-only triggers, guarded downgrade; upgrade with existing data, downgrade, cycle and `alembic check` tested
+- [x] Verified catalogue `openai-2026-10-24`: `gpt-5.4-mini`, `gpt-5-mini`, `gpt-4.1-mini` and their default snapshots (6 rows) from the official pricing and model pages; flat-priced models only; synthetic fixtures for math tests only (`PRICING.md`)
+- [x] Decimal cost engine: provider-reported usage only, subsets priced once, exact-model and event-time selection, OpenAI standard-tier/global-endpoint rule, single half-even rounding to 10 places, priced once at insert, never repriced; backfill workflow documented, not implemented
+- [x] OpenAI Chat Completions adapter (sync + async), offline tests with fake transports and a network block; one span per physical request; fail-open; errors propagate
+- [x] Tests: backend 1024 passed, SDK 319 passed (298 unit + 21 live backend), 0 skipped; Ruff; strict mypy; `pip check`; `alembic check`; compose; doc check; `git diff --check`; mutation check 15/15. The first complete SDK run had one intermittent failure: a test-ordering bug (fixed) and an unconfirmed backend-log traceback (R32), report §4.3
+- [x] Test matrix: T09, T11, T12, T15–T23, T31 `PASS (phase-2b)`; T10 `PARTIAL (phase-2b)`
+- [ ] User review of Phase 2B
+
+## Phase 2 — remaining (Phase 2C, not started)
+- [ ] Demo FastAPI root span → CLIENT inference span (completes T10)
 - [ ] Aggregate services M01–M15 with provenance aggregation rules
-- [ ] Tests: T09–T12, T15–T24, T29, T32, T23-S1/S2 completed (T13, T14 passed in 2A)
-- [ ] Real smoke run only with approval, otherwise marked NOT RUN
-- [ ] Report, status, commit + tag
+- [ ] Tests: T24, T29, T32
+- [ ] Real smoke run only with approval and a budget, otherwise marked NOT RUN
+- [ ] Report, status, commit + `phase-2` tag
 
 ## Phase 3 — Dashboard
 - [ ] Prerequisites: TypeScript version decided; Node 22 patch updated
@@ -132,7 +141,8 @@ Last updated: 2026-10-24 (Phase 2A delivered: Python telemetry SDK and determini
 | `ruff check .` / `ruff format --check .` (backend) | yes | Lint / format |
 | `python -m app` (backend) | yes | Dev server on `127.0.0.1:8000`, single worker; serves `/health/*`, `POST /v1/traces` and `GET /api/v1/traces[/{trace_id}]?project=<id>` (header `Authorization: Bearer $LLMI_ADMIN_TOKEN`) |
 | `python -m app.cli create-key --project <name>` / `list-keys` / `revoke-key --prefix <p>` (backend) | yes | Create a project and ingest key (the key is printed once; only its HMAC is stored), list prefixes, revoke |
-| `python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .` (sdk, in `sdk/.venv`) | yes | Install the locked SDK environment and the SDK (non-editable; reinstall after source changes) |
+| `python -m app.cli seed-prices [--dry-run]` (backend) | yes | Insert the verified price catalogue (`PRICING.md` §2); never updates a stored price, exits 1 on a conflicting row, never reprices usage |
+| `python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .` (sdk, in `sdk/.venv`) | yes | Install the locked SDK environment (includes `openai` 3.28.0 for the offline adapter tests) and the SDK (non-editable; reinstall after source changes) |
 | `python -m pytest tests/unit` / `LLMI_TEST_REQUIRE_DB=1 python -m pytest tests/integration` (sdk) | yes | SDK unit tests (local OTLP stub) / live-backend tests (starts `backend/.venv` `python -m app` on a disposable `*_test` DB) |
 | `ruff check .`, `ruff format --check .`, `python -m mypy src` (sdk) | yes | SDK lint / format / strict types (`--config pyproject.toml ../demo_app` for the demo) |
 | `sdk/.venv/Scripts/python -m demo_app` (root) | yes | Phase 2A demo A–E (mock only); needs `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>`, `OTEL_SERVICE_NAME` |

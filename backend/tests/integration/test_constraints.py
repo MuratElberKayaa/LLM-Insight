@@ -1,4 +1,4 @@
-"""DB-level contract rules (ARCHITECTURE.md §4.1–4.6) enforced by real PostgreSQL."""
+"""DB-level contract rules (ARCHITECTURE.md §4.1–4.7) enforced by real PostgreSQL."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Project, ProjectApiKey, Span, Trace, UsageRecord
+from app.models import ModelPrice, Project, ProjectApiKey, Span, Trace, UsageRecord
 
 pytestmark = pytest.mark.integration
 
@@ -139,8 +139,27 @@ def test_unknown_cost_stays_null_not_zero(conn, graph):
     assert row.input_tokens is None
 
 
+def _synthetic_price(conn) -> int:
+    """A SYNTHETIC price row (never a real provider price); the transaction is rolled back."""
+    return conn.execute(
+        insert(ModelPrice)
+        .values(
+            version="synthetic-constraints-v1",
+            provider="synthetic.test",
+            model="synthetic-constraints-model",
+            effective_from=T0,
+            input_per_million=Decimal("1"),
+            output_per_million=Decimal("2"),
+            source_url="https://example.invalid/synthetic",
+            verified_at=T0,
+        )
+        .returning(ModelPrice.id)
+    ).scalar_one()
+
+
 @pytest.mark.parametrize("cost", [Decimal("0.0000012345"), Decimal("1234567890.0123456789")])
 def test_computed_cost_decimal_round_trip_exact(conn, graph, cost):
+    price_id = _synthetic_price(conn)
     conn.execute(
         insert(UsageRecord).values(
             **_usage_values(
@@ -148,8 +167,8 @@ def test_computed_cost_decimal_round_trip_exact(conn, graph, cost):
                 cost_status="computed",
                 cost_unknown_reason=None,
                 cost_usd=cost,
-                price_version="openai-2026-10",
-                model_price_id=1,
+                price_version="synthetic-constraints-v1",
+                model_price_id=price_id,
             )
         )
     )

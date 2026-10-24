@@ -30,6 +30,17 @@ logger = logging.getLogger("llm_insight_sdk")
 
 
 INFERENCE_OPERATIONS = frozenset({"chat", "text_completion", "generate_content", "embeddings"})
+# Provider metadata a recorder may set (all allowlisted in llminsight.attrmap.v1), with the
+# value rule the backend applies (TELEMETRY_CONTRACT.md §3.1). Anything else is withheld.
+METADATA_RULES: dict[str, _guards.Rule] = {
+    "gen_ai.output.type": _guards.KEYWORD,
+    "openai.api.type": _guards.KEYWORD,
+    "openai.request.service_tier": _guards.KEYWORD,
+    "openai.response.service_tier": _guards.KEYWORD,
+    "openai.response.system_fingerprint": _guards.FINGERPRINT,
+    "server.address": _guards.HOST,
+}
+MAX_PORT = 65_535
 MAX_ATTEMPTS = 10
 INT32_MAX = 2**31 - 1  # usage_records.attempt_id is INT
 MAX_FINISH_REASONS = 16
@@ -90,9 +101,15 @@ def classify_error(exc: BaseException) -> str:
 class InferenceRecorder:
     """Handle for the current attempt's span. Never raises into the application."""
 
-    def __init__(self, span: Span, on_withheld: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        span: Span,
+        on_withheld: Callable[[str], None],
+        classify: Callable[[BaseException], str] = classify_error,
+    ) -> None:
         self._span = span
         self._on_withheld = on_withheld
+        self._classify = classify
         self._usage_complete = False
 
     def _set(self, key: str, value: object, rule: _guards.Rule | None = None) -> None:
@@ -129,6 +146,20 @@ class InferenceRecorder:
         except Exception:  # telemetry must never break the call
             logger.debug("llm_insight_sdk: recording response metadata failed", exc_info=False)
 
+    def set_metadata(self, key: str, value: str | int) -> None:
+        """One provider metadata attribute from `METADATA_RULES` (or `server.port`). Values
+        that fail the rule, and keys outside the list, are withheld and counted."""
+        try:
+            if key == "server.port":
+                port = _non_negative_int(value)
+                self._set(key, port if port is not None and 1 <= port <= MAX_PORT else None)
+            elif key in METADATA_RULES:
+                self._set(key, value, METADATA_RULES[key])
+            else:
+                self._on_withheld(key)
+        except Exception:  # telemetry must never break the call
+            logger.debug("llm_insight_sdk: recording metadata failed", exc_info=False)
+
     def _record_usage(self, usage: TokenUsage) -> None:
         counters = {
             "gen_ai.usage.input_tokens": usage.input_tokens,
@@ -154,7 +185,10 @@ class InferenceRecorder:
             if not self._usage_complete:
                 self._span.set_attribute("llminsight.usage_source", "unknown")
             if exc is not None:
-                self._span.set_attribute("error.type", classify_error(exc))
+                error_type = self._classify(exc)
+                if _guards.check(error_type, _guards.ERROR_TYPE) != error_type:
+                    error_type = OTHER_ERROR
+                self._span.set_attribute("error.type", error_type)
                 self._span.set_status(Status(StatusCode.ERROR))  # no description (R21)
         except Exception:
             logger.debug("llm_insight_sdk: finishing the inference span failed", exc_info=False)
@@ -165,7 +199,7 @@ def inference_span(
     tracer: Tracer,
     *,
     on_withheld: Callable[[str], None],
-    provenance: Literal["synthetic"],
+    provenance: Literal["real", "synthetic"],
     operation: str,
     provider: str,
     request_model: str | None,
@@ -174,9 +208,12 @@ def inference_span(
     prompt_name: str | None = None,
     prompt_version: str | None = None,
     params: RequestParams | None = None,
+    classify: Callable[[BaseException], str] = classify_error,
 ) -> Iterator[InferenceRecorder]:
     """Span for one physical attempt. Use `Telemetry.inference_span`, which supplies the
-    tracer, the withheld-value counter and the configured provenance."""
+    tracer, the withheld-value counter and the configured provenance (synthetic). Only a
+    provider adapter that knows it calls the real provider passes `real` (openai_adapter);
+    `classify` maps a failure to `error.type`."""
     attributes: dict[str, str | int | float] = {}
     withheld: list[str] = []
 
@@ -197,6 +234,8 @@ def inference_span(
     valid_attempt = _non_negative_int(attempt)
     in_range = valid_attempt is not None and 1 <= valid_attempt <= INT32_MAX
     put("llminsight.attempt", valid_attempt if in_range else None)
+    if provenance not in ("real", "synthetic"):
+        raise ValueError("provenance must be 'real' or 'synthetic'")
     attributes["llminsight.provenance"] = provenance
     if prompt_name is not None:
         put("gen_ai.prompt.name", prompt_name, _guards.PROMPT_NAME)
@@ -227,7 +266,7 @@ def inference_span(
         record_exception=False,  # an exception event would carry message and stacktrace
         set_status_on_exception=False,  # status is set by the recorder, without description
     ) as span:
-        recorder = InferenceRecorder(span, on_withheld)
+        recorder = InferenceRecorder(span, on_withheld, classify)
         try:
             yield recorder
         except BaseException as exc:

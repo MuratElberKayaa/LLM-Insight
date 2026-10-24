@@ -210,6 +210,13 @@ Tests: T04, T11, T14, T17–T23, T29, T32, T48.
 Constraints: `UNIQUE(provider, model, version)`; `UNIQUE(provider, model, effective_from)`.
 Tests: T19, T22.
 
+**Phase 2B note (migration `0002`, columns exactly as above):**
+- **Validity:** a row is valid from `effective_from` until the next `effective_from` of the same `(provider, model)`; `UNIQUE(provider, model, effective_from)` leaves no ambiguous overlap. A row is a standard-tier text price; tiers, regional endpoints and long-context rates are not columns, so such calls are `price_missing` (`PRICING.md` §3). Representing them would need a new column, a migration and an ADR note (ADR-21).
+- **Extra checks** beyond the table (stricter, no column change): `provider` and `model` must match the ingest identifier formats of `TELEMETRY_CONTRACT.md` §3.1, so a model name can never be a wildcard (`ck_model_prices_provider_format`, `ck_model_prices_model_format`).
+- **Append-only:** trigger function `model_prices_append_only()` rejects `UPDATE`, `DELETE` and `TRUNCATE … CASCADE`, and rejects an `INSERT` when the same `(provider, model)` already has a later `effective_from` (no back-dating). Inserts per `(provider, model)` take a transaction advisory lock. `alembic check` does not compare triggers; `tests/integration/test_migrations.py` asserts them.
+- **Downgrade** of `0002` refuses to run while any `usage_records.model_price_id` is set.
+- **Seeding:** only the verified catalogue (`backend/app/services/pricing_catalog.py`, `PRICING.md` §2) through `python -m app.cli seed-prices`, which never updates a stored row.
+
 ### 4.8 `test_datasets`
 | Column | Type | Null | Default | Check / rule | Origin |
 |---|---|---|---|---|---|
@@ -317,7 +324,7 @@ The `UNIQUE` constraints listed per table are also indexes. A JSONB GIN index is
 
 **Migration tests:** T31 (upgrade → downgrade → upgrade on a disposable DB). The Phase 1 migration creates §4.2–4.6. §4.7 comes in Phase 2, and §4.8–4.12 in Phase 4. Each migration must match this contract column for column.
 
-**Migration sequencing (Phase 1A note, no column change):** `usage_records.model_price_id` references `model_prices`, which does not exist before Phase 2. The Phase 1 migration (`0001`) therefore creates the column without its FK. The Phase 2 migration that creates §4.7 adds `FK model_prices(id) ON DELETE RESTRICT`. Until then no row can be `computed` (no price exists), and the `cost_computed_has_price` check already holds.
+**Migration sequencing (Phase 1A note, no column change):** `usage_records.model_price_id` references `model_prices`, which does not exist before Phase 2. The Phase 1 migration (`0001`) therefore creates the column without its FK. The Phase 2 migration that creates §4.7 adds `FK model_prices(id) ON DELETE RESTRICT`. Until then no row can be `computed` (no price exists), and the `cost_computed_has_price` check already holds. **Done in Phase 2B:** migration `0002` creates §4.7 and adds `fk_usage_records_model_prices` (`ON DELETE RESTRICT`); existing rows are unchanged (their `model_price_id` is `NULL`), verified by an upgrade-with-data test.
 
 ## 5. API contract
 
@@ -401,6 +408,8 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 
 **Phase 2A install (2026-10-24):** a separate `sdk/.venv` (Python 3.12.6). SDK runtime: `opentelemetry-api` / `-sdk` / `-exporter-otlp-proto-http` 1.45.1, exactly pinned in `sdk/pyproject.toml` and installed with `backend/requirements.lock` as the constraint file, so every shared transitive has the backend's version. SDK dev: `pytest` 9.1.1, `ruff` 0.17.0, `psycopg[binary]` 3.3.6 (live-backend tests), plus the new type checker `mypy` 2.4.0 (2026-10-01) and its transitives `mypy_extensions` 1.1.0, `pathspec` 1.1.1 and `librt` 0.16.0. `ast_serialize` is held at 0.12.1 (2026-10-03), because 0.13.0/0.13.1 (2026-10-12/17) are newer than the two-week rule allows; mypy accepts `>=0.11.2,<1.0.0`. The build backend is pinned to `setuptools==84.0.0` (2026-08-08). Frozen in `sdk/requirements-dev.lock`; `pip check` is clean. The backend lock is unchanged.
 
+**Phase 2B install (2026-10-24, UTC):** `sdk/.venv` only. `openai` 3.28.0 (uploaded 2026-10-09) as the optional SDK extra `openai` and a dev dependency, with its new transitives `httpx2` / `httpcore2` 2.13.1 (2026-09-23), `jiter` 0.17.0 (2026-09-12), `sniffio` 1.3.1 and `truststore` 0.10.4 (held: 0.10.5 is newer than the two-week rule allows); `pydantic` 2.14.0, `anyio` 4.15.1, `h11` 0.16.0 and the rest come from `backend/requirements.lock` as the constraint file. Note: `openai` 3.x uses `httpx2`, not `httpx`. Frozen in `sdk/requirements-dev.lock`; `pip check` is clean. The backend gets no new dependency, and its lock is unchanged.
+
 ## 7. Repository layout (target)
 
 This follows master plan §G. Folders are created only by the phase that fills them, with no empty layers.
@@ -409,7 +418,7 @@ This follows master plan §G. Folders are created only by the phase that fills t
 |---|---|
 | 0 | `docs/` (incl. `fixtures/`, `reports/`), `scripts/verify_phase0.py`, `.gitignore`, `.env.example` |
 | 1 | `backend/` (`pyproject.toml`, `alembic/`, `app/{main,api/otel,core,models,repositories,services/ingestion}`, `tests/`), `docker-compose.yml`, `scripts/dev` |
-| 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come) |
+| 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come). Phase 2B added `backend/app/services/{pricing,pricing_catalog}.py`, `backend/app/repositories/pricing.py`, `backend/app/models/pricing.py`, migration `0002` and `sdk/src/llm_insight_sdk/openai_adapter.py`; the seed is a CLI command (`app.cli seed-prices`), so no `scripts/seed` was needed. `metrics.py` (aggregates) is still to come |
 | 3 | `frontend/`, `backend/app/api/{overview,traces}.py` (full) |
 | 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py` |
 | 5 | CI workflow, `README.md`, `docs/FINAL_DELIVERY_REPORT.md` |

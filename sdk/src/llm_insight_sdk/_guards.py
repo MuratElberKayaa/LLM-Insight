@@ -100,6 +100,8 @@ PROMPT_VERSION = _identifier(r"[A-Za-z0-9][A-Za-z0-9._:+/-]*", 64)
 ERROR_TYPE = _identifier(r"[A-Za-z0-9_][A-Za-z0-9_.:$/-]*", 256)
 RESPONSE_ID = _opaque(r"[A-Za-z0-9_][A-Za-z0-9._:/+=-]*", 256)
 CALL_ID = _opaque(r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}", 64)
+HOST = _identifier(r"[A-Za-z0-9\[][A-Za-z0-9._:\[\]-]*", 253)  # server.address
+FINGERPRINT = _opaque(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", 128)  # openai.response.system_fingerprint
 LABEL = Rule("label", 256)  # service name, environment, span name
 
 

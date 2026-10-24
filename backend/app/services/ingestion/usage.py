@@ -1,13 +1,16 @@
 """Usage-ledger rows for inference spans (TELEMETRY_CONTRACT.md §4, ADR-13, ADR-21).
 
-One row per physical attempt, only for inference spans. Phase 1B computes no money: every
-row is `cost_status=unknown` with the reason that applies (no price catalogue exists yet,
-so a complete, consistent row is `price_missing`). Missing tokens stay NULL, never 0.
+One row per physical attempt, only for inference spans. `usage_row` builds the row with an
+unknown cost and the usage-level reason; `price_rows` then applies the cost engine
+(`app.services.pricing`) against the stored price catalogue. Missing tokens stay NULL,
+never 0, and an unpriced row keeps `cost_usd` NULL with its reason.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.services import pricing
 from app.services.ingestion import attrmap
 from app.services.ingestion.normalize import NormalizedSpan
 
@@ -42,19 +45,6 @@ def canonical_call_key(span: NormalizedSpan, provider: str) -> tuple[str, str]:
     return f"span:{span.trace_id}:{span.span_id}", "span_fallback"
 
 
-def _cost_unknown_reason(tokens: dict[str, int | None]) -> str:
-    i, o = tokens["input_tokens"], tokens["output_tokens"]
-    subsets_in = (tokens["cached_input_tokens"] or 0) + (tokens["cache_write_input_tokens"] or 0)
-    reasoning = tokens["reasoning_output_tokens"]
-    if (i is not None and subsets_in > i) or (
-        o is not None and reasoning is not None and reasoning > o
-    ):
-        return "usage_inconsistent"
-    if i is None or o is None:
-        return "usage_missing"
-    return "price_missing"
-
-
 def usage_row(project_id: int, span: NormalizedSpan) -> dict[str, Any] | None:
     a = span.attributes
     if not attrmap.is_inference(a):
@@ -87,11 +77,43 @@ def usage_row(project_id: int, span: NormalizedSpan) -> dict[str, Any] | None:
         "response_model": a.get("gen_ai.response.model"),
         **tokens,
         "usage_source": usage_source,
-        "cost_usd": None,
-        "cost_status": "unknown",
-        "cost_unknown_reason": _cost_unknown_reason(tokens),
-        "price_version": None,
-        "model_price_id": None,
+        # Priced later by `price_rows`; until then the reason is the usage-level one.
+        **pricing.unknown(
+            pricing.usage_unknown_reason(pricing.Tokens.from_row(tokens), usage_source)
+            or "price_missing"
+        ).as_columns(),
         "provenance": span.provenance,
         "started_at": ns_to_datetime(span.start_ns),
     }
+
+
+def price_model_keys(rows: Sequence[dict[str, Any]]) -> set[tuple[str, str]]:
+    """The (provider, model) pairs whose stored prices `price_rows` may need."""
+    keys = set()
+    for r in rows:
+        model = pricing.priced_model(r["requested_model"], r["response_model"])
+        if model is not None:
+            keys.add((r["provider"], model))
+    return keys
+
+
+def price_rows(
+    rows: Sequence[dict[str, Any]],
+    spans: dict[tuple[str, str], NormalizedSpan],
+    prices: Sequence[pricing.Price],
+) -> None:
+    """Apply the cost engine to new usage rows (in place). Runs once, at insert: the rows are
+    then written with ON CONFLICT DO NOTHING and never updated, so a re-export or a later
+    catalogue change never alters a stored cost."""
+    for r in rows:
+        outcome = pricing.assess(
+            tokens=pricing.Tokens.from_row(r),
+            usage_source=r["usage_source"],
+            provider=r["provider"],
+            requested_model=r["requested_model"],
+            response_model=r["response_model"],
+            attributes=spans[(r["trace_id"], r["span_id"])].attributes,
+            started_at=r["started_at"],
+            prices=prices,
+        )
+        r.update(outcome.as_columns())

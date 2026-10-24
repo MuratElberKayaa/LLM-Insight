@@ -248,9 +248,14 @@ A `usage_records` row is created **only** for inference spans (ADR-13): one row 
 - Subset attributes (`cache_read`, `cache_write`, `reasoning`) are emitted by semconv only "when available and non-zero". An absent subset is stored as `NULL` (not reported) and treated as 0 **only inside the cost formula**. The LLM Insight SDK always emits provider-reported subsets explicitly, including 0.
 - Consistency check: if `cached_input_tokens + cache_write_input_tokens > input_tokens` or `reasoning_output_tokens > output_tokens`, the tokens are stored as received, with `cost_status=unknown` and `cost_unknown_reason=usage_inconsistent`.
 
-**Cost** (Decimal, USD; full formula in `METRICS_CATALOG.md` M10):
+**Cost** (Decimal, USD; full formula in `METRICS_CATALOG.md` M10; implementation, catalogue and rounding in `PRICING.md`):
 - The price is the `model_prices` row whose `model` exactly equals `response_model` (falling back to `requested_model`) and whose `effective_from` ≤ the span start. There is no fuzzy or prefix model matching.
 - If a needed price or token count is unknown, then `cost_usd=NULL`, `cost_status=unknown`, and `cost_unknown_reason` is `price_missing`, `usage_missing` or `usage_inconsistent`. **Unknown cost is NULL, never 0.** Cached tokens are not silently priced at the full input rate.
+- **Phase 2B precisions (no ADR or column change; `PRICING.md` §3–4):**
+  - *Fallback* means: `requested_model` is used only when the span has no `response_model`. A response model without its own price row is `price_missing`; it is never priced at the requested alias's rate.
+  - Only `usage_source=provider_reported` usage is priced. Estimated or unknown usage gives `cost_unknown_reason=usage_missing` (T17).
+  - A stored price is a standard-tier text price. For `gen_ai.provider.name=openai` it applies only when `openai.response.service_tier` is `default` and `server.address` is `api.openai.com`; Flex, Batch, Fast/`priority`, `scale`, an unreported tier and regional endpoints are `price_missing`.
+  - The row is priced once, in the ingest transaction that first writes it, and never updated: re-exports and later catalogue versions do not change a stored cost.
 
 ## 5. Provenance (ADR-21; aggregation rules in `METRICS_CATALOG.md`)
 

@@ -26,7 +26,7 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 | Project ingest key `X-Project-Key` | Instrumented app (`OTEL_EXPORTER_OTLP_TRACES_HEADERS`) | Format `lli_<prefix>_<secret>`, at least 256-bit random secret. DB stores `prefix` plus `key_hash = HMAC-SHA256(LLMI_KEY_PEPPER, key)`. Lookup is by prefix with a constant-time compare (`hmac.compare_digest`). It can be revoked with `revoked_at`. The raw key is printed once by the CLI init command. |
 | `LLMI_KEY_PEPPER` | Backend env only | Random value, at least 32 bytes. Rotating it invalidates all keys (documented). |
 | `LLMI_ADMIN_TOKEN` (CR-06) | Backend env plus Next.js **server** env (`LLMI_API_TOKEN`) | Sent as a Bearer token on `/api/v1/*` and compared in constant time. It is never in a `NEXT_PUBLIC_*` variable, the client bundle, cookies, `localStorage` or HTML (T42). |
-| `OPENAI_API_KEY` | Demo app env only, real mode only | Never stored or exported in spans (T15). |
+| `OPENAI_API_KEY` | Demo app env only, real mode only | Stays inside the application's `openai` client. The SDK adapter never reads, records or exports it, nor any request header (T15; Phase 2B tests with a fake key check the raw OTLP bodies, the DB, the API and the logs). No test uses a real key. |
 | `POSTGRES_PASSWORD` | Compose env | Local only. |
 
 **Logging rules:**
@@ -70,6 +70,8 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 ## 6. Cost safety
 
 - Tests and CI use the mock provider only (`LLMI_PROVIDER_MODE=mock`).
+- **OpenAI adapter tests are offline (Phase 2B):** responses come from SYNTHETIC fixtures behind an `httpx2.MockTransport`, and each test blocks every non-loopback name resolution and connection, so a request that escaped the fake transport fails the test instead of reaching OpenAI. A test proves the guard stops the official client. `provenance="real"` is refused for a mock transport.
+- **Cost figures are estimates** from provider-reported usage and the verified catalogue (`PRICING.md`), never an invoice; unknown cost is `NULL`.
 - Real calls need `LLMI_ALLOW_REAL_LLM=true`, a present `OPENAI_API_KEY`, a `budget_usd` per experiment, and explicit user approval per run.
 
 ## 7. Threat notes (local demo)

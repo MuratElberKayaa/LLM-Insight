@@ -4,8 +4,10 @@ Runs inside the caller's transaction; the caller commits. Order inside the trans
 1. derived `traces` rows exist (INSERT ... ON CONFLICT DO NOTHING; the FK target of spans)
 2. spans: INSERT ... ON CONFLICT DO NOTHING; first write wins, re-exports change nothing.
    A re-export whose content differs from the stored span is counted (never merged)
-3. usage rows only for spans *inserted by this batch*, ON CONFLICT DO NOTHING on both unique
-   keys; a skipped row is a call-identity collision (e.g. double instrumentation)
+3. usage rows only for spans *inserted by this batch*, priced once against the stored
+   `model_prices` (Phase 2B), then ON CONFLICT DO NOTHING on both unique keys; a skipped
+   row is a call-identity collision (e.g. double instrumentation). Stored usage rows are
+   never updated, so their cost never changes after the first write
 4. every touched trace is recomputed from all of its stored spans
 
 Rows are written in sorted key order so concurrent batches lock rows in the same order.
@@ -20,9 +22,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models import Span, Trace, UsageRecord
+from app.repositories import pricing
 from app.services.ingestion import attrmap
 from app.services.ingestion.normalize import NormalizedSpan
-from app.services.ingestion.usage import ns_to_datetime, usage_row
+from app.services.ingestion.usage import ns_to_datetime, price_model_keys, price_rows, usage_row
 
 # Everything a span stores from the payload. Two payloads with the same
 # (project_id, trace_id, span_id) and equal values here are one span exported twice.
@@ -240,6 +243,9 @@ def persist_batch(
         for s in unique
         if (s.trace_id, s.span_id) in inserted and (row := usage_row(project_id, s)) is not None
     ]
+    if candidates:
+        prices = pricing.load_prices(session, price_model_keys(candidates))
+        price_rows(candidates, {(s.trace_id, s.span_id): s for s in unique}, prices)
     usage_inserted = _insert_usage(session, candidates)
     _recompute_traces(session, project_id, trace_ids)
     return PersistResult(
