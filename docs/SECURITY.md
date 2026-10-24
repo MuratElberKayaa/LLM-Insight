@@ -9,7 +9,13 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 - **No events stored.** Exception messages and stack traces are dropped; only `exception.type` is kept, and only when it is a type identifier.
 - **No status descriptions stored** (Phase 1C, R21). OTLP `Status.message` is never persisted (`spans.status_message` is always `NULL`), and `error.type` / `exception.type` are kept only when they match an identifier pattern (no spaces or control characters). Errors are described by the span status plus that identifier.
 - **Credential keys** are recognised by explicit classification (credential stems, credential words such as singular `token`, and qualified `tokens`/`key`), not by substring. Token *counters* such as `gen_ai.request.max_tokens` are kept (`TELEMETRY_CONTRACT.md` §3).
-- **Truncation.** String attribute values are capped at 256 chars and arrays at 16 items. Identifier strings (`gen_ai.response.id`, `gen_ai.provider.name`, `llminsight.call_id`, `gen_ai.prompt.version`, `error.type`) are dropped instead of truncated when over their bound.
+- **String-value safety (R08, Phase 1 final).** Every persisted untrusted string must pass `TELEMETRY_CONTRACT.md` §3.1, checked on the full value before any truncation. That covers span name, scope name/version, model, provider, operation, error type, prompt name/version, route, host, versions, the resource labels and the opaque IDs.
+  - Fields with a known format have an explicit pattern and maximum length.
+  - Unsafe characters (control, bidi/zero-width, separators) and obvious credential formats are refused everywhere: `sk-`/`lli_` keys, cloud and VCS tokens, JWTs, private keys, `Bearer`/`Basic` values, URL user-info and `secret=` assignments.
+  - E-mail addresses and phone/ID/card/IBAN-like numbers are refused in identifiers and labels.
+  - A refused value is dropped, or the span name becomes `redacted_span`; it is counted, and it never appears in the DB, logs, error bodies or API responses.
+  - **This is a heuristic.** It catches obvious formats only and cannot guarantee that no secret or personal data is ever stored. Instrumentations must keep secrets and content out of metadata.
+- **Truncation.** Free-text labels (span name, scope name, service name/namespace, environment) are capped at 256 chars (scope version 64) after the checks; arrays keep 16 items. Identifiers are dropped instead of truncated when over their bound.
 - **Test-case content.** Test-case input is the only free text stored. It is entered by a human, must be synthetic or explicitly redacted, and passes server-side redaction before insert (Phase 4, T35). Redaction targets at minimum email addresses, phone numbers, IBAN/card-like digit runs and API-key-like tokens. Redaction is best effort and not a guarantee, so content must still be synthetic.
 - **Review text.** Failure Review `evidence` and `hypothesis` are also human-written free text, and pass the same redaction before insert. Reviewers are told not to paste raw prompts.
 
@@ -70,7 +76,7 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 
 | Threat | Mitigation in MVP | Residual risk |
 |---|---|---|
-| Sensitive prompt / PII leaks into the DB | Allowlist, always-deny list, no events, no status messages, identifier-only error types, truncation | Allowlisted free-form strings (e.g. `http.route`, span names, model names) could carry PII if misused, and an identifier-shaped secret (no spaces) passes the `error.type` pattern (R08) |
+| Sensitive prompt / PII leaks into the DB | Allowlist, always-deny list, no events, no status messages, per-field formats, credential and personal-data value checks, unsafe-character rejection (R08) | Heuristics miss non-obvious secrets (an unprefixed random token in a model-shaped value) and names or free-form personal data in labels (R08, mitigated not eliminated) |
 | Slow or stalled request bodies | Body-read deadline (`408`, connection closed) after auth; nothing is written before the body is complete | Slow headers and connection exhaustion are not bounded by the app (R24); loopback bind |
 | Key theft from DB dump | HMAC with an env pepper | DB plus env both leaked compromises the keys; revocation is manual |
 | Cross-project read | Mandatory `project` scope; another project's trace, an unknown trace and an unknown project get one byte-identical `404` (no `403` that would confirm existence) (T28) | Single admin token can read all projects (single-project MVP) |
@@ -82,6 +88,14 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 | Secret in client bundle | Server-only env, T42 bundle scan | Developer error with `NEXT_PUBLIC_*`, caught by the scan |
 | Accidental public exposure | Bind to 127.0.0.1, no public ingress | Changing the bind is a manual act and needs a new review |
 | Malicious attribute content (XSS) | Escaped rendering (T41) | — |
+
+**Standing limitations (Phase 1 closure):**
+- **Public deployment is NOT authorized.** The backend is loopback-only; any other bind needs the review below.
+- Client-supplied provenance is an assertion, not proof of provider origin (`provenance_verified: false`).
+- Unknown cost stays `NULL`, never `0` (ADR-11).
+- In-process counters and rate limits reset on restart (R23, CR-08).
+- Slow request headers and connection exhaustion are not fully mitigated (R24).
+- Protocol: `408` for an incomplete body after the deadline (OTLP exporters may not retry it), `413` for size/span limits, `503` for temporary unavailability. There is no `403` with the local all-project admin token, and a cross-project trace lookup returns the same `404` as a missing trace.
 
 **Before any public deployment**, the following are mandatory and out of MVP scope:
 - real user auth (session/cookie plus CSRF review)

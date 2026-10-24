@@ -224,3 +224,13 @@ Not changed: ADR-01…21, CR-01…09, the migration, the models, the lockfile, `
 - the live-process smoke and index plans in §4 matching the contract.
 
 **Phase 1 is complete only after your review**; no tag was created and Phase 2 has not started.
+
+## 11. Post-review addendum (Phase 1 closure)
+
+Phase 1C was accepted by the user subject to closing R08. The items this report left open are resolved in `reports/phase-1-final.md`:
+- **§2 / §8 `408` interpretation:** accepted by the user. `408` is used for an incomplete body after the deadline, with no partial DB write; OTLP exporters may not retry it. `413` stays for size and span-count limits, `503` for temporary unavailability.
+- **§2 no-`403` rule:** confirmed. A cross-project trace lookup returns the same `404` as a missing trace.
+- **§8 R08 (allowlisted strings not scanned):** mitigated by the string-value safety rules (`TELEMETRY_CONTRACT.md` §3.1). Two statements in this report are superseded:
+  - §2 / §1: a NUL byte inside a label is no longer replaced; the value is dropped (span name → `redacted_span`).
+  - Model names are no longer truncated; they are dropped above 256 chars.
+- The test counts and gate results in §3 describe the `f63e1e1` tree. The final Phase 1 counts are in `reports/phase-1-final.md`.

@@ -350,7 +350,7 @@ The backend binds to `127.0.0.1`.
 2. Exactly one `Authorization: Bearer <LLMI_ADMIN_TOKEN>` header. The scheme is case-insensitive. The token is compared as SHA-256 digests with `hmac.compare_digest`. Missing, multiple, malformed and wrong headers all get one identical `401 unauthorized` with `WWW-Authenticate: Bearer`, and each one consumes from step 1. An ingest key is not a read credential.
 3. The `/api/v1` bucket (`LLMI_RATE_LIMIT_API_*`) keyed by client address. There is a single verified token, so this is per token and address → `429 rate_limited` + `Retry-After`.
 
-**No `403`.** The single admin token (CR-06) reads every project, so there is no authenticated-but-forbidden state. A `403` for another project's trace would confirm that the trace exists. An unknown project, an unknown trace and another project's trace all return the same `404 not_found`, with identical body and headers (T28).
+**No `403`** (confirmed by the user at the Phase 1 closure). The single admin token (CR-06) reads every project, so there is no authenticated-but-forbidden state. A `403` for another project's trace would confirm that the trace exists. An unknown project, an unknown trace and another project's trace all return the same `404 not_found`, with identical body and headers (T28).
 
 **Error codes:** `unauthorized` (401), `not_found` (404), `method_not_allowed` (405), `invalid_request` (422, with `fields`: the offending parameter *names*, never their values), `rate_limited` (429), `internal_error` (500), `storage_unavailable` (503 + `Retry-After: 5`). Unknown `/api/*` routes use the same shape.
 

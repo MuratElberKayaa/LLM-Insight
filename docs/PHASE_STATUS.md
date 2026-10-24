@@ -1,13 +1,14 @@
 # LLM Insight — Phase Status
 
-Last updated: 2026-10-24 (Phase 1C delivered, awaiting review). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
+Last updated: 2026-10-24 (Phase 1 closed: final security hardening delivered, `phase-1` tag; awaiting architectural review before Phase 2). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
 
 | Phase | Window (target) | State |
 |---|---|---|
 | 0 Definition | 24 Oct | **Closed.** ADR-13…21 accepted; closure commit `0929a14` approved by the user |
 | 1A Backend foundation | 24 Oct | Delivered (`reports/phase-1a.md`); reviewed by the user (Phase 1B instruction) |
 | 1B OTLP ingest | 25–27 Oct | Delivered (`reports/phase-1b.md`); accepted conditionally by the user (Phase 1C instruction), the conditions being the 1C tasks |
-| 1C Phase 1 integration and acceptance | 25–27 Oct | **Delivered; awaiting user review** (`reports/phase-1c.md`). Phase 1 is complete only after that review; the `phase-1` tag is not created yet |
+| 1C Phase 1 integration and acceptance | 25–27 Oct | Delivered (`reports/phase-1c.md`); accepted by the user subject to closing R08 |
+| 1 Final security hardening and closure | 24 Oct | **Closed** (`reports/phase-1-final.md`): R08 mitigated, protocol decisions recorded, all Phase 1 gates pass, `phase-1` tag on the closure commit. Awaiting architectural review before Phase 2 |
 | 2 SDK / usage & cost | 28–30 Oct | Not started |
 | 3 Dashboard | 31 Oct–2 Nov | Not started |
 | 4 Review / dataset / experiments | 3–4 Nov | Not started |
@@ -61,7 +62,16 @@ Last updated: 2026-10-24 (Phase 1C delivered, awaiting review). Update this file
 - [x] Task E: idempotent re-exports, separate retry attempts, provider-namespaced keys, differing payloads under one identity counted (first write kept)
 - [x] Task F: full suite **626 passed, 0 failed, 0 skipped** with a real database required; official exporter round trip; Ruff; `pip check`; compose; migration cycle + `alembic check`; live `python -m app` smoke; doc check (report §3)
 - [x] Test matrix: T01–T08, T25–T28, T30, T31, T44 `PASS (phase-1c)`; T14, T16, T18, T23, T43, T48 still `PARTIAL` (owned by Phases 2–4)
-- [ ] **User review of Phase 1C** (the Phase 1 gate), then the `phase-1` tag and, if wanted, a `reports/phase-1.md` gate summary
+- [x] User review of Phase 1C: accepted subject to closing R08 (Phase 1 final instruction, 2026-10-24)
+
+## Phase 1 — Final security hardening and closure (evidence: `reports/phase-1-final.md`)
+- [x] R08: every persisted untrusted string passes `TELEMETRY_CONTRACT.md` §3.1 (per-field format and length, unsafe characters, obvious credentials, personal-data shapes; checked before truncation; dropped or `redacted_span`, counted). Stated as a heuristic, not a guarantee
+- [x] Adversarial regression: synthetic secrets in span name, request/response model, `error.type`, resource attributes, scope name/version, `prompt_version` (and 11 more fields), plain and gzip, absent from the DB dump, API responses and DEBUG logs; valid GenAI metadata and token counters preserved; mutation check (detectors disabled → tests fail)
+- [x] Protocol decisions recorded: `408` incomplete body (not retried by OTLP exporters, no partial write), `413` size/span limits, `503` temporary unavailability, no `403`, cross-project `404` identical to missing
+- [x] Risks: R08 mitigated (residual Low); R23, R24 open and accepted for local use; public deployment not authorized; client provenance is not proof; unknown cost stays `NULL`
+- [x] Verification: full suite **876 passed, 0 failed, 0 skipped** (real PostgreSQL); Ruff; `pip check`; `alembic check` + migration cycle; compose; doc check; `git diff --check`
+- [x] Closure commit and `phase-1` tag (`phase-0` unchanged)
+- [ ] **Architectural review before Phase 2**
 
 ## Phase 2 — SDK, usage and cost
 - [ ] Semconv pin re-checked (ADR-15)

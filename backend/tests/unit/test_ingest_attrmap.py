@@ -52,8 +52,8 @@ def test_always_denied_keys_are_never_stored(key):
 
 def test_deny_list_overrides_a_misconfigured_allowlist(monkeypatch):
     broken = dict(attrmap.SPAN_ALLOWLIST)
-    broken["gen_ai.input.messages"] = attrmap.STR
-    broken["http.request.header.authorization"] = attrmap.STR
+    broken["gen_ai.input.messages"] = attrmap.LABEL
+    broken["http.request.header.authorization"] = attrmap.LABEL
     monkeypatch.setattr(attrmap, "SPAN_ALLOWLIST", broken)
     m = attrmap.map_attributes(
         kvs({"gen_ai.input.messages": "hi", "http.request.header.authorization": "Bearer x"}),
@@ -145,28 +145,38 @@ def test_numbers_accept_int_and_finite_double():
     assert m.values == {"gen_ai.request.temperature": 0.7, "gen_ai.request.top_p": 1}
 
 
-def test_strings_truncated_to_256_arrays_to_16_and_nul_replaced():
+def test_labels_truncated_to_256_arrays_to_16_identifiers_never_truncated():
+    """Phase 1 final (R08): only free-text labels are truncated; identifiers such as model
+    names are dropped when too long, and a NUL byte drops the value instead of repairing it."""
     m = span_map(
         {
-            "gen_ai.request.model": "m" * 300,
+            "gen_ai.request.model": "m" * 256,
+            "gen_ai.response.model": "m" * 257,
             "gen_ai.response.finish_reasons": [f"r{i}" for i in range(20)],
             "http.route": "/a\x00b",
         }
     )
-    assert m.values["gen_ai.request.model"] == "m" * 256
-    assert m.values["gen_ai.response.finish_reasons"] == [f"r{i}" for i in range(16)]
-    assert m.values["http.route"] == "/a�b"
-    assert m.dropped == 0
+    assert m.values == {
+        "gen_ai.request.model": "m" * 256,
+        "gen_ai.response.finish_reasons": [f"r{i}" for i in range(16)],
+    }
+    assert m.dropped == 2
+    r = attrmap.map_resource(kvs({"service.name": "s" * 300}))
+    assert r.values == {"service.name": "s" * 256} and r.dropped == 0
 
 
-@pytest.mark.parametrize(
-    "key,limit",
-    [("gen_ai.response.id", 256), ("llminsight.call_id", 64), ("gen_ai.provider.name", 64)],
-)
+@pytest.mark.parametrize("key,limit", [("gen_ai.response.id", 256), ("gen_ai.provider.name", 64)])
 def test_identity_strings_are_dropped_not_truncated_when_too_long(key, limit):
     assert span_map({key: "x" * limit}).values == {key: "x" * limit}
     m = span_map({key: "x" * (limit + 1)})
     assert m.values == {} and m.dropped == 1
+
+
+def test_call_id_must_be_a_uuid_string():
+    uuid = "5f0c6e1a-3b7d-4c2e-9a41-000000000001"
+    assert span_map({"llminsight.call_id": uuid}).values == {"llminsight.call_id": uuid}
+    for bad in ("x" * 64, uuid + "0", uuid[:-1], "call-1"):
+        assert span_map({"llminsight.call_id": bad}).values == {}
 
 
 def test_duplicate_key_first_value_wins_and_repeat_is_counted():

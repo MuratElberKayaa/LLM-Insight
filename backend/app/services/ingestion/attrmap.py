@@ -12,10 +12,12 @@ change to the tables below needs a new mapping version.
 import math
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
+
+from app.services.ingestion import sensitive
 
 SCHEMA_VERSION = "llminsight.attrmap.v1"
 
@@ -31,10 +33,18 @@ INT32_MAX = 2**31 - 1  # usage_records.attempt_id is INT
 
 @dataclass(frozen=True)
 class Spec:
-    """Expected type of an allowlisted attribute.
+    """Expected type and format of an allowlisted attribute.
 
     `exact_max`: identity strings are dropped (not truncated) when longer, because a
     truncated identifier would be a different identifier.
+
+    `text_class` (strings and string arrays only, R08 defence in depth):
+    - "identifier": a fixed format without whitespace (`pattern`, full match); credential and
+      personal-data checks apply; dropped, never truncated
+    - "opaque": a provider/SDK-generated identifier (response ID, call ID, fingerprint);
+      format and credential checks only, because random IDs can contain digit runs
+    - "label": free text such as a service name; unsafe characters, credentials and personal
+      data are dropped, otherwise truncated to MAX_STRING
     """
 
     kind: str  # "str" | "int" | "num" | "bool" | "str_array"
@@ -44,20 +54,51 @@ class Spec:
     choices: frozenset[str] | None = None
     non_empty: bool = False
     pattern: re.Pattern[str] | None = None  # full match; a mismatch is dropped, never repaired
+    text_class: str = "identifier"
 
 
-STR = Spec("str")
 INT = Spec("int")
 NUM = Spec("num")
 BOOL = Spec("bool")
-STR_ARRAY = Spec("str_array")
 TOKENS = Spec("int", min_value=0)
+
+
+def _identifier(pattern: str, max_len: int, *, opaque: bool = False) -> Spec:
+    return Spec(
+        "str",
+        exact_max=max_len,
+        non_empty=True,
+        pattern=re.compile(pattern),
+        text_class="opaque" if opaque else "identifier",
+    )
+
+
+LABEL = Spec("str", non_empty=True, text_class="label")
+
+# Formats (Phase 1 final, R08). Model IDs cover snapshots ("gpt-4o-mini-2024-07-18"),
+# fine-tunes ("ft:gpt-4o-mini:org:x:id"), paths ("models/gemini-1.5-pro",
+# "meta-llama/Llama-3-8B") and versions ("claude-3-sonnet@20240229").
+MODEL = _identifier(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]*", MAX_STRING)
+PROVIDER = _identifier(r"[A-Za-z0-9][A-Za-z0-9._-]*", 64)  # usage provider LEN(64)
+OPERATION = _identifier(r"[a-z][a-z0-9_.]*", 64)
+KEYWORD = _identifier(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", 64)
+VERSION = _identifier(r"[A-Za-z0-9][A-Za-z0-9._+-]*", 128)
+LABEL_ID = _identifier(r"[A-Za-z0-9][A-Za-z0-9._:+/-]*", 128)
+HOST = _identifier(r"[A-Za-z0-9\[][A-Za-z0-9._:\[\]-]*", 253)
+SCHEME = _identifier(r"[A-Za-z][A-Za-z0-9+.-]*", 16)
+# A route template: printable ASCII from '/', never a query ('?') or fragment ('#').
+ROUTE = _identifier(r"/[\x21\x22\x24-\x3e\x40-\x7e]*", MAX_STRING)
+RESPONSE_ID = _identifier(r"[A-Za-z0-9_][A-Za-z0-9._:/+=-]*", MAX_STRING, opaque=True)
+# The contract defines llminsight.call_id as a UUID string (usage call_id <= 64).
+CALL_ID = _identifier(r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}", 64, opaque=True)
+FINGERPRINT = _identifier(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", 128, opaque=True)
+FINISH_REASONS = Spec(
+    "str_array", exact_max=64, non_empty=True, pattern=KEYWORD.pattern, text_class="identifier"
+)
 
 # Bounded identifiers instead of free text (Phase 1C). A prompt version is a label that
 # Phase 4 compares with experiment versions (LEN(64)); truncating it would merge versions.
-PROMPT_VERSION = Spec(
-    "str", exact_max=64, non_empty=True, pattern=re.compile(r"[A-Za-z0-9][A-Za-z0-9._:+/-]*")
-)
+PROMPT_VERSION = _identifier(r"[A-Za-z0-9][A-Za-z0-9._:+/-]*", 64)
 # semconv `error.type` is a low-cardinality identifier ("timeout", "500",
 # "openai.RateLimitError", "_OTHER"); anything with spaces or control characters is a
 # description, not a type, and is dropped (R21).
@@ -65,34 +106,31 @@ ERROR_TYPE_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:$/-]*")
 ERROR_TYPE = Spec("str", exact_max=MAX_STRING, non_empty=True, pattern=ERROR_TYPE_RE)
 
 RESOURCE_ALLOWLIST: dict[str, Spec] = {
-    k: STR
-    for k in (
-        "service.name",
-        "service.version",
-        "service.namespace",
-        "deployment.environment.name",
-        "telemetry.sdk.name",
-        "telemetry.sdk.language",
-        "telemetry.sdk.version",
-        "llminsight.sdk.version",
-    )
+    "service.name": LABEL,
+    "service.version": VERSION,
+    "service.namespace": LABEL,
+    "deployment.environment.name": LABEL,
+    "telemetry.sdk.name": KEYWORD,
+    "telemetry.sdk.language": KEYWORD,
+    "telemetry.sdk.version": VERSION,
+    "llminsight.sdk.version": VERSION,
 }
 
 SPAN_ALLOWLIST: dict[str, Spec] = {
     # GenAI (Development semconv, pinned in ADR-15)
-    "gen_ai.operation.name": Spec("str", non_empty=True),
-    "gen_ai.provider.name": Spec("str", exact_max=64, non_empty=True),  # usage provider LEN(64)
-    "gen_ai.request.model": STR,
-    "gen_ai.response.model": STR,
-    "gen_ai.response.id": Spec("str", exact_max=MAX_STRING, non_empty=True),
-    "gen_ai.response.finish_reasons": STR_ARRAY,
+    "gen_ai.operation.name": OPERATION,
+    "gen_ai.provider.name": PROVIDER,
+    "gen_ai.request.model": MODEL,
+    "gen_ai.response.model": MODEL,
+    "gen_ai.response.id": RESPONSE_ID,
+    "gen_ai.response.finish_reasons": FINISH_REASONS,
     "gen_ai.request.max_tokens": Spec("int", min_value=0),  # a count, not a credential
     "gen_ai.request.temperature": NUM,
     "gen_ai.request.top_p": NUM,
     "gen_ai.request.seed": INT,
     "gen_ai.request.stream": BOOL,
-    "gen_ai.output.type": STR,
-    "gen_ai.prompt.name": STR,
+    "gen_ai.output.type": KEYWORD,
+    "gen_ai.prompt.name": LABEL_ID,
     "gen_ai.prompt.version": PROMPT_VERSION,
     "gen_ai.usage.input_tokens": TOKENS,
     "gen_ai.usage.output_tokens": TOKENS,
@@ -101,26 +139,33 @@ SPAN_ALLOWLIST: dict[str, Spec] = {
     "gen_ai.usage.reasoning.output_tokens": TOKENS,
     # Stable core
     "error.type": ERROR_TYPE,
-    "server.address": STR,
+    "server.address": HOST,
     "server.port": INT,
     # OpenAI conventions
-    "openai.request.service_tier": STR,
-    "openai.response.service_tier": STR,
-    "openai.response.system_fingerprint": STR,
-    "openai.api.type": STR,
+    "openai.request.service_tier": KEYWORD,
+    "openai.response.service_tier": KEYWORD,
+    "openai.response.system_fingerprint": FINGERPRINT,
+    "openai.api.type": KEYWORD,
     # HTTP (root span)
-    "http.request.method": STR,
-    "http.route": STR,
+    "http.request.method": KEYWORD,
+    "http.route": ROUTE,
     "http.response.status_code": INT,
-    "url.scheme": STR,
+    "url.scheme": SCHEME,
     # LLM Insight
-    "llminsight.call_id": Spec("str", exact_max=64, non_empty=True),  # usage call_id <= 64
+    "llminsight.call_id": CALL_ID,
     "llminsight.attempt": Spec("int", min_value=1, max_value=INT32_MAX),
     "llminsight.provenance": Spec("str", choices=PROVENANCE_VALUES),
     "llminsight.usage_source": Spec("str", choices=USAGE_SOURCE_VALUES),
-    "llminsight.validation.rule": STR,
+    "llminsight.validation.rule": LABEL_ID,
     "llminsight.validation.passed": BOOL,
 }
+
+# Span and scope fields outside the attribute map (normalize.py). Unsafe values are replaced
+# by these documented fallbacks (name) or NULL (scope), never stored.
+SPAN_NAME = LABEL
+SCOPE_NAME = LABEL
+SCOPE_VERSION = Spec("str", non_empty=True, text_class="label")
+REDACTED_SPAN_NAME = "redacted_span"
 
 # ADR-14: legacy name -> standard name. The standard name always wins when both are present.
 SPAN_ALIASES: dict[str, str] = {
@@ -202,12 +247,31 @@ def is_denied(key: str) -> bool:
 
 
 # ---------------------------------------------------------------- value handling
-def clean_str(s: str, limit: int = MAX_STRING) -> str:
-    """Truncate to `limit` characters; PostgreSQL TEXT/JSONB cannot hold U+0000."""
-    return s[:limit].replace("\x00", "�")
-
-
+# U+0000 (which PostgreSQL TEXT/JSONB cannot hold) is a control character, so `safe_string`
+# drops any value containing it instead of storing a repaired copy.
 _MISSING = object()
+
+
+def safe_string(spec: Spec, s: str, limit: int = MAX_STRING) -> str | None:
+    """The value to store for an untrusted string, or None if it must be dropped.
+
+    Every check runs on the complete original value, before any truncation, so a secret can
+    never survive as a truncated prefix. Rejected values are returned to nobody."""
+    if spec.non_empty and not s:
+        return None
+    if spec.choices is not None:
+        return s if s in spec.choices else None  # fixed vocabulary: nothing else to check
+    if sensitive.has_unsafe_characters(s) or sensitive.contains_credential(s):
+        return None
+    if spec.text_class != "opaque" and sensitive.contains_personal_data(
+        s, free_text=spec.text_class == "label"
+    ):
+        return None
+    if spec.exact_max is not None and len(s) > spec.exact_max:
+        return None
+    if spec.pattern is not None and not spec.pattern.fullmatch(s):
+        return None
+    return s if spec.exact_max is not None else s[:limit]
 
 
 def _coerce(spec: Spec, v: AnyValue) -> Any:
@@ -215,18 +279,8 @@ def _coerce(spec: Spec, v: AnyValue) -> Any:
     if spec.kind == "str":
         if which != "string_value":
             return _MISSING
-        s = v.string_value
-        if spec.non_empty and not s:
-            return _MISSING
-        if spec.exact_max is not None:
-            if len(s) > spec.exact_max or "\x00" in s:
-                return _MISSING
-            if spec.pattern is not None and not spec.pattern.fullmatch(s):
-                return _MISSING
-            return s
-        if spec.choices is not None and s not in spec.choices:
-            return _MISSING
-        return clean_str(s)
+        value = safe_string(spec, v.string_value)
+        return _MISSING if value is None else value
     if spec.kind == "int":
         if which != "int_value":
             return _MISSING
@@ -250,7 +304,9 @@ def _coerce(spec: Spec, v: AnyValue) -> Any:
         items = v.array_value.values
         if any(i.WhichOneof("value") != "string_value" for i in items):
             return _MISSING
-        return [clean_str(i.string_value) for i in items[:MAX_ARRAY]]
+        item_spec = replace(spec, kind="str")
+        kept = [safe_string(item_spec, i.string_value) for i in items[:MAX_ARRAY]]
+        return _MISSING if any(k is None for k in kept) else kept
     raise AssertionError(f"unknown spec kind {spec.kind}")
 
 
