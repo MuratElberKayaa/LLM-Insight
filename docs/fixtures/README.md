@@ -4,7 +4,7 @@ All fixtures are **SYNTHETIC**. They don't come from a real provider call and mu
 
 ## `otlp_trace_3span.json`
 
-This file is an OTLP/JSON rendering of one `ExportTraceServiceRequest`, following `TELEMETRY_CONTRACT.md` §6. It is illustrative and hasn't been parsed by `opentelemetry-proto` yet; that happens in Phase 1, as part of T01.
+This file is an OTLP/JSON rendering of one `ExportTraceServiceRequest`, following `TELEMETRY_CONTRACT.md` §6. It is illustrative. Phase 1B parses it with `opentelemetry-proto` (hex IDs converted first, `backend/tests/otlp.py`) as part of T01.
 
 - **Encoding notes:**
   - IDs are lowercase hex (OTLP/JSON rule).
@@ -19,7 +19,7 @@ POST /v1/summarize          SERVER   b7ad6b7169203331  0 → 1240 ms   (scope: f
 └── validate_output         INTERNAL 53995c3f42cd8ad8  1215 → 1228 ms
 ```
 
-### Expected ingest result (contract, NOT RUN)
+### Expected ingest result (contract; verified in Phase 1B by `test_fixture_expected_ingest_result`, see `reports/phase-1b.md`)
 
 1. `POST /v1/traces` with a valid key returns HTTP `200` and an `ExportTraceServiceResponse` with `partial_success` unset.
 2. `traces`: 1 row. `service_name=demo-summarizer`, `status=ok`, `prompt_version=v1`, `provenance=synthetic`, duration 1240 ms.

@@ -359,6 +359,8 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 
 **Phase 1A install (2026-10-24):** the backend runtime and dev pins above were re-checked on PyPI and installed into `backend/.venv`. The OTel/protobuf, provider and eval pins are not installed until the phase that uses them. Transitive versions are frozen in `backend/requirements.lock`. Three transitive packages were held below their newest release to keep the two-week rule: `starlette` 1.7.0 (1.10.0 was released 2026-10-24), `certifi` 2026.7.22 and `pluggy` 1.6.0. `opentelemetry-api` 1.45.1 arrives transitively through `fastapi` 0.143.0.
 
+**Phase 1B install (2026-10-24):** the OTel/protobuf pins above were re-checked on PyPI and installed into `backend/.venv`. Runtime: `opentelemetry-proto` 1.45.1, `protobuf` 7.36.2, `googleapis-common-protos` 1.75.5. Dev only, for the standard-exporter round trip (T01-S3): `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` 1.45.1. Their transitives (`opentelemetry-semantic-conventions`, `-exporter-otlp-proto-common` / `-otlp-common` / `-http-transport` 0.66b1 or 1.45.1, `requests` 2.34.2, `urllib3` 2.8.0, `charset-normalizer` 3.5.2) were all first uploaded on or before 2026-10-10. No existing pin changed; `pip check` is clean.
+
 ## 7. Repository layout (target)
 
 This follows master plan §G. Folders are created only by the phase that fills them, with no empty layers.

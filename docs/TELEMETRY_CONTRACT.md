@@ -28,7 +28,7 @@ LLM Insight implements an **OTLP/HTTP traces receiver for binary protobuf**: a s
 | `X-Project-Key` header is required (not part of OTLP) | Configure it with `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | ADR-08 |
 | Port 8000, not the OTLP default 4318 | Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` explicitly | Deployment choice |
 
-Expected compatible (still **untested**, see T01-S3): the Python `opentelemetry-exporter-otlp-proto-http` and the OTel Collector `otlphttp` exporter with protobuf encoding.
+Tested (T01-S3, Phase 1B, `reports/phase-1b.md`): the Python `opentelemetry-exporter-otlp-proto-http` 1.45.1, gzip and uncompressed, configured by constructor arguments or by the `OTEL_EXPORTER_OTLP_TRACES_*` variables. Expected compatible but still **untested**: the OTel Collector `otlphttp` exporter with protobuf encoding.
 
 ## 1. Endpoint `POST /v1/traces`
 
@@ -209,4 +209,4 @@ A `usage_records` row is created **only** for inference spans (ADR-13): one row 
 
 `docs/fixtures/otlp_trace_3span.json` is a **synthetic**, illustrative OTLP/JSON rendering of one `ExportTraceServiceRequest`. It has three spans in one trace: a `SERVER` root, a `CLIENT` inference span and an `INTERNAL` validation span, across two scopes. The expected ingest result is in `docs/fixtures/README.md`.
 
-Phase 1 tooling must hex-decode the IDs before building the binary request. Protobuf's generic JSON parser reads `bytes` as base64, whereas OTLP/JSON uses hex. The fixture hasn't been parsed by `opentelemetry-proto` yet (Phase 1, T01).
+Phase 1 tooling must hex-decode the IDs before building the binary request. Protobuf's generic JSON parser reads `bytes` as base64, whereas OTLP/JSON uses hex. Phase 1B parses the fixture with `opentelemetry-proto` this way (`backend/tests/otlp.py`) and ingests it in T01/T04.

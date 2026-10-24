@@ -1,46 +1,47 @@
 # LLM Insight — Test Matrix (T01–T48)
 
-Source: master plan §I. IDs and scenario names are preserved exactly; the expected outcomes are refinements taken from the contracts. **Every test is planned and none has been run.** A status changes only with real command or CI output.
+Source: master plan §I. IDs and scenario names are preserved exactly; the expected outcomes are refinements taken from the contracts. A status changes only with real command or CI output, recorded in the named phase report.
 
 **Legend:**
 - **Crit ★** = critical: the 39 starred in the master plan plus T15, T16 and T44 promoted by ADR-20, for **42** in total. Phase 5 gate: 0 FAIL on all 42.
 - **Blocker ⛔** = presentation blocker. There are 10, all of them critical.
 - **Phase** = the phase where the test is implemented → the phase(s) where it is re-verified.
 - **Level:** U = unit, I = integration (real PostgreSQL), E = end-to-end (Playwright / compose).
+- **Status:** `NOT RUN`, or `PASS` / `PARTIAL` / `FAIL (phase-N)` backed by `reports/phase-N.md`. `PARTIAL` means only the part owned by that phase was executed; the test is not passed until its owning phase re-verifies it in full.
 
 | ID | Group | Scenario | Expected outcome | Crit | Blocker | Phase | Level | Status |
 |---|---|---|---|---|---|---|---|---|
-| T01 | Ingestion | Valid protobuf request | `200` + protobuf `ExportTraceServiceResponse`, `partial_success` unset, sent only after COMMIT; rows stored | ★ | ⛔ | 1→5 | I | NOT RUN |
-| T02 | Ingestion | Parent-child | 3-span fixture: children reference root; tree reconstructs | ★ | | 1→3 | I | NOT RUN |
-| T03 | Ingestion | Resource / service name | `service.name` from resource; multiple resourceSpans/scopes; missing → `unknown_service` | ★ | | 1 | I | NOT RUN |
-| T04 | Ingestion | Duplicate upsert | Same payload twice → row counts unchanged, `200` both times | ★ | ⛔ | 1→2,5 | I | NOT RUN |
-| T05 | Ingestion | Invalid key | Missing / unknown / revoked → `401`, identical message, nothing stored, key not logged | ★ | | 1 | I | NOT RUN |
-| T06 | Ingestion | Corrupt protobuf | `400` + binary `google.rpc.Status` with `BadRequest` (no values echoed), nothing stored | ★ | | 1 | I | NOT RUN |
-| T07 | Ingestion | gzip valid | `Content-Encoding: gzip` decoded; corrupt gzip → `400` `INVALID_GZIP` | | | 1 | I | NOT RUN |
-| T08 | Ingestion | Oversized payload | Wire > 4 MiB, decompressed > 16 MiB, spans > 2048 → `413` each (count-based 413 is our policy) | ★ | | 1 | I | NOT RUN |
+| T01 | Ingestion | Valid protobuf request | `200` + protobuf `ExportTraceServiceResponse`, `partial_success` unset, sent only after COMMIT; rows stored | ★ | ⛔ | 1→5 | I | PASS (phase-1b) |
+| T02 | Ingestion | Parent-child | 3-span fixture: children reference root; tree reconstructs | ★ | | 1→3 | I | PASS (phase-1b) |
+| T03 | Ingestion | Resource / service name | `service.name` from resource; multiple resourceSpans/scopes; missing → `unknown_service` | ★ | | 1 | I | PASS (phase-1b) |
+| T04 | Ingestion | Duplicate upsert | Same payload twice → row counts unchanged, `200` both times | ★ | ⛔ | 1→2,5 | I | PASS (phase-1b) |
+| T05 | Ingestion | Invalid key | Missing / unknown / revoked → `401`, identical message, nothing stored, key not logged | ★ | | 1 | I | PASS (phase-1b) |
+| T06 | Ingestion | Corrupt protobuf | `400` + binary `google.rpc.Status` with `BadRequest` (no values echoed), nothing stored | ★ | | 1 | I | PASS (phase-1b) |
+| T07 | Ingestion | gzip valid | `Content-Encoding: gzip` decoded; corrupt gzip → `400` `INVALID_GZIP` | | | 1 | I | PASS (phase-1b) |
+| T08 | Ingestion | Oversized payload | Wire > 4 MiB, decompressed > 16 MiB, spans > 2048 → `413` each (count-based 413 is our policy) | ★ | | 1 | I | PASS (phase-1b) |
 | T09 | SDK | Real/mock client span attributes | CLIENT span `chat {model}` with required `gen_ai.*` + provenance | ★ | | 2 | U/I | NOT RUN |
 | T10 | SDK | Nested context | LLM span is a child of the demo FastAPI root span (same trace) | ★ | | 2→3 | I | NOT RUN |
 | T11 | SDK | Provider success usage | Provider-reported usage mapped to `gen_ai.usage.*`, `usage_source=provider_reported` | ★ | | 2 | U | NOT RUN |
 | T12 | SDK | 429 / timeout status | Span `ERROR`, `error.type` set, attempt recorded; app gets a handled error | ★ | | 2 | U | NOT RUN |
 | T13 | SDK | Export-down fail-open | Backend down: app request succeeds, no exception, latency bounded by design | ★ | | 2→5 | I | NOT RUN |
-| T14 | SDK | Retry attempt IDs | Same `call_id`, `attempt` 1..n; one usage row per attempt; M02 > M03 | | | 2 | U/I | NOT RUN |
+| T14 | SDK | Retry attempt IDs | Same `call_id`, `attempt` 1..n; one usage row per attempt; M02 > M03 | | | 2 | U/I | PARTIAL (phase-1b) |
 | T15 | SDK | No secrets in span | No API key / auth header in any exported attribute | ★ | | 2→5 | U | NOT RUN |
-| T16 | SDK | No content default | No message content exported; backend drops it if sent (counted) | ★ | | 2→5 | U/I | NOT RUN |
+| T16 | SDK | No content default | No message content exported; backend drops it if sent (counted) | ★ | | 2→5 | U/I | PARTIAL (phase-1b) |
 | T17 | Cost/metrics | Provider token priority | Provider-reported values win over any estimate | ★ | ⛔ | 2 | U | NOT RUN |
-| T18 | Cost/metrics | Unknown token/cost null | Missing usage → NULL tokens, `cost_status=unknown` + reason, never 0 | ★ | | 2→3 | U/I | NOT RUN |
+| T18 | Cost/metrics | Unknown token/cost null | Missing usage → NULL tokens, `cost_status=unknown` + reason, never 0 | ★ | | 2→3 | U/I | PARTIAL (phase-1b) |
 | T19 | Cost/metrics | Decimal known fixture | Hand-computed Decimal cost equals the stored value exactly | ★ | ⛔ | 2 | U | NOT RUN |
 | T20 | Cost/metrics | Cached subset no double count | Cached tokens priced once, not added to input | ★ | ⛔ | 2 | U | NOT RUN |
 | T21 | Cost/metrics | Reasoning subset no double count | Reasoning tokens not added to output | ★ | | 2 | U | NOT RUN |
 | T22 | Cost/metrics | Price version persisted | `price_version` + `model_price_id` stored per usage row; price change doesn't rewrite history | ★ | | 2 | I | NOT RUN |
-| T23 | Cost/metrics | Duplicate usage ignored | Re-export → one usage row, cost unchanged | ★ | ⛔ | 2→5 | I | NOT RUN |
+| T23 | Cost/metrics | Duplicate usage ignored | Re-export → one usage row, cost unchanged | ★ | ⛔ | 2→5 | I | PARTIAL (phase-1b) |
 | T24 | Cost/metrics | p95 sample + percentiles math | SQL `percentile_cont` = NumPy `linear` on fixture; `n` returned | ★ | | 2→3 | U/I | NOT RUN |
 | T25 | API/DB | Pagination | Cursor pagination stable; `limit` max enforced | ★ | | 1→3 | I | NOT RUN |
-| T26 | API/DB | Timestamp timezone | ns epoch → UTC `TIMESTAMPTZ`; API returns ISO-8601 with `Z`; ns preserved | ★ | | 1→3 | U/I | NOT RUN |
-| T27 | API/DB | Orphan span | Missing parent stored and returned as orphan | ★ | | 1→3 | I | NOT RUN |
-| T28 | API/DB | Project filter auth | Other project's trace → `404`; list never mixes projects | ★ | | 1→3 | I | NOT RUN |
+| T26 | API/DB | Timestamp timezone | ns epoch → UTC `TIMESTAMPTZ`; API returns ISO-8601 with `Z`; ns preserved | ★ | | 1→3 | U/I | PARTIAL (phase-1b) |
+| T27 | API/DB | Orphan span | Missing parent stored and returned as orphan | ★ | | 1→3 | I | PARTIAL (phase-1b) |
+| T28 | API/DB | Project filter auth | Other project's trace → `404`; list never mixes projects | ★ | | 1→3 | I | PARTIAL (phase-1b) |
 | T29 | API/DB | Empty aggregation | No data → `n=0`, null values (not 0), `200` | ★ | | 2→3 | I | NOT RUN |
-| T30 | API/DB | DB outage / transaction rollback | Mid-batch failure → nothing persisted; DB down → `503` + Retry-After; `/health/ready` `503` | ★ | | 1→5 | I | NOT RUN |
-| T31 | API/DB | Migration clean recreate | `alembic upgrade head` / `downgrade base` / `upgrade head` on a disposable DB; schema matches `ARCHITECTURE.md` §4 | | | 1→5 | I | NOT RUN |
+| T30 | API/DB | DB outage / transaction rollback | Mid-batch failure → nothing persisted; DB down → `503` + Retry-After; `/health/ready` `503` | ★ | | 1→5 | I | PASS (phase-1b) |
+| T31 | API/DB | Migration clean recreate | `alembic upgrade head` / `downgrade base` / `upgrade head` on a disposable DB; schema matches `ARCHITECTURE.md` §4 | | | 1→5 | I | PASS (phase-1b) |
 | T32 | API/DB | Status counts and total distinct API calls | M02/M04 counts match fixture; trace vs inference counts separate | ★ | | 2→3 | I | NOT RUN |
 | T33 | Eval/workflow | Failure review create | Valid enum values → `201`; invalid `issue_type` → `422`; duplicate open → `409` | ★ | | 4 | I | NOT RUN |
 | T34 | Eval/workflow | No approval no test case | Missing or false `approved` → `422`, no row | ★ | ⛔ | 4→5 | I | NOT RUN |
@@ -52,12 +53,12 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T40 | Eval/workflow | Missing expected output handling | `passed=NULL` ("not evaluated"), excluded from the pass-rate denominator | | | 4 | U | NOT RUN |
 | T41 | Security/UI | XSS escape on labels | `<script>` in a model/service name renders as text | ★ | | 3→5 | E | NOT RUN |
 | T42 | Security/UI | Server-only API secret | Build output / client bundle / HTML contain no admin token | ★ | ⛔ | 3→5 | E | NOT RUN |
-| T43 | Security/UI | Request rate limit | Burst over limit → `429` + Retry-After (ingest, auth-failure and API buckets) | ★ | | 3→5 | I | NOT RUN |
-| T44 | Security/UI | Malformed header/auth log sanitization | Logs contain no key/header value after bad-auth requests | ★ | | 1→5 | I | NOT RUN |
+| T43 | Security/UI | Request rate limit | Burst over limit → `429` + Retry-After (ingest, auth-failure and API buckets) | ★ | | 3→5 | I | PARTIAL (phase-1b) |
+| T44 | Security/UI | Malformed header/auth log sanitization | Logs contain no key/header value after bad-auth requests | ★ | | 1→5 | I | PASS (phase-1b) |
 | T45 | Security/UI | Trace list UI screenshot assertion | Seeded DB data visible in the list; screenshot saved | ★ | | 3 | E | NOT RUN |
 | T46 | Security/UI | Drilldown tree E2E | Trace list → detail shows root → child tree | ★ | ⛔ | 3→5 | E | NOT RUN |
 | T47 | Security/UI | Reproducible compose smoke | Clean clone → `docker compose up --build` → init → demo works | | | 5 | E | NOT RUN |
-| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | NOT RUN |
+| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | PARTIAL (phase-1b) |
 
 **Counts:**
 - 48 tests in total.
@@ -65,9 +66,9 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 - 6 non-critical: T07, T14, T31, T38, T40, T47.
 - 10 blockers: T01, T04, T17, T19, T20, T23, T34, T35, T42, T46.
 
-## Sub-cases (inherit the parent's criticality; all NOT RUN)
+## Sub-cases (inherit the parent's criticality)
 
-These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs.
+These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4).
 
 | Sub-case | Parent | Scenario | Expected outcome |
 |---|---|---|---|
@@ -91,6 +92,6 @@ These are the required protocol, dedup and provenance cases. They are reported u
 
 **Benchmark (Phase 5, no pre-set targets):** re-ingest 100–1000 span fixtures and measure trace-open time on a 10k-span dataset. Report N, hardware, method, p50 and p95.
 
-**Commands (planned):** `pytest`, `ruff check`, `alembic upgrade/downgrade`, `npm run lint`, `npm run typecheck`, `npm run build`, `npx playwright test`. None exist yet.
+**Commands:** `pytest`, `ruff check`, `alembic upgrade/downgrade` exist (backend, see `PHASE_STATUS.md`). Planned: `npm run lint`, `npm run typecheck`, `npm run build`, `npx playwright test`.
 
 **Documentation check (exists):** `python -I scripts/verify_phase0.py`.

@@ -62,7 +62,7 @@ def test_ready_503_with_real_driver_against_closed_port(client):
     assert r.json() == {"status": "not_ready"}
 
 
-def test_no_otlp_route_in_phase_1a(client):
-    paths = set(client.app.openapi()["paths"])
-    assert paths == {"/health/live", "/health/ready"}
-    assert client.post("/v1/traces").status_code == 404  # OTLP ingest is Phase 1B
+def test_routes_are_health_and_otlp_ingest_only(client):
+    # Phase 1B adds POST /v1/traces; /api/v1 does not exist yet.
+    assert set(client.app.openapi()["paths"]) == {"/health/live", "/health/ready", "/v1/traces"}
+    assert client.get("/api/v1/traces").status_code == 404
