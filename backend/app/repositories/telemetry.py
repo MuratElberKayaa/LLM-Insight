@@ -2,7 +2,8 @@
 
 Runs inside the caller's transaction; the caller commits. Order inside the transaction:
 1. derived `traces` rows exist (INSERT ... ON CONFLICT DO NOTHING; the FK target of spans)
-2. spans: INSERT ... ON CONFLICT DO NOTHING; first write wins, re-exports change nothing
+2. spans: INSERT ... ON CONFLICT DO NOTHING; first write wins, re-exports change nothing.
+   A re-export whose content differs from the stored span is counted (never merged)
 3. usage rows only for spans *inserted by this batch*, ON CONFLICT DO NOTHING on both unique
    keys; a skipped row is a call-identity collision (e.g. double instrumentation)
 4. every touched trace is recomputed from all of its stored spans
@@ -14,7 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,24 @@ from app.models import Span, Trace, UsageRecord
 from app.services.ingestion import attrmap
 from app.services.ingestion.normalize import NormalizedSpan
 from app.services.ingestion.usage import ns_to_datetime, usage_row
+
+# Everything a span stores from the payload. Two payloads with the same
+# (project_id, trace_id, span_id) and equal values here are one span exported twice.
+_CONTENT_FIELDS = (
+    "parent_span_id",
+    "name",
+    "kind",
+    "start_ns",
+    "end_ns",
+    "status",
+    "error_type",
+    "scope_name",
+    "scope_version",
+    "resource_attributes",
+    "attributes",
+    "provenance",
+    "server_dropped_attributes_count",
+)
 
 
 @dataclass(frozen=True)
@@ -31,14 +50,43 @@ class PersistResult:
     usage_inserted: int
     usage_key_collisions: int
     traces_touched: int
+    spans_reexported: int = 0  # span identity already stored: nothing written
+    span_content_conflicts: int = 0  # ... and the payload differed (first write kept)
 
 
-def _dedupe(spans: Sequence[NormalizedSpan]) -> list[NormalizedSpan]:
-    """First occurrence of a (trace_id, span_id) in the batch wins, like a later re-export."""
+def _content(s: NormalizedSpan) -> tuple[Any, ...]:
+    return tuple(getattr(s, f) for f in _CONTENT_FIELDS)
+
+
+def _dedupe(spans: Sequence[NormalizedSpan]) -> tuple[list[NormalizedSpan], int]:
+    """First occurrence of a (trace_id, span_id) in the batch wins, like a later re-export.
+    Also returns how many later occurrences carried different content."""
     seen: dict[tuple[str, str], NormalizedSpan] = {}
+    differing = 0
     for s in spans:
-        seen.setdefault((s.trace_id, s.span_id), s)
-    return [seen[k] for k in sorted(seen)]
+        first = seen.setdefault((s.trace_id, s.span_id), s)
+        if first is not s and _content(first) != _content(s):
+            differing += 1
+    return [seen[k] for k in sorted(seen)], differing
+
+
+def _differing_reexports(
+    session: Session, project_id: int, reexported: list[NormalizedSpan]
+) -> int:
+    """Compare re-exported spans with the stored rows (one SELECT, only when a conflict
+    happened). The stored row is never changed."""
+    if not reexported:
+        return 0
+    stmt = select(Span.trace_id, Span.span_id, *(getattr(Span, f) for f in _CONTENT_FIELDS)).where(
+        Span.project_id == project_id,
+        tuple_(Span.trace_id, Span.span_id).in_([(s.trace_id, s.span_id) for s in reexported]),
+    )
+    stored = {(r[0], r[1]): tuple(r[2:]) for r in session.execute(stmt)}
+    return sum(
+        1
+        for s in reexported
+        if (s.trace_id, s.span_id) in stored and stored[(s.trace_id, s.span_id)] != _content(s)
+    )
 
 
 def _ensure_traces(session: Session, project_id: int, spans: list[NormalizedSpan]) -> list[str]:
@@ -76,7 +124,7 @@ def _span_values(project_id: int, s: NormalizedSpan) -> dict[str, Any]:
         "start_ns": s.start_ns,
         "end_ns": s.end_ns,
         "status": s.status,
-        "status_message": s.status_message,
+        # spans.status_message is never written by ingest (R21): it stays NULL.
         "error_type": s.error_type,
         "scope_name": s.scope_name,
         "scope_version": s.scope_version,
@@ -182,9 +230,11 @@ def _recompute_traces(session: Session, project_id: int, trace_ids: list[str]) -
 def persist_batch(
     session: Session, project_id: int, spans: Sequence[NormalizedSpan]
 ) -> PersistResult:
-    unique = _dedupe(spans)
+    unique, differing_in_batch = _dedupe(spans)
     trace_ids = _ensure_traces(session, project_id, unique)
     inserted = _insert_spans(session, project_id, unique)
+    reexported = [s for s in unique if (s.trace_id, s.span_id) not in inserted]
+    differing = differing_in_batch + _differing_reexports(session, project_id, reexported)
     candidates = [
         row
         for s in unique
@@ -198,4 +248,6 @@ def persist_batch(
         usage_inserted=usage_inserted,
         usage_key_collisions=len(candidates) - usage_inserted,
         traces_touched=len(trace_ids),
+        spans_reexported=len(reexported),
+        span_content_conflicts=differing,
     )

@@ -129,8 +129,8 @@ Tests: T02, T03, T25, T26, T28.
 | end_ns | BIGINT | NOT NULL | | ≥ `start_ns` | §E |
 | duration_ns | BIGINT | NOT NULL | GENERATED ALWAYS AS (`end_ns - start_ns`) STORED | ≥0 | ADD: one source of truth for latency math |
 | status | TEXT | NOT NULL | | IN (`UNSET`,`OK`,`ERROR`) | §E |
-| status_message | TEXT | NULL | | ≤ 256 (truncated) | ADD: OTLP Status.message for diagnosis |
-| error_type | TEXT | NULL | | ≤ 256 | ADD: semconv `error.type` (Stable) |
+| status_message | TEXT | NULL | | ≤ 256. Since Phase 1C ingest never writes it: always NULL (R21) | ADD: OTLP Status.message for diagnosis |
+| error_type | TEXT | NULL | | ≤ 256; an identifier only (`TELEMETRY_CONTRACT.md` §3) | ADD: semconv `error.type` (Stable) |
 | scope_name | TEXT | NULL | | ≤ 256 | ADD: OTLP scope traversal |
 | scope_version | TEXT | NULL | | ≤ 64 | ADD: OTLP scope traversal |
 | resource_attributes | JSONB | NOT NULL | `'{}'` | `jsonb_typeof = 'object'`; allowlisted only | ADD: separates resource from span attributes |
@@ -142,6 +142,8 @@ Tests: T02, T03, T25, T26, T28.
 
 Constraints: `UNIQUE(project_id, trace_id, span_id)`; `INDEX(project_id, trace_id, start_ns)` (§E).
 Tests: T01–T04, T06, T16, T26, T27, T30, T31.
+
+**Phase 1C note (no column change, no migration):** `status_message` keeps its type and check so the schema matches migration `0001`, but ingest no longer writes it (R21: free text cannot be made safe by scrubbing). The read API never returns it. Removing the column would need a migration plus an ADR note (ADR-21) and was not necessary.
 
 ### 4.6 `usage_records` (one row per physical inference attempt)
 | Column | Type | Null | Default | Check / rule | Origin |
@@ -340,6 +342,42 @@ The backend binds to `127.0.0.1`.
 | `/api/v1/experiments/{id}` | GET | Per-version pass/fail, N, p50/p95 duration, cost with unknown count, provenance label per result | 4 |
 
 `/api/v1/*` error body: `{"error": {"code": "...", "message": "..."}}` (JSON). Validation errors return `422`. Responses never include keys, tokens or stack traces.
+
+### 5.1 Phase 1C implementation of the trace endpoints (`backend/app/api/traces.py`)
+
+**Access, in this order, before any parameter is validated** (so an unauthenticated caller learns nothing about parameters or records):
+1. The auth-failure bucket per client address, shared with `/v1/traces` (`LLMI_RATE_LIMIT_AUTHFAIL_PER_MIN`) → `429 rate_limited` + `Retry-After`.
+2. Exactly one `Authorization: Bearer <LLMI_ADMIN_TOKEN>` header. The scheme is case-insensitive. The token is compared as SHA-256 digests with `hmac.compare_digest`. Missing, multiple, malformed and wrong headers all get one identical `401 unauthorized` with `WWW-Authenticate: Bearer`, and each one consumes from step 1. An ingest key is not a read credential.
+3. The `/api/v1` bucket (`LLMI_RATE_LIMIT_API_*`) keyed by client address. There is a single verified token, so this is per token and address → `429 rate_limited` + `Retry-After`.
+
+**No `403`.** The single admin token (CR-06) reads every project, so there is no authenticated-but-forbidden state. A `403` for another project's trace would confirm that the trace exists. An unknown project, an unknown trace and another project's trace all return the same `404 not_found`, with identical body and headers (T28).
+
+**Error codes:** `unauthorized` (401), `not_found` (404), `method_not_allowed` (405), `invalid_request` (422, with `fields`: the offending parameter *names*, never their values), `rate_limited` (429), `internal_error` (500), `storage_unavailable` (503 + `Retry-After: 5`). Unknown `/api/*` routes use the same shape.
+
+**`GET /api/v1/traces`:**
+- `project` (required, ≥ 1).
+- `from` / `to`: ISO-8601 with an explicit UTC offset (`Z` or `+00:00`, URL-encoded as `%2B00:00`). Naive timestamps, other offsets, epoch numbers and dates without a time get `422`. The window is `[from, to)` on `traces.started_at` (event time). It must be non-empty and ≤ 31 days. Defaults: `to` = now, `from` = `to` − 31 days, so the window is always bounded. The effective window is echoed as `window`.
+- `model`: exact match on `response_model` **or** `requested_model` of any usage row of the trace (≤ 256 chars).
+- `status`: `ok` | `error`. `provenance`: `real` | `synthetic` | `mixed` | `unknown`.
+- `limit` 1–200 (default 50). `cursor`: opaque, from `next_cursor`. Malformed cursors get `422`.
+- Order: `started_at DESC, trace_id DESC`. Keyset pagination on that pair: pages are disjoint and complete for a fixed dataset, and newer traces arriving between pages do not shift later pages. Known limit: a trace's `started_at` can move earlier when a late span arrives (the trace row is derived), so such a trace may appear on a different page than before.
+- Response: `{items, next_cursor, window}`. Each item has `trace_id`, `service_name`, `started_at`/`ended_at`, `start_time_unix_nano`/`end_time_unix_nano`/`duration_ns`, `status`, `prompt_version`, `provenance`, `provenance_verified` (always `false`), `span_count`, and a `usage` summary: `inference_calls`, `input_tokens`/`output_tokens` (sums of known values; `null` when none is known), `calls_with_unknown_tokens`, `known_cost_usd` (decimal string; `null` when no row has a computed cost, never `"0"`), `unknown_cost_calls`.
+
+**`GET /api/v1/traces/{trace_id}`** (`trace_id`: 32 lowercase hex, else `422`): `{trace, spans, spans_truncated, usage, usage_truncated, reviews}`.
+- `trace` is the list item.
+- `spans` is a flat list ordered by `start_ns, span_id`. Each span has a `role` (`root`: no parent; `child`: its parent is stored; `orphan`: its parent is not stored, T27) and its `children` span IDs, plus the stored span fields **except** `status_message` and internal ids.
+- At most 2000 spans and 2000 usage rows are returned (`*_truncated: true` beyond that). Roles are computed against all stored spans, so truncation never mislabels an orphan.
+- `usage` holds the usage rows: tokens stay `null` when unknown; `cost_usd` is a decimal string or `null`, with `cost_status`/`cost_unknown_reason`.
+- `reviews` is always `[]` until the Phase 4 table exists.
+
+**Timestamps (T26):** every `*_at` value is ISO-8601 UTC with `Z`. Trace and span values are rendered from the stored nanoseconds with all 9 fraction digits. The raw nanoseconds are decimal strings (`*_unix_nano`, `duration_ns`, as in OTLP/JSON), because JSON numbers lose precision above 2^53.
+
+**Storage access:** every request runs in one `REPEATABLE READ, READ ONLY` transaction, so the read API cannot write and the detail queries see one snapshot. SQL is built from SQLAlchemy expressions with bound parameters. Index use was verified with `EXPLAIN ANALYZE` on 10,000 traces per project (`reports/phase-1c.md` §4):
+- the list is a range scan on `traces(project_id, started_at DESC)` that stops after one page;
+- the per-trace usage summary and the `model` filter are lookups on `usage_records UNIQUE(project_id, trace_id, span_id)`;
+- detail spans use `spans(project_id, trace_id, start_ns)`.
+
+No new index was needed. Responses carry `Cache-Control: no-store` and no CORS headers, so browser JavaScript on another origin cannot read them.
 
 ## 6. Version pins (candidates; CR-09)
 

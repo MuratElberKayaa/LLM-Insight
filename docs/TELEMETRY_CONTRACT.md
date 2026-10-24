@@ -25,6 +25,7 @@ LLM Insight implements an **OTLP/HTTP traces receiver for binary protobuf**: a s
 | Traces only. `/v1/metrics`, `/v1/logs` and profiles return `404` | Exporters for other signals must not point here | ADR-04 |
 | No partial acceptance | One invalid span rejects the whole batch (`400`, which is not retried) | ADR-18 |
 | Limits below the spec recommendation (4 / 16 MiB versus 64 MiB) plus a span-count limit | A larger batch gets `413` and is dropped by the client | ADR-17 |
+| Body-read deadline (10 s by default) | A body not fully received in time gets `408` (not retried) | Phase 1C, R22 |
 | `X-Project-Key` header is required (not part of OTLP) | Configure it with `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | ADR-08 |
 | Port 8000, not the OTLP default 4318 | Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` explicitly | Deployment choice |
 
@@ -53,7 +54,7 @@ Tested (T01-S3, Phase 1B, `reports/phase-1b.md`): the Python `opentelemetry-expo
 | 4 | Client address is under the auth-failure limit (`LLMI_RATE_LIMIT_AUTHFAIL_PER_MIN`) | `429` + `Retry-After` |
 | 5 | `X-Project-Key` is present, known and not revoked. Every failure counts toward step 4 and uses the same generic message | `401` |
 | 6 | Per-key token bucket (`LLMI_RATE_LIMIT_INGEST_*`) | `429` + `Retry-After` |
-| 7 | `Content-Length` and the streamed wire bytes are ≤ 4 MiB | `413` |
+| 7 | `Content-Length` and the streamed wire bytes are ≤ 4 MiB, and the whole body arrives within `LLMI_OTLP_BODY_READ_TIMEOUT_S` (default 10 s, one overall deadline from the start of the body read). A client disconnect before the end of the body writes nothing | `413` / `408`, both with `Connection: close` (Phase 1C, R22) |
 | 8 | gzip inflates incrementally to ≤ 16 MiB. Corrupt gzip | `413` / `400` |
 | 9 | Protobuf decodes | `400` |
 | 10 | Total spans ≤ 2048 | `413` |
@@ -62,6 +63,8 @@ Tested (T01-S3, Phase 1B, `reports/phase-1b.md`): the Python `opentelemetry-expo
 | 13 | One transaction: trace/span/usage upserts, then COMMIT | `200` after commit. DB unavailable or serialization failure: rollback, `503` + `Retry-After`. Other error: rollback, `500` |
 
 Steps 1–6 read headers only, so no unauthenticated body is buffered.
+
+**Body-read deadline (step 7, Phase 1C):** `408 Request Timeout` is not retryable for OTLP clients (only `429`, `502`, `503`, `504` are), so, like `413`, the batch is lost by the client. This is deliberate: an authenticated client that cannot send 4 MiB in 10 s over loopback is misbehaving. The deadline is enforced by the application on the ASGI body stream. It does **not** cover the request-header phase or idle connections, which uvicorn handles (`timeout_keep_alive`, default 5 s) and does not bound for slow headers. It is not a defence against connection-exhaustion attacks (`reports/phase-1c.md` §5).
 
 ### 1.2 Response encoding (spec: "MUST use the same Content-Type in the response as it received in the request")
 
@@ -84,12 +87,12 @@ The spec says `400` `Status.details` "SHOULD contain a BadRequest". We always at
 
 - `field`: a proto path only, e.g. `resource_spans[0].scope_spans[1].spans[3].trace_id`, or `body` for decode/gzip errors.
 - `description`: the generic rule text, e.g. `must be 16 bytes and not all zero`. **Never the offending value.**
-- `reason`: an UPPER_SNAKE code from this list: `INVALID_PROTOBUF`, `INVALID_GZIP`, `INVALID_TRACE_ID`, `INVALID_SPAN_ID`, `INVALID_PARENT_SPAN_ID`, `INVALID_TIMESTAMP`, `END_BEFORE_START`, `TIMESTAMP_OUT_OF_RANGE`, `INVALID_SPAN_KIND`, `INVALID_STATUS_CODE`.
+- `reason`: an UPPER_SNAKE code from this list: `INVALID_PROTOBUF`, `INVALID_GZIP`, `INCOMPLETE_BODY` (client disconnected mid-body; the response is not delivered), `INVALID_TRACE_ID`, `INVALID_SPAN_ID`, `INVALID_PARENT_SPAN_ID`, `INVALID_TIMESTAMP`, `END_BEFORE_START`, `TIMESTAMP_OUT_OF_RANGE`, `INVALID_SPAN_KIND`, `INVALID_STATUS_CODE`.
 - At most 20 violations are returned. `Status.message` gives the total count.
 
 **Validation rules:**
 - `trace_id` is exactly 16 bytes and not all-zero. `span_id` is 8 bytes and not all-zero. `parent_span_id` is empty, or 8 bytes, non-zero and ≠ `span_id`.
-- IDs are stored as lowercase hex (32 / 16 chars).
+- IDs are stored as lowercase hex (32 / 16 chars). A wrong-length ID is rejected, never truncated or padded into a valid-looking one.
 - `start_time_unix_nano` > 0 and `end_time_unix_nano` ≥ start. Both must be < 2^63, because they are stored as `BIGINT`.
 - `kind` and `status.code` must be known enum values.
 - A missing parent is **not** an error: the span is stored as an orphan (T27).
@@ -97,7 +100,7 @@ The spec says `400` `Status.details` "SHOULD contain a BadRequest". We always at
 ### 1.4 Idempotency (spans)
 
 OTLP itself has no dedup; the spec says re-sending "may result in duplicate data on the server side". We add it:
-- **Spans:** `UNIQUE(project_id, trace_id, span_id)` with `ON CONFLICT DO NOTHING`. The first write wins, and changed content on re-export is ignored.
+- **Spans:** `UNIQUE(project_id, trace_id, span_id)` with `ON CONFLICT DO NOTHING`. The first write wins, and changed content on re-export is ignored. Since Phase 1C a re-export whose content differs from the stored span (or a differing duplicate inside one batch) is counted in the process-local `span_content_conflicts` counter and logged as a count; the stored row is never changed or merged.
 - **Traces:** recomputed from all stored spans of that trace inside the same transaction (a derived row).
 - **Usage:** see §4.
 
@@ -108,12 +111,16 @@ The request is walked as:
 
 - Multiple `resource_spans` and `scope_spans` are supported (T03-S1).
 - `service.name` comes from the resource; if absent it is `unknown_service`.
-- Span `events` and `links` are **not stored**. An `exception` event contributes only `exception.type`, which is mapped to `error_type` if `error.type` is absent. `exception.message` and `exception.stacktrace` are dropped.
+- Span `events` and `links` are **not stored**. An `exception` event contributes only `exception.type`, which is mapped to `error_type` if `error.type` is absent and if it is an identifier under the `error.type` rule (§3). `exception.message` and `exception.stacktrace` are dropped.
+- **`Status.message` is never stored** (Phase 1C, R21). It is free text that can quote credentials, prompts or personal data, and best-effort scrubbing cannot make it safe. `spans.status_message` stays in the schema and is always `NULL` from ingest. An error is described only by the span status (`UNSET`/`OK`/`ERROR`) and the validated `error_type` identifier.
+- A span with an empty name is stored as `unknown_span`, a display fallback only (`spans.name` is `LEN(256)`).
 - The client's own `Span.dropped_attributes_count` is not stored. Ours is `server_dropped_attributes_count`.
 
 ## 3. Attribute allowlist (`llminsight.attrmap.v1`)
 
-Anything not listed below is dropped before persistence and counted in `spans.server_dropped_attributes_count`. String values are truncated to 256 chars and arrays to 16 items.
+Anything not listed below is dropped before persistence and counted in `spans.server_dropped_attributes_count` (an `INT` that saturates at 2^31−1; resource drops count on every span of that resource). String values are truncated to 256 chars and arrays to 16 items, except **identifier strings**, which are dropped (and counted) rather than truncated, because a shortened identifier is a different identifier: `gen_ai.response.id` (≤ 256), `gen_ai.provider.name` (≤ 64), `llminsight.call_id` (≤ 64), `gen_ai.prompt.version` and `error.type` (rules below).
+
+**v1 finalization (Phase 1C):** the max-tokens, prompt-version, error-type and credential-classification rules below were settled before the Phase 1 gate, while every stored row was disposable test data (the dev database held 0 rows). They are part of `llminsight.attrmap.v1`; any change after the `phase-1` tag needs `attrmap.v2` (ADR-15). Audit against the pinned semconv (`9ffc7e00c639`, `client-inference.md`, re-read 2026-10-24): the five usage counters below and `gen_ai.request.max_tokens` match the pinned names exactly. The pin also defines modality breakdowns (`gen_ai.usage.{text,audio,image}.input_tokens` / `.output_tokens` / `.cache_read.input_tokens`); v1 does not allowlist them, so they are dropped and counted. Adding them is a Phase 2 / ADR-15 decision.
 
 **Resource:** `service.name`, `service.version`, `service.namespace`, `deployment.environment.name`, `telemetry.sdk.name`, `telemetry.sdk.language`, `telemetry.sdk.version`, `llminsight.sdk.version`.
 
@@ -126,15 +133,17 @@ Anything not listed below is dropped before persistence and counted in `spans.se
 | `gen_ai.request.model` / `gen_ai.response.model` | string | `requested_model` / `response_model` | Both kept, never merged |
 | `gen_ai.response.id` | string | `provider_response_id`; canonical key input | |
 | `gen_ai.response.finish_reasons` | string[] | JSONB | |
-| `gen_ai.request.max_tokens`, `.temperature`, `.top_p`, `.seed`, `.stream` | num/bool | JSONB | |
+| `gen_ai.request.max_tokens` | int ≥ 0 | JSONB | A count, not a credential: kept by the credential classifier below (Phase 1C decision on `reports/phase-1b.md` §7 item 1) |
+| `gen_ai.request.temperature`, `.top_p`, `.seed`, `.stream` | num/bool | JSONB | |
 | `gen_ai.output.type` | string | JSONB | e.g. `json` |
-| `gen_ai.prompt.name`, `gen_ai.prompt.version` | string | JSONB; `traces.prompt_version` | |
+| `gen_ai.prompt.name` | string | JSONB | |
+| `gen_ai.prompt.version` | string, ≤ 64, `[A-Za-z0-9][A-Za-z0-9._:+/-]*` | JSONB; `traces.prompt_version` | A bounded label, not free text. Anything else (spaces, line breaks, `@`, non-ASCII, > 64) is dropped and counted, never truncated. ≤ 64 matches the Phase 4 `experiments.prompt_version_*` columns |
 | `gen_ai.usage.input_tokens` | int | `input_tokens` | Semconv: SHOULD include **all** input, cached included. Alias `gen_ai.usage.prompt_tokens` |
 | `gen_ai.usage.output_tokens` | int | `output_tokens` | Includes reasoning. Alias `gen_ai.usage.completion_tokens` |
 | `gen_ai.usage.cache_read.input_tokens` | int | `cached_input_tokens` | Subset of input; never added again |
 | `gen_ai.usage.cache_write.input_tokens` | int | `cache_write_input_tokens` | Subset of input |
 | `gen_ai.usage.reasoning.output_tokens` | int | `reasoning_output_tokens` | Subset of output; never added again |
-| `error.type` | string | `spans.error_type` | Stable |
+| `error.type` | string, ≤ 256, `[A-Za-z0-9_][A-Za-z0-9_.:$/-]*` | `spans.error_type` | Stable. A low-cardinality identifier (`timeout`, `500`, `openai.RateLimitError`, `_OTHER`); a description with spaces or control characters is dropped and counted (R21) |
 | `server.address`, `server.port` | string/int | JSONB | Stable |
 | `openai.request.service_tier`, `openai.response.service_tier`, `openai.response.system_fingerprint`, `openai.api.type` | string | JSONB | OpenAI conventions |
 
@@ -155,7 +164,11 @@ Anything not listed below is dropped before persistence and counted in `spans.se
 - URLs and headers: `url.full`, `url.query`, `http.request.header.*`, `http.response.header.*`.
 - Identity: `client.address`, `user.*`, `enduser.*`.
 - Exceptions: `exception.message`, `exception.stacktrace`.
-- Any key containing `authorization`, `api_key`, `apikey`, `password`, `secret` or `token`, except the explicit `gen_ai.usage.*_tokens` keys above.
+- Credentials, by **explicit classification** (Phase 1C; replaces the 1B substring rule, which also matched the counter `gen_ai.request.max_tokens`). The key is split into lower-case words at `.`, `_`, `-` and camelCase boundaries. It is denied if:
+  - it contains a credential stem anywhere: `password`, `passwd`, `secret`, `authorization`, `apikey`/`api_key`, `credential`, `cookie`, `privatekey`/`private_key`; or
+  - it has a credential word: `token` (singular, e.g. `auth.token`, `access_token`, `accessToken`), `auth`, `bearer`, `jwt`, `pwd`; or
+  - `tokens`, `key` or `keys` follows a credential qualifier (`access`, `refresh`, `id`, `session`, `auth`, `bearer`, `api`, `oauth`, `csrf`, `xsrf`, `secret`, `private`, `signing`, `encryption`, `client`, `master`, `security`).
+  - Plural `tokens` after any other word is a count (`input_tokens`, `max_tokens`, `cache_read.input_tokens`) and is not denied. A test proves that no allowlisted key, no alias and no semconv token counter is classified as a credential.
 
 ## 4. Usage ledger: call identity and deduplication (ADR-21)
 
@@ -167,7 +180,7 @@ A `usage_records` row is created **only** for inference spans (ADR-13): one row 
 
 | # | Key | `call_key_source` | Available when | Limitation |
 |---|---|---|---|---|
-| 1 | `resp:{provider}:{gen_ai.response.id}` | `provider_response_id` | The provider returned a response | Assumes response IDs are unique per provider. Absent on failed attempts |
+| 1 | `resp:{provider}:{gen_ai.response.id}` | `provider_response_id` | The provider returned a response | Assumes response IDs are unique per provider. Absent on failed attempts. `{provider}` has `%` and `:` percent-encoded (Phase 1C), so a `:` inside a provider name cannot make two different (provider, ID) pairs share a key. A missing provider is the namespace `unknown`: two spans without a provider name and with the same response ID share one key, and the second is a counted collision (documented limitation). Provider names are not case-folded, so `OpenAI` and `openai` are different namespaces (semconv requires `openai`) |
 | 2 | `sdk:{llminsight.call_id}:{llminsight.attempt}` | `sdk_attempt` | The span was produced by the LLM Insight SDK | Client-asserted. Relies on the SDK generating a fresh UUIDv4 per logical call and incrementing `attempt` |
 | 3 | `span:{trace_id}:{span_id}` | `span_fallback` | Always | Weakest. It cannot dedupe the same physical call reported by two instrumentations |
 
@@ -182,7 +195,7 @@ A `usage_records` row is created **only** for inference spans (ADR-13): one row 
 
 **Token rules:**
 - Provider-reported values are preferred (`usage_source=provider_reported`).
-- A missing `input_tokens` / `output_tokens` is stored as `NULL` with `usage_source=unknown`, never `0`. `estimated` is reserved; the MVP has no tokenizer.
+- A missing `input_tokens` / `output_tokens` is stored as `NULL` with `usage_source=unknown`, never `0`. The server never estimates (the MVP has no tokenizer). When both counts are present, `usage_source` is the instrumentation's `llminsight.usage_source` claim (`provider_reported` | `estimated` | `unknown`), defaulting to `provider_reported`, which is what the semconv `gen_ai.usage.*` attributes carry.
 - Subset attributes (`cache_read`, `cache_write`, `reasoning`) are emitted by semconv only "when available and non-zero". An absent subset is stored as `NULL` (not reported) and treated as 0 **only inside the cost formula**. The LLM Insight SDK always emits provider-reported subsets explicitly, including 0.
 - Consistency check: if `cached_input_tokens + cache_write_input_tokens > input_tokens` or `reasoning_output_tokens > output_tokens`, the tokens are stored as received, with `cost_status=unknown` and `cost_unknown_reason=usage_inconsistent`.
 
@@ -199,11 +212,12 @@ A `usage_records` row is created **only** for inference spans (ADR-13): one row 
 | Inference-span provenances | Trace provenance |
 |---|---|
 | none (no inference spans) | `unknown` |
+| all `unknown` (Phase 1C decision on `reports/phase-1b.md` §7 item 2) | `unknown` |
 | all `real` | `real` |
 | all `synthetic` | `synthetic` |
-| any other combination (e.g. real + synthetic, real + unknown) | `mixed` |
+| any other combination (e.g. real + synthetic, real + unknown, synthetic + unknown) | `mixed` |
 
-- **Trust caveat:** `real` is **asserted by the instrumentation**, not cryptographically verified. The UI wording is "reported real", and `unknown` / `mixed` are never counted as real.
+- **Trust caveat:** `real` is **asserted by the instrumentation**, not cryptographically verified. The UI wording is "reported real", and `unknown` / `mixed` are never counted as real. The server rule only ever **downgrades** a claim: a response ID never creates or verifies `real` (a span with a response ID and no claim stays `unknown`). The read API returns `provenance_verified: false` next to every provenance value (`ARCHITECTURE.md` §5).
 
 ## 6. Representative fixture
 

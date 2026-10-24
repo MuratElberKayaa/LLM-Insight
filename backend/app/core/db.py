@@ -1,12 +1,18 @@
 """SQLAlchemy engine/session setup (sync driver: psycopg 3)."""
 
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 
 # libpq connect timeout (seconds); the readiness probe applies its own 1 s bound on top.
 CONNECT_TIMEOUT_S = 2
+
+# DB unreachable, connection lost, pool exhausted, serialization failure or deadlock
+# (both are OperationalError subclasses in psycopg): retryable, so 503 + Retry-After.
+RETRYABLE_DB_ERRORS = (OperationalError, InterfaceError, PoolTimeoutError)
 
 
 def create_db_engine(settings: Settings) -> Engine:

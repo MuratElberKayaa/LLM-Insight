@@ -10,6 +10,7 @@ import os
 import threading
 import time
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import NamedTuple
 
 import pytest
@@ -27,7 +28,7 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings
 from app.main import create_app
 from app.repositories import api_keys
-from tests.helpers import DUMMY_PEPPER, alembic_config, make_settings
+from tests.helpers import DUMMY_PEPPER, DUMMY_TOKEN, alembic_config, make_settings
 
 REQUIRE_DB = os.environ.get("LLMI_TEST_REQUIRE_DB") == "1"
 
@@ -176,11 +177,10 @@ def make_key(db) -> Callable[..., ProjectKey]:
     return _make
 
 
-@pytest.fixture
-def live_server(ingest_settings) -> Iterator[LiveServer]:
-    """The real app under uvicorn on a free loopback port (for the OTel exporter and for
-    concurrent HTTP clients)."""
-    app = create_app(ingest_settings)
+@contextmanager
+def run_live_server(settings: Settings) -> Iterator[LiveServer]:
+    """The real app under uvicorn on a free loopback port."""
+    app = create_app(settings)
     server = uvicorn.Server(
         uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", lifespan="on")
     )
@@ -192,6 +192,39 @@ def live_server(ingest_settings) -> Iterator[LiveServer]:
             pytest.fail("uvicorn test server did not start")
         time.sleep(0.02)
     port = server.servers[0].sockets[0].getsockname()[1]
-    yield LiveServer(f"http://127.0.0.1:{port}", app)
-    server.should_exit = True
-    thread.join(timeout=15)
+    try:
+        yield LiveServer(f"http://127.0.0.1:{port}", app)
+    finally:
+        server.should_exit = True
+        thread.join(timeout=15)
+
+
+@pytest.fixture
+def live_server(ingest_settings) -> Iterator[LiveServer]:
+    """For the OTel exporter and for concurrent HTTP clients."""
+    with run_live_server(ingest_settings) as server:
+        yield server
+
+
+# ---------------------------------------------------------------- Phase 1C: read API fixtures
+ADMIN_AUTH = {"Authorization": f"Bearer {DUMMY_TOKEN}"}
+
+
+@pytest.fixture
+def api_settings(ingest_settings) -> Settings:
+    """Read-API and ingest buckets wide open, so tests that make many requests are not
+    throttled; the throttling tests build their own settings."""
+    return ingest_settings.model_copy(
+        update={
+            "rate_limit_api_rps": 10_000,
+            "rate_limit_api_burst": 10_000,
+            "rate_limit_ingest_rps": 10_000,
+            "rate_limit_ingest_burst": 10_000,
+        }
+    )
+
+
+@pytest.fixture
+def api_client(api_settings) -> Iterator[TestClient]:
+    with TestClient(create_app(api_settings)) as c:
+        yield c

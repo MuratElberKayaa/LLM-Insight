@@ -202,10 +202,13 @@ def test_error_type_prefers_error_type_attribute_then_exception_event():
     assert spans[0].error_type == "timeout"
 
 
-def test_status_message_is_scrubbed_and_truncated():
+def test_status_message_is_not_carried_past_normalization():
+    """R21: the status message is dropped entirely (no scrubbing, no truncation)."""
     spans, _ = one(status_code=2, status_message="401 bad key sk-abcdefghijklmnop " + "x" * 400)
-    msg = spans[0].status_message
-    assert "sk-abcdefghijklmnop" not in msg and len(msg) == attrmap.MAX_STRING
+    assert not hasattr(spans[0], "status_message")
+    assert spans[0].status == "ERROR"
+    assert "abcdefghijklmnop" not in repr(spans[0])
+    assert attrmap.MAX_STRING == 256
 
 
 def test_empty_name_and_scope_become_markers_or_null():

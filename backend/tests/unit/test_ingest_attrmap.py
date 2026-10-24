@@ -62,7 +62,7 @@ def test_deny_list_overrides_a_misconfigured_allowlist(monkeypatch):
     assert m.values == {} and m.dropped == 2
 
 
-def test_explicit_usage_token_keys_are_exempt_from_the_token_substring_rule():
+def test_usage_token_counters_are_not_classified_as_credentials():
     names = [
         "gen_ai.usage.input_tokens",
         "gen_ai.usage.output_tokens",
@@ -75,11 +75,11 @@ def test_explicit_usage_token_keys_are_exempt_from_the_token_substring_rule():
     assert not any(attrmap.is_denied(n) for n in names)
 
 
-def test_request_max_tokens_follows_the_literal_deny_rule():
-    """Contract conflict (reported): §3 allowlists gen_ai.request.max_tokens, but the
-    always-deny rule matches 'token' and exempts only gen_ai.usage.*_tokens. Deny wins."""
+def test_request_max_tokens_is_kept_as_a_count():
+    """Phase 1C decision on the 1B conflict (reports/phase-1b.md §7 item 1): the credential
+    classifier no longer matches the substring 'token', so the allowlisted counter is kept."""
     m = span_map({"gen_ai.request.max_tokens": 256})
-    assert m.values == {} and m.dropped == 1
+    assert m.values == {"gen_ai.request.max_tokens": 256} and m.dropped == 0
 
 
 @pytest.mark.parametrize("order", ["standard_first", "alias_first"])
@@ -186,24 +186,7 @@ def test_inference_detection_uses_operation_name_only():
     assert not attrmap.is_inference({"gen_ai.request.model": "gpt-4o-mini"})
 
 
-@pytest.mark.parametrize(
-    "text,secret",
-    [
-        ("Error code: 401 - Incorrect API key provided: sk-abcDEF123456789", "abcDEF123"),
-        ("upstream said Authorization: Bearer abc.def.ghi", "abc.def.ghi"),
-        ("bad api_key=hunter2hunter2 in config", "hunter2"),
-        ("password: correct-horse", "correct-horse"),
-        ("key lli_AbCd1234_abcd-efgh-ijkl was rejected", "abcd-efgh"),
-    ],
-    ids=["openai-key", "bearer-header", "api-key-assignment", "password", "ingest-key"],
-)
-def test_status_message_scrubbing_masks_credential_like_text(text, secret):
-    out = attrmap.scrub_free_text(text)
-    assert secret not in out
-    assert "[REDACTED]" in out
-
-
-def test_status_message_scrubbing_keeps_ordinary_text():
-    assert attrmap.scrub_free_text("rate limited (429), retry in 2s") == (
-        "rate limited (429), retry in 2s"
-    )
+def test_free_text_scrubber_was_removed_with_status_message_storage():
+    """R21 (Phase 1C): status messages are no longer stored at all, so the best-effort
+    scrubber is gone rather than kept as an unused safety claim."""
+    assert not hasattr(attrmap, "scrub_free_text")

@@ -11,12 +11,12 @@ from dataclasses import dataclass
 
 from google.protobuf.message import DecodeError
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
-from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError
-from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core import security
 from app.core.config import Settings
+from app.core.db import RETRYABLE_DB_ERRORS
 from app.core.ratelimit import KeyedTokenBucket
 from app.repositories import api_keys, telemetry
 from app.services.ingestion import errors
@@ -24,10 +24,6 @@ from app.services.ingestion.body import gunzip_bounded
 from app.services.ingestion.normalize import NormalizedSpan, count_spans, normalize
 
 logger = logging.getLogger("app.ingest")
-
-# DB unreachable, connection lost, pool exhausted, serialization failure or deadlock
-# (both are OperationalError subclasses in psycopg): retryable, so 503 + Retry-After.
-RETRYABLE_DB_ERRORS = (OperationalError, InterfaceError, PoolTimeoutError)
 
 
 @dataclass(frozen=True)
@@ -42,11 +38,15 @@ class IngestStats:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.usage_key_collisions = 0
+        self.spans_reexported = 0
+        self.span_content_conflicts = 0
         self.batches_committed = 0
 
     def record(self, result: telemetry.PersistResult) -> None:
         with self._lock:
             self.usage_key_collisions += result.usage_key_collisions
+            self.spans_reexported += result.spans_reexported
+            self.span_content_conflicts += result.span_content_conflicts
             self.batches_committed += 1
 
 
@@ -134,6 +134,9 @@ class Ingestor:
         self.stats.record(result)
         if result.usage_key_collisions:
             logger.warning("usage call-key collisions=%d", result.usage_key_collisions)
+        if result.span_content_conflicts:
+            # Counts only: the differing values are never logged. The first write is kept.
+            logger.warning("span re-export content conflicts=%d", result.span_content_conflicts)
         logger.info(
             "ingest committed spans=%d new_spans=%d new_usage=%d traces=%d",
             result.spans_received,

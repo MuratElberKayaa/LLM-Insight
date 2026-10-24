@@ -20,12 +20,20 @@ def ns_to_datetime(ns: int) -> datetime:
     return EPOCH + timedelta(microseconds=ns // 1000)
 
 
+def _key_component(value: str) -> str:
+    return value.replace("%", "%25").replace(":", "%3A")
+
+
 def canonical_call_key(span: NormalizedSpan, provider: str) -> tuple[str, str]:
-    """Master plan §E precedence: provider response ID, then SDK call_id+attempt, then span."""
+    """Master plan §E precedence: provider response ID, then SDK call_id+attempt, then span.
+
+    Every key is unambiguous: the provider is the only free component before a ':' separator,
+    so its '%' and ':' are percent-encoded (provider `a:b` + ID `c` and provider `a` + ID
+    `b:c` stay distinct). The attempt is an integer and the span key is fixed-width hex."""
     a = span.attributes
     response_id = a.get("gen_ai.response.id")
     if response_id is not None:
-        key = f"resp:{provider}:{response_id}"
+        key = f"resp:{_key_component(provider)}:{response_id}"
         if len(key) <= MAX_CALL_KEY:  # a longer key falls through to the next identity
             return key, "provider_response_id"
     call_id, attempt = a.get("llminsight.call_id"), a.get("llminsight.attempt")

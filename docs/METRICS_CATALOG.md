@@ -21,7 +21,7 @@ Provenance values are defined in `TELEMETRY_CONTRACT.md` §5. Usage rows and spa
 3. **"Reported real" figures** count only `real`. A `mixed` trace is never counted as real, even though it contains real spans; its real usage rows still count in usage-level real metrics (rule 1). `unknown` never counts as real.
 4. **Every KPI response** returns a breakdown `{real, synthetic, mixed, unknown}` (with `mixed` at trace level only), plus a `total`. The UI headline shows the active provenance filter. With no filter, the headline is labeled "all provenance", never "real".
 5. **Percentiles (M06, M07)** are computed per provenance bucket when filtered. The unfiltered value is shown with the bucket `n`s next to it.
-6. **No inference from absence:** a trace with no inference spans is `unknown`, not `real`.
+6. **No inference from absence:** a trace with no inference spans is `unknown`, not `real`. A trace whose inference spans are all `unknown` is also `unknown`; `real` or `synthetic` mixed with anything else is `mixed` (`TELEMETRY_CONTRACT.md` §5).
 7. **Trust caveat:** `real` is asserted by the instrumentation and checked only by the server consistency downgrade (`TELEMETRY_CONTRACT.md` §5). It is not cryptographic proof.
 
 ## P0 metrics

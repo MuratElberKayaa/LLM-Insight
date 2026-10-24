@@ -6,8 +6,10 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 
 - **Metadata only.** Prompts, completions, system instructions, tool definitions and prompt variables are never persisted from telemetry. This holds even when a client sends them.
 - **Allowlist.** Only the attributes listed in `TELEMETRY_CONTRACT.md` §3 are stored. Everything else is dropped before the DB write and only counted. An always-deny list overrides any allowlist mistake.
-- **No events stored.** Exception messages and stack traces are dropped; only `exception.type` is kept.
-- **Truncation.** String attribute values are capped at 256 chars and arrays at 16 items.
+- **No events stored.** Exception messages and stack traces are dropped; only `exception.type` is kept, and only when it is a type identifier.
+- **No status descriptions stored** (Phase 1C, R21). OTLP `Status.message` is never persisted (`spans.status_message` is always `NULL`), and `error.type` / `exception.type` are kept only when they match an identifier pattern (no spaces or control characters). Errors are described by the span status plus that identifier.
+- **Credential keys** are recognised by explicit classification (credential stems, credential words such as singular `token`, and qualified `tokens`/`key`), not by substring. Token *counters* such as `gen_ai.request.max_tokens` are kept (`TELEMETRY_CONTRACT.md` §3).
+- **Truncation.** String attribute values are capped at 256 chars and arrays at 16 items. Identifier strings (`gen_ai.response.id`, `gen_ai.provider.name`, `llminsight.call_id`, `gen_ai.prompt.version`, `error.type`) are dropped instead of truncated when over their bound.
 - **Test-case content.** Test-case input is the only free text stored. It is entered by a human, must be synthetic or explicitly redacted, and passes server-side redaction before insert (Phase 4, T35). Redaction targets at minimum email addresses, phone numbers, IBAN/card-like digit runs and API-key-like tokens. Redaction is best effort and not a guarantee, so content must still be synthetic.
 - **Review text.** Failure Review `evidence` and `hypothesis` are also human-written free text, and pass the same redaction before insert. Reviewers are told not to paste raw prompts.
 
@@ -23,8 +25,9 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 
 **Logging rules:**
 - Logs never contain the `X-Project-Key` or `Authorization` header values, raw keys, the pepper, or request bodies (T44).
-- Auth failures log only the key prefix (if parsable), the client address, and a reason code.
-- Error responses use generic messages, and missing, unknown and revoked keys get the same `401`.
+- Auth failures log only the key prefix (if parsable), the client address, and a reason code. `/api/v1` auth failures log the reason code and client address only.
+- Error responses use generic messages, and missing, unknown and revoked keys get the same `401`. `/api/v1` errors carry a fixed code and message; a `422` names the invalid parameters but never echoes their values (FastAPI's default body would).
+- The uvicorn access log records the request line, including query strings (`project`, `model`, `cursor`). The query string never carries credentials; the token travels only in the `Authorization` header, which is not logged.
 
 Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env` and `.env.*`. Phase 5 adds a secret scan.
 
@@ -35,9 +38,12 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
   - decompressed 16 MiB, enforced incrementally during gzip decompression (zip-bomb guard)
   - 2048 spans per request
   - all three return `413`
+  - body-read deadline 10 s after authentication (`LLMI_OTLP_BODY_READ_TIMEOUT_S`, Phase 1C, R22): `408` and the connection is closed. The deadline covers the body only; slow request headers and connection exhaustion are server-level concerns that uvicorn does not bound here (`reports/phase-1c.md` §5)
 - `/api/v1/*`:
   - `limit` ≤ 200
-  - date window ≤ 31 days
+  - date window ≤ 31 days (default: the last 31 days)
+  - at most 2000 spans and 2000 usage rows per trace detail
+  - read-only `REPEATABLE READ` transactions
   - ORM-parameterized SQL only, with no string-built SQL
 
 ## 4. Rate limiting (CR-08)
@@ -45,7 +51,7 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 - There are three in-process token buckets. Over-limit requests get `429` with `Retry-After` (T43).
   - **Auth-failure:** keyed by client address, default 30 failures/min (`LLMI_RATE_LIMIT_AUTHFAIL_PER_MIN`). It is checked before key verification, which slows key guessing.
   - **Ingest:** keyed by the **verified** key ID after auth (default 20 req/s, burst 40). An unauthenticated caller cannot drain a legitimate key's bucket.
-  - **`/api/v1`:** keyed by token and client address (default 10 req/s, burst 20).
+  - **`/api/v1`:** keyed by token and client address (default 10 req/s, burst 20). Implemented in Phase 1C: with one verified admin token it is keyed by client address after authentication. `/api/v1` auth failures consume the auth-failure bucket shared with ingest.
 - **Limit of this design:** the state is per process. With N workers the effective limit is N× the configured value, and it resets on restart. The MVP runs a **single uvicorn worker**. This control is not a defense against distributed abuse.
 
 ## 5. Web / UI
@@ -64,13 +70,14 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 
 | Threat | Mitigation in MVP | Residual risk |
 |---|---|---|
-| Sensitive prompt / PII leaks into the DB | Allowlist, always-deny list, no events, truncation | Allowlisted free-form strings (e.g. `http.route`) could carry PII if misused; only route templates are expected |
+| Sensitive prompt / PII leaks into the DB | Allowlist, always-deny list, no events, no status messages, identifier-only error types, truncation | Allowlisted free-form strings (e.g. `http.route`, span names, model names) could carry PII if misused, and an identifier-shaped secret (no spaces) passes the `error.type` pattern (R08) |
+| Slow or stalled request bodies | Body-read deadline (`408`, connection closed) after auth; nothing is written before the body is complete | Slow headers and connection exhaustion are not bounded by the app (R24); loopback bind |
 | Key theft from DB dump | HMAC with an env pepper | DB plus env both leaked compromises the keys; revocation is manual |
-| Cross-project read | Mandatory `project` scope, 404 on mismatch (T28) | Single admin token can read all projects (single-project MVP) |
+| Cross-project read | Mandatory `project` scope; another project's trace, an unknown trace and an unknown project get one byte-identical `404` (no `403` that would confirm existence) (T28) | Single admin token can read all projects (single-project MVP) |
 | Ingest flooding / oversized payload | Body, decompression and span limits plus the rate limiter | Per-process limiter only |
 | Duplicate / replayed exports inflating cost | `UNIQUE(project_id, canonical_call_key)`, one usage row per span, `ON CONFLICT DO NOTHING`, and response-ID-first keys | A failed attempt reported by two instrumentations is not deduplicated (no response ID). Its cost is unknown, so the known total is unaffected |
 | Ingest key guessing | Auth-failure limiter per client address, generic `401`, 256-bit keys | Per-process limiter only |
-| Mislabelled provenance (fake "real") | Server downgrade of `real` without a response ID; mixed and unknown never counted as real | Provenance is client-asserted, not cryptographically verified |
+| Mislabelled provenance (fake "real") | Server downgrade of `real` without a response ID (a response ID never upgrades a claim); mixed and unknown never counted as real; the API returns `provenance_verified: false` | Provenance is client-asserted, not cryptographically verified |
 | Error responses leaking data | `Status.message` / `BadRequest` carry field paths and rule text only, never values | — |
 | Secret in client bundle | Server-only env, T42 bundle scan | Developer error with `NEXT_PUBLIC_*`, caught by the scan |
 | Accidental public exposure | Bind to 127.0.0.1, no public ingress | Changing the bind is a manual act and needs a new review |
