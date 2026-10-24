@@ -1,17 +1,26 @@
-# Full lock for sdk/ dev environment (runtime + dev). Generated with pip freeze from sdk/.venv (Phase 2A, 2026-10-24).
+# Full lock for sdk/ dev environment (runtime + dev + the `openai` extra). Generated with pip freeze from sdk/.venv (Phase 2A, 2026-10-24; Phase 2B, 2026-10-25).
 # Rule (CR-09): every version was first uploaded to PyPI on or before 2026-10-10. Shared packages match
 # backend/requirements.lock; ast_serialize is held at 0.12.1 (0.13.x was released after the cutoff).
+# Phase 2B: openai 3.28.0 (2026-10-09) and its new transitives httpx2/httpcore2 2.13.1, jiter 0.17.0, sniffio 1.3.1;
+# truststore is held at 0.10.4 (0.10.5 was released after the cutoff).
 # Install: python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .
+annotated-types==0.8.0
+anyio==4.15.1
 ast_serialize==0.12.1
 certifi==2026.7.22
 charset-normalizer==3.5.2
 colorama==0.4.6
 googleapis-common-protos==1.75.5
+h11==0.16.0
+httpcore2==2.13.1
+httpx2==2.13.1
 idna==3.20
 iniconfig==2.3.1
+jiter==0.17.0
 librt==0.16.0
 mypy==2.4.0
 mypy_extensions==1.1.0
+openai==3.28.0
 opentelemetry-api==1.45.1
 opentelemetry-exporter-http-transport==0.66b1
 opentelemetry-exporter-otlp-common==0.66b1
@@ -26,10 +35,15 @@ pluggy==1.6.0
 protobuf==7.36.2
 psycopg==3.3.6
 psycopg-binary==3.3.6
+pydantic==2.14.0
+pydantic_core==2.50.0
 Pygments==2.21.0
 pytest==9.1.1
 requests==2.34.2
 ruff==0.17.0
+sniffio==1.3.1
+truststore==0.10.4
+typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.5
 urllib3==2.8.0

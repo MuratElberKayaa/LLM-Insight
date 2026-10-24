@@ -52,3 +52,34 @@ def test_source_never_imports_the_backend():
     for path in (SDK_DIR / "src" / "llm_insight_sdk").glob("*.py"):
         text = path.read_text(encoding="utf-8")
         assert "from app" not in text and "import app" not in text, path.name
+
+
+def test_core_import_never_loads_the_openai_package(tmp_path):
+    """The adapter is optional: importing the SDK, its config and the mock never imports
+    `openai`; only `llm_insight_sdk.openai_adapter` does (ADR-05: provider logic isolated)."""
+    code = (
+        "import sys, llm_insight_sdk, llm_insight_sdk.mock, llm_insight_sdk.instrumentation;"
+        "print('openai' in sys.modules);"
+        "import llm_insight_sdk.openai_adapter;"
+        "print('openai' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code], cwd=tmp_path, capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["False", "True"]
+
+
+def test_openai_extra_is_exactly_pinned():
+    dist = importlib.metadata.distribution("llm-insight-sdk")
+    extras = sorted(r for r in dist.requires or [] if 'extra == "openai"' in r)
+    assert extras == ['openai==3.28.0; extra == "openai"']
+    assert importlib.metadata.version("openai") == "3.28.0"
+
+
+def test_provider_specific_code_lives_only_in_the_adapter():
+    for path in (SDK_DIR / "src" / "llm_insight_sdk").glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if path.name != "openai_adapter.py":
+            assert "import openai" not in text and "from openai" not in text, path.name
+            assert "httpx2" not in text, path.name

@@ -295,7 +295,8 @@ def test_a10_dropped_count_includes_span_and_resource_drops():
     "overrides,usage_source,reason",
     [
         ({}, "provider_reported", "price_missing"),
-        ({"llminsight.usage_source": "estimated"}, "estimated", "price_missing"),
+        # Phase 2B: only provider-reported usage is priced; an estimate is not usage evidence
+        ({"llminsight.usage_source": "estimated"}, "estimated", "usage_missing"),
         ({"llminsight.usage_source": None}, "provider_reported", "price_missing"),
         ({"gen_ai.usage.output_tokens": None}, "unknown", "usage_missing"),
         ({"gen_ai.usage.input_tokens": None}, "unknown", "usage_missing"),

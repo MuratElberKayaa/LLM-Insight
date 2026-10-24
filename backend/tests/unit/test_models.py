@@ -4,11 +4,11 @@ from sqlalchemy.schema import CreateTable
 
 from app.models import Base
 
-PHASE1_TABLES = {"projects", "project_api_keys", "traces", "spans", "usage_records"}
+TABLES = {"projects", "project_api_keys", "traces", "spans", "usage_records", "model_prices"}
 
 
-def test_only_phase1_tables_defined():
-    assert set(Base.metadata.tables) == PHASE1_TABLES
+def test_only_phase1_and_phase2_tables_defined():
+    assert set(Base.metadata.tables) == TABLES
 
 
 def test_surrogate_keys_are_bigserial():
@@ -38,13 +38,14 @@ def test_unknown_cost_checks_present():
     } <= checks
 
 
-def test_model_price_fk_deferred_to_phase2():
+def test_model_price_fk_added_in_phase2_with_restrict():
     usage = Base.metadata.tables["usage_records"]
-    fk_columns = {
-        col.name
+    fks = [
+        c
         for c in usage.constraints
         if isinstance(c, ForeignKeyConstraint)
-        for col in c.columns
-    }
-    assert "model_price_id" in usage.c
-    assert "model_price_id" not in fk_columns  # model_prices arrives in Phase 2
+        and [col.name for col in c.columns] == ["model_price_id"]
+    ]
+    assert len(fks) == 1
+    assert fks[0].referred_table.name == "model_prices"
+    assert fks[0].ondelete == "RESTRICT"  # an applied price can never disappear

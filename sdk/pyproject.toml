@@ -18,12 +18,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The OpenAI adapter (llm_insight_sdk.openai_adapter). Pinned per ARCHITECTURE.md §6; the
+# core SDK never imports it.
+openai = ["openai==3.28.0"]
 dev = [
     "pytest==9.1.1",
     "ruff==0.17.0",
     "mypy==2.4.0",
     # Live-backend integration tests read the disposable database directly.
     "psycopg[binary]==3.3.6",
+    # Offline adapter tests (fake transports only; no request ever leaves the machine).
+    "openai==3.28.0",
 ]
 
 [tool.setuptools.packages.find]

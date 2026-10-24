@@ -3,8 +3,12 @@
     python -m app.cli create-key --project demo   # creates the project if needed
     python -m app.cli list-keys --project demo    # prefixes and dates only
     python -m app.cli revoke-key --prefix AbCd1234
+    python -m app.cli seed-prices [--dry-run]     # verified price catalogue (append-only)
 
 The raw key is printed exactly once, by create-key, to stdout. Only its HMAC is stored.
+seed-prices inserts the missing rows of `app.services.pricing_catalog`; it never updates a
+stored price and exits 1, writing nothing, when a stored row disagrees with the catalogue.
+Existing usage rows are never repriced by it (docs/PRICING.md §6).
 """
 
 import argparse
@@ -16,7 +20,8 @@ from sqlalchemy import select
 from app.core.config import Settings, get_settings
 from app.core.db import create_db_engine, create_session_factory
 from app.models import Project
-from app.repositories import api_keys
+from app.repositories import api_keys, pricing
+from app.services import pricing_catalog
 
 
 def run(argv: Sequence[str], settings: Settings, out=sys.stdout) -> int:
@@ -28,6 +33,8 @@ def run(argv: Sequence[str], settings: Settings, out=sys.stdout) -> int:
     listing.add_argument("--project", required=True)
     revoke = sub.add_parser("revoke-key", help="revoke a key by its prefix")
     revoke.add_argument("--prefix", required=True)
+    seed = sub.add_parser("seed-prices", help="insert the verified price catalogue")
+    seed.add_argument("--dry-run", action="store_true", help="report only, write nothing")
     args = parser.parse_args(argv)
 
     engine = create_db_engine(settings)
@@ -54,6 +61,21 @@ def run(argv: Sequence[str], settings: Settings, out=sys.stdout) -> int:
                 for k in api_keys.list_keys(session, project_id):
                     state = f"revoked {k.revoked_at.isoformat()}" if k.revoked_at else "active"
                     print(f"{k.prefix} created {k.created_at.isoformat()} {state}", file=out)
+                return 0
+            if args.command == "seed-prices":
+                try:
+                    result = pricing.seed(session, pricing_catalog.ENTRIES, dry_run=args.dry_run)
+                except pricing.CatalogConflict as exc:
+                    print(f"error: {exc}", file=sys.stderr)
+                    return 1
+                verb = "would insert" if args.dry_run else "inserted"
+                for provider, model, version in result.inserted:
+                    print(f"{verb} {provider}/{model} {version}", file=out)
+                print(
+                    f"{verb} {len(result.inserted)}, unchanged {len(result.unchanged)}"
+                    f" (catalogue {pricing_catalog.VERSION})",
+                    file=out,
+                )
                 return 0
             if api_keys.revoke_key(session, args.prefix):
                 print(f"revoked {args.prefix}", file=out)

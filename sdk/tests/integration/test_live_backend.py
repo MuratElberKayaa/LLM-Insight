@@ -2,7 +2,8 @@
 
 No mocked ingestion: spans travel over loopback HTTP to the real backend process, and the
 results are read back from the database and from the read API. All telemetry is SYNTHETIC
-(deterministic mock provider); no real provider is called and no cost is computed.
+(deterministic mock provider); no real provider is called. The mock provider has no price
+in any catalogue, so its rows never get a cost (OpenAI adapter costs: test_openai_live.py).
 """
 
 from __future__ import annotations
@@ -161,7 +162,7 @@ def test_a_success_persists_trace_spans_and_usage(live_backend, telemetry, clien
     assert (u["cached_input_tokens"], u["cache_write_input_tokens"]) == (32, 0)
     assert u["reasoning_output_tokens"] == 0
     assert (u["usage_source"], u["provenance"]) == ("provider_reported", "synthetic")
-    # no price catalogue and no cost calculation in Phase 2A: unknown stays NULL, never 0
+    # the mock provider is never priced (Phase 2B): unknown stays NULL, never 0
     assert u["cost_usd"] is None
     assert (u["cost_status"], u["cost_unknown_reason"]) == ("unknown", "price_missing")
     assert u["price_version"] is None and u["model_price_id"] is None
@@ -416,6 +417,7 @@ def test_no_content_or_secret_in_database_logs_or_api(live_backend, telemetry, c
     api = json.dumps(live_backend.api(f"/api/v1/traces?project={live_backend.project_id}"))
     api += json.dumps(live_backend.api(f"/api/v1/traces/{tid}?project={live_backend.project_id}"))
     log = live_backend.log_text()
+    assert live_backend.log_tracebacks() == []  # shows the exception block if one occurs
     for text in (dump, api, log):
         for forbidden in (
             live_backend.key,
@@ -437,6 +439,8 @@ def test_no_content_or_secret_in_database_logs_or_api(live_backend, telemetry, c
     (real,) = live_backend.query("SELECT count(*) FROM traces WHERE provenance = 'real'")
     assert real == (0,)
     (cost,) = live_backend.query(
-        "SELECT count(*) FROM usage_records WHERE cost_usd IS NOT NULL OR cost_status <> 'unknown'"
+        "SELECT count(*) FROM usage_records WHERE provider = %s"
+        " AND (cost_usd IS NOT NULL OR cost_status <> 'unknown')",
+        (MOCK_PROVIDER,),
     )
-    assert cost == (0,)
+    assert cost == (0,)  # a mock call is never priced, whatever the catalogue holds

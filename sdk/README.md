@@ -4,10 +4,11 @@ A small Python package that records **metadata-only** OpenTelemetry GenAI client
 exports them over **OTLP/HTTP binary protobuf** to the LLM Insight backend
 (`POST /v1/traces`). It is independent of the backend (it never imports it, ADR-01).
 
-Status: Phase 2A. The SDK ships a deterministic **mock** provider only. All telemetry it
-produces is labelled `llminsight.provenance = synthetic`. The OpenAI adapter, pricing and
-cost calculation are not implemented yet, so every usage row has an unknown cost
-(`cost_usd = NULL`).
+Status: Phase 2B (0.2.0). The SDK ships a deterministic **mock** provider (always
+`synthetic`) and an **OpenAI Chat Completions adapter** (`llm_insight_sdk.openai_adapter`,
+optional extra). The SDK never computes money: the backend prices usage rows from its
+verified catalogue (`docs/PRICING.md`). Every adapter test is offline; no real OpenAI call
+has been made by this project.
 
 ## Install
 
@@ -21,7 +22,9 @@ sdk/.venv/Scripts/python -m pip install --no-deps ./sdk                # the SDK
 
 For use inside another application, install the wheel (`pip wheel --no-deps ./sdk`). Its
 runtime dependencies are pinned exactly: `opentelemetry-api`, `opentelemetry-sdk` and
-`opentelemetry-exporter-otlp-proto-http` 1.45.1.
+`opentelemetry-exporter-otlp-proto-http` 1.45.1. The OpenAI adapter needs the optional
+extra `llm-insight-sdk[openai]` (`openai==3.28.0`); the core package never imports
+`openai`.
 
 ## Quick start
 
@@ -157,6 +160,53 @@ thread, which is logged by OpenTelemetry and counted in `stats()`.
 
 There is no persistent queue (ADR-06) and no billing-grade reliability.
 
+## OpenAI adapter (Phase 2B)
+
+```python
+import openai
+
+import llm_insight_sdk as lli
+from llm_insight_sdk.openai_adapter import ObservedOpenAIClient
+
+telemetry = lli.init(lli.LLMInsightConfig.from_env())
+llm = ObservedOpenAIClient(telemetry, openai.OpenAI(), provenance="real")
+completion = llm.create_chat_completion(
+    model="gpt-5.4-mini",
+    messages=[{"role": "user", "content": "..."}],
+    service_tier="default",  # lets the backend prove standard-tier pricing
+    prompt_version="v1",
+)
+```
+
+- **Surface:** `chat.completions.create` without streaming (`openai.api.type =
+  chat_completions`), sync (`ObservedOpenAIClient`) and async (`ObservedAsyncOpenAIClient`).
+  `stream=True`, `stream_options`, Azure clients and any base URL other than
+  `https://api.openai.com` are refused with `UnsupportedRequestError` / `ConfigError`
+  before a request is sent.
+- **Provenance is declared**, never guessed: `real` for a client that talks to OpenAI,
+  `synthetic` for fake transports and fixtures. `real` with an `httpx2.MockTransport` is
+  refused. The backend still downgrades a successful `real` span without a response ID.
+- **One span per physical request.** The wrapped client's own retries are disabled
+  (`with_options(max_retries=0)`; your client object is not modified). The adapter retries
+  connection errors, timeouts, 408, 409, 429 and 5xx (default 3 attempts, linear back-off
+  of 0.5 s, `Retry-After` not honoured), each attempt with its own span, sharing one
+  UUIDv4 `llminsight.call_id`.
+- **Usage** is copied from the provider's `usage` object only: `prompt_tokens`,
+  `completion_tokens`, `prompt_tokens_details.cached_tokens` / `.cache_write_tokens`,
+  `completion_tokens_details.reasoning_tokens`. A field the provider did not report stays
+  absent; nothing is estimated from text.
+- **Errors** reach your code unchanged after the last attempt. The span gets `ERROR` and
+  `error.type` = `timeout`, the HTTP status (`429`, `500`, …) or `openai.<ExceptionClass>`.
+  The provider's error message and request ID are never recorded.
+- **Fail-open:** if telemetry itself fails, the request still runs and its result or error
+  is returned exactly as without the adapter.
+- **Cost** is computed by the backend only for responses that report
+  `service_tier = default` on `api.openai.com` with a model in the verified catalogue;
+  everything else is stored as unknown (`price_missing`), never as 0.
+- **Logging caveat:** the `openai` library's own DEBUG logging prints request details,
+  including OpenAI request IDs. That is the application's logging configuration; the SDK's
+  logger (`llm_insight_sdk`) never logs content, keys or provider error text.
+
 ## What is recorded
 
 One `CLIENT` span per physical attempt, named `{gen_ai.operation.name} {gen_ai.request.model}`
@@ -171,13 +221,18 @@ records only these attributes:
   separately and a reported `0` emitted explicitly;
 - `error.type` on failure;
 - `llminsight.call_id` (UUIDv4 per logical call), `llminsight.attempt` (1, 2, …),
-  `llminsight.provenance` and `llminsight.usage_source`.
+  `llminsight.provenance` and `llminsight.usage_source`;
+- OpenAI adapter only: `openai.api.type`, `openai.request.service_tier` (when set and not
+  `auto`), `openai.response.service_tier`, `openai.response.system_fingerprint`,
+  `server.address` / `server.port`, and `gen_ai.output.type` for a JSON `response_format`.
 
 **Never recorded:**
 - prompts, completions, system instructions, tool definitions or prompt variables;
 - exception messages and stack traces: exceptions are not added as span events, and an
   error span carries status `ERROR` with no description, plus a low-cardinality
   `error.type` such as `429`, `timeout` or a class name;
+- the OpenAI API key, request headers, `user`/`metadata` request fields or any other
+  request argument besides the numeric settings above;
 - any cost or price.
 
 Every string value passes a client-side copy of the backend's metadata rules
@@ -204,3 +259,10 @@ The integration tests start the real backend (`backend/.venv`, `python -m app`) 
 disposable `llminsight_sdk_it_test` database. The database credentials come from the
 repository `.env`, and the database is dropped afterwards. Without PostgreSQL they skip,
 unless `LLMI_TEST_REQUIRE_DB=1` is set.
+
+The OpenAI adapter tests (`tests/unit/test_openai_adapter.py`,
+`tests/integration/test_openai_live.py`) use SYNTHETIC response fixtures
+(`tests/openai_fixtures.py`) behind an `httpx2.MockTransport`, and block every
+non-loopback name resolution and connection for the duration of each test, so no request
+can reach OpenAI. The live tests seed the backend's verified price catalogue and check
+the stored cost.

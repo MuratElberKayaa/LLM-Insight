@@ -1,8 +1,8 @@
 """ARCHITECTURE.md §4.6 `usage_records`: one row per physical inference attempt.
 
-`model_price_id` references `model_prices` (§4.7), which the Phase 2 migration creates.
-That migration also adds the FK (ON DELETE RESTRICT); until then the column exists
-without it, and no row can be `computed` because no price exists.
+`model_price_id` references `model_prices` (§4.7). Migration `0001` created the column
+without its FK; migration `0002` (Phase 2B) creates `model_prices` and adds the FK
+(ON DELETE RESTRICT), so a price row that was applied can never disappear.
 """
 
 from datetime import datetime
@@ -79,6 +79,7 @@ class UsageRecord(Base):
             ["spans.project_id", "spans.trace_id", "spans.span_id"],
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(["model_price_id"], ["model_prices.id"], ondelete="RESTRICT"),
         UniqueConstraint("project_id", "canonical_call_key"),
         UniqueConstraint("project_id", "trace_id", "span_id"),
         Index(

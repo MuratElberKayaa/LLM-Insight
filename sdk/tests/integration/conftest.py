@@ -111,6 +111,16 @@ class LiveBackend:
     def log_text(self) -> str:
         return self.log_path.read_text(encoding="utf-8", errors="replace")
 
+    def log_tracebacks(self) -> list[str]:
+        """Every traceback block in the backend log (40 lines each), so a failing leak check
+        shows the exception itself instead of a truncated log."""
+        lines = self.log_text().splitlines()
+        return [
+            "\n".join(lines[max(0, i - 2) : i + 40])
+            for i, line in enumerate(lines)
+            if line.startswith("Traceback")
+        ]
+
 
 def _run_backend(python: Path, env: dict[str, str], args: list[str]) -> str:
     result = subprocess.run(
