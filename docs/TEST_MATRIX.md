@@ -68,7 +68,7 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 
 ## Sub-cases (inherit the parent's criticality)
 
-These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3).
+These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3).
 
 | Sub-case | Parent | Scenario | Expected outcome |
 |---|---|---|---|

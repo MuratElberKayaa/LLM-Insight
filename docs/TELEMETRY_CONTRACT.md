@@ -64,7 +64,12 @@ Tested (T01-S3, Phase 1B, `reports/phase-1b.md`): the Python `opentelemetry-expo
 
 Steps 1–6 read headers only, so no unauthenticated body is buffered.
 
-**Body-read deadline (step 7, Phase 1C):** `408 Request Timeout` is not retryable for OTLP clients (only `429`, `502`, `503`, `504` are), so, like `413`, the batch is lost by the client. This is deliberate: an authenticated client that cannot send 4 MiB in 10 s over loopback is misbehaving. The deadline is enforced by the application on the ASGI body stream. It does **not** cover the request-header phase or idle connections, which uvicorn handles (`timeout_keep_alive`, default 5 s) and does not bound for slow headers. It is not a defence against connection-exhaustion attacks (`reports/phase-1c.md` §5).
+**Final protocol decisions (accepted by the user at the Phase 1 closure):**
+- `408` for a request body that is not received completely within the deadline, with no partial DB write;
+- `413` for the size and span-count limits only;
+- `503` + `Retry-After` for temporary storage unavailability.
+
+**Body-read deadline (step 7, Phase 1C):** `408 Request Timeout` is not retryable for OTLP clients (only `429`, `502`, `503`, `504` are), so exporters may not retry it and, like `413`, the batch is lost by the client. This is deliberate: an authenticated client that cannot send 4 MiB in 10 s over loopback is misbehaving. The deadline is enforced by the application on the ASGI body stream. It does **not** cover the request-header phase or idle connections, which uvicorn handles (`timeout_keep_alive`, default 5 s) and does not bound for slow headers. It is not a defence against connection-exhaustion attacks (`reports/phase-1c.md` §5).
 
 ### 1.2 Response encoding (spec: "MUST use the same Content-Type in the response as it received in the request")
 
@@ -113,14 +118,14 @@ The request is walked as:
 - `service.name` comes from the resource; if absent it is `unknown_service`.
 - Span `events` and `links` are **not stored**. An `exception` event contributes only `exception.type`, which is mapped to `error_type` if `error.type` is absent and if it is an identifier under the `error.type` rule (§3). `exception.message` and `exception.stacktrace` are dropped.
 - **`Status.message` is never stored** (Phase 1C, R21). It is free text that can quote credentials, prompts or personal data, and best-effort scrubbing cannot make it safe. `spans.status_message` stays in the schema and is always `NULL` from ingest. An error is described only by the span status (`UNSET`/`OK`/`ERROR`) and the validated `error_type` identifier.
-- A span with an empty name is stored as `unknown_span`, a display fallback only (`spans.name` is `LEN(256)`).
+- A span with an empty name is stored as `unknown_span`, a display fallback only (`spans.name` is `LEN(256)`). A span name that fails the string-safety rules (§3.1) is stored as `redacted_span` and counted. A scope name or version that fails them is stored as `NULL` and counted on every span of that scope.
 - The client's own `Span.dropped_attributes_count` is not stored. Ours is `server_dropped_attributes_count`.
 
 ## 3. Attribute allowlist (`llminsight.attrmap.v1`)
 
-Anything not listed below is dropped before persistence and counted in `spans.server_dropped_attributes_count` (an `INT` that saturates at 2^31−1; resource drops count on every span of that resource). String values are truncated to 256 chars and arrays to 16 items, except **identifier strings**, which are dropped (and counted) rather than truncated, because a shortened identifier is a different identifier: `gen_ai.response.id` (≤ 256), `gen_ai.provider.name` (≤ 64), `llminsight.call_id` (≤ 64), `gen_ai.prompt.version` and `error.type` (rules below).
+Anything not listed below is dropped before persistence and counted in `spans.server_dropped_attributes_count`. That column is an `INT` that saturates at 2^31−1. Resource-attribute and scope-field drops count on every span of that resource or scope, and a withheld span name counts as one. Every string value must also pass the string-safety rules of §3.1. Free-text **labels** are truncated to 256 chars after those checks. **Identifiers** are dropped (and counted) rather than truncated, because a shortened identifier is a different identifier. Arrays keep at most 16 items.
 
-**v1 finalization (Phase 1C):** the max-tokens, prompt-version, error-type and credential-classification rules below were settled before the Phase 1 gate, while every stored row was disposable test data (the dev database held 0 rows). They are part of `llminsight.attrmap.v1`; any change after the `phase-1` tag needs `attrmap.v2` (ADR-15). Audit against the pinned semconv (`9ffc7e00c639`, `client-inference.md`, re-read 2026-10-24): the five usage counters below and `gen_ai.request.max_tokens` match the pinned names exactly. The pin also defines modality breakdowns (`gen_ai.usage.{text,audio,image}.input_tokens` / `.output_tokens` / `.cache_read.input_tokens`); v1 does not allowlist them, so they are dropped and counted. Adding them is a Phase 2 / ADR-15 decision.
+**v1 finalization (Phase 1C, completed by the Phase 1 final hardening):** the max-tokens, prompt-version, error-type, credential-classification and string-safety rules were settled before the `phase-1` tag, while every stored row was disposable test data (the dev database held 0 rows). They are part of `llminsight.attrmap.v1`; any change after the `phase-1` tag needs `attrmap.v2` (ADR-15). Audit against the pinned semconv (`9ffc7e00c639`, `client-inference.md`, re-read 2026-10-24): the five usage counters below and `gen_ai.request.max_tokens` match the pinned names exactly. The pin also defines modality breakdowns (`gen_ai.usage.{text,audio,image}.input_tokens` / `.output_tokens` / `.cache_read.input_tokens`); v1 does not allowlist them, so they are dropped and counted. Adding them is a Phase 2 / ADR-15 decision.
 
 **Resource:** `service.name`, `service.version`, `service.namespace`, `deployment.environment.name`, `telemetry.sdk.name`, `telemetry.sdk.language`, `telemetry.sdk.version`, `llminsight.sdk.version`.
 
@@ -169,6 +174,50 @@ Anything not listed below is dropped before persistence and counted in `spans.se
   - it has a credential word: `token` (singular, e.g. `auth.token`, `access_token`, `accessToken`), `auth`, `bearer`, `jwt`, `pwd`; or
   - `tokens`, `key` or `keys` follows a credential qualifier (`access`, `refresh`, `id`, `session`, `auth`, `bearer`, `api`, `oauth`, `csrf`, `xsrf`, `secret`, `private`, `signing`, `encryption`, `client`, `master`, `security`).
   - Plural `tokens` after any other word is a count (`input_tokens`, `max_tokens`, `cache_read.input_tokens`) and is not denied. A test proves that no allowlisted key, no alias and no semconv token counter is classified as a credential.
+
+### 3.1 String-value safety (R08, Phase 1 final)
+
+The key rules above decide *which* attributes may be stored. These rules decide whether a permitted string *value* may be stored. Every untrusted string the ingest persists passes them on its complete original value, before any truncation, so a secret cannot survive as a truncated prefix. A rejected value is dropped (attributes, scope fields) or replaced by a documented fallback (span name), and counted. It is never stored, logged, echoed in an error, or returned by the API.
+
+1. **Unsafe characters:** any control, format (bidi override, zero-width, BOM), private-use, surrogate, or line/paragraph separator character (Unicode categories `Cc`, `Cf`, `Co`, `Cs`, `Zl`, `Zp`) rejects the value. That includes U+0000, which was previously replaced.
+2. **Obvious credentials** reject the value in every field:
+   - `sk-…` keys and LLM Insight `lli_…` keys;
+   - AWS `AKIA`/`ASIA` IDs, GitHub `ghp_`/`github_pat_`, Slack `xox?-`, Google `AIza…`;
+   - JWTs (`eyJ….…`) and private-key blocks;
+   - `Bearer`/`Basic` followed by a credential-like value (12+ chars with a digit);
+   - URL user-info (`scheme://user:pass@`);
+   - assignments such as `api_key=`, `secret:`, `password=`, `token=`, `authorization:`.
+3. **Personal data:**
+   - e-mail addresses and runs of 11+ digits (national IDs, phone and card numbers) reject identifiers and labels;
+   - labels are also rejected for international phone numbers, digit groups totalling 10+ digits (`0532 111 22 33`, `4111 1111 1111 1111`) and spaced IBANs.
+
+   Opaque generated IDs (`gen_ai.response.id`, `llminsight.call_id`, the system fingerprint) skip this layer only, because random IDs can contain digit runs.
+4. **Field format**, a full match with no repair:
+
+| Field(s) | Class | Format | Max | On failure |
+|---|---|---|---|---|
+| `gen_ai.request.model`, `gen_ai.response.model` | identifier | `[A-Za-z0-9][A-Za-z0-9._:/@+-]*` (snapshots, `ft:` fine-tunes, `models/…`, `org/model`, `model@version`) | 256 | dropped |
+| `gen_ai.provider.name` (and alias `gen_ai.system`) | identifier | `[A-Za-z0-9][A-Za-z0-9._-]*` (no `:`) | 64 | dropped → `usage_records.provider = unknown` |
+| `gen_ai.operation.name` | identifier | `[a-z][a-z0-9_.]*` | 64 | dropped |
+| `gen_ai.output.type`, `openai.*.service_tier`, `openai.api.type`, `http.request.method`, `telemetry.sdk.name`, `telemetry.sdk.language`, each `gen_ai.response.finish_reasons` item | identifier | `[A-Za-z0-9_][A-Za-z0-9_.-]*` | 64 | dropped (one bad array item drops the array) |
+| `service.version`, `telemetry.sdk.version`, `llminsight.sdk.version` | identifier | `[A-Za-z0-9][A-Za-z0-9._+-]*` | 128 | dropped |
+| `gen_ai.prompt.name`, `llminsight.validation.rule` | identifier | `[A-Za-z0-9][A-Za-z0-9._:+/-]*` | 128 | dropped |
+| `gen_ai.prompt.version` | identifier | `[A-Za-z0-9][A-Za-z0-9._:+/-]*` | 64 | dropped → `traces.prompt_version` NULL unless all others agree |
+| `error.type`, event `exception.type` | identifier | `[A-Za-z0-9_][A-Za-z0-9_.:$/-]*` | 256 | dropped → `error_type` NULL |
+| `server.address` | identifier | `[A-Za-z0-9\[][A-Za-z0-9._:\[\]-]*` (host, IPv4, `[IPv6]`; no `user@`) | 253 | dropped |
+| `http.route` | identifier | `/` then printable ASCII without `?` or `#` (a template, never a query) | 256 | dropped |
+| `url.scheme` | identifier | `[A-Za-z][A-Za-z0-9+.-]*` | 16 | dropped |
+| `gen_ai.response.id` | opaque | `[A-Za-z0-9_][A-Za-z0-9._:/+=-]*` | 256 | dropped → next call-key source |
+| `llminsight.call_id` | opaque | UUID (`8-4-4-4-12` hex) | 64 | dropped → next call-key source |
+| `openai.response.system_fingerprint` | opaque | `[A-Za-z0-9_][A-Za-z0-9_.-]*` | 128 | dropped |
+| `service.name`, `service.namespace`, `deployment.environment.name` | label | free text (spaces and non-ASCII letters allowed) | 256, truncated | dropped (`service.name` → `traces.service_name = unknown_service`) |
+| span `name` | label | free text | 256, truncated | `redacted_span` (empty name: `unknown_span`) |
+| scope `name` / `version` | label | free text | 256 / 64, truncated | `NULL` |
+| `llminsight.provenance`, `llminsight.usage_source` | fixed vocabulary | the listed values only | — | dropped |
+
+Other columns are not free text from the client: IDs are validated hex and enums are mapped from protobuf integers. `canonical_call_key` is built only from values that passed these rules.
+
+**Limit (stated, not hidden):** these are heuristics for *obvious* credential formats and common personal-data shapes. They do not and cannot detect every secret or every piece of personal data. Examples of what passes: an unprefixed random token in a model-name-shaped value, a person's name in a span name, a non-standard key format. Instrumentations must still never put secrets or content into metadata (SECURITY.md §1). Deterministic rules keep re-exports idempotent: the same input always yields the same stored row.
 
 ## 4. Usage ledger: call identity and deduplication (ADR-21)
 

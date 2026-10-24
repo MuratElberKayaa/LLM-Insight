@@ -160,8 +160,8 @@ def test_a3_classification_is_by_word_not_by_substring(key):
 
 def test_a3_credential_rule_overrides_a_misconfigured_allowlist():
     broken = dict(attrmap.SPAN_ALLOWLIST)
-    broken["auth.token"] = attrmap.STR
-    broken["openai.api_key"] = attrmap.STR
+    broken["auth.token"] = attrmap.LABEL
+    broken["openai.api_key"] = attrmap.LABEL
     m = attrmap.map_attributes(kvs({"auth.token": "t", "openai.api_key": "k"}), broken)
     assert m.values == {} and m.dropped == 2
 
@@ -209,8 +209,9 @@ def test_a5_standard_name_overrides_every_legacy_alias(
 @pytest.mark.parametrize("name", ["", "\x00"])
 def test_a7_missing_span_name_gets_a_display_fallback(name):
     s = normalized(name=name)
-    assert s.name == ("unknown_span" if name == "" else "�")
-    assert s.name != ""
+    # Empty -> display fallback; a NUL byte is unsafe -> the distinct R08 fallback, counted.
+    assert s.name == ("unknown_span" if name == "" else "redacted_span")
+    assert s.server_dropped_attributes_count == (0 if name == "" else 1)
 
 
 # ---------------------------------------------------------------- A8: IDs never truncated

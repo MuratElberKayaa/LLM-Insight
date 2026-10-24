@@ -103,11 +103,16 @@ def _exception_type(span: SpanPb) -> str | None:
             continue
         for kv in ev.attributes:
             if kv.key == "exception.type" and kv.value.WhichOneof("value") == "string_value":
-                value = kv.value.string_value
-                if len(value) <= attrmap.MAX_STRING and attrmap.ERROR_TYPE_RE.fullmatch(value):
-                    return value
-                return None
+                return attrmap.safe_string(attrmap.ERROR_TYPE, kv.value.string_value)
     return None
+
+
+def _label(spec: attrmap.Spec, raw: str, limit: int = attrmap.MAX_STRING) -> tuple[str | None, int]:
+    """(value to store, 1 if an unsafe value was withheld else 0). Empty stays empty."""
+    if not raw:
+        return None, 0
+    value = attrmap.safe_string(spec, raw, limit)
+    return (value, 0) if value is not None else (None, 1)
 
 
 def _span_provenance(attributes: dict[str, Any], status: str) -> str:
@@ -124,16 +129,25 @@ def _span_provenance(attributes: dict[str, Any], status: str) -> str:
 
 
 def _normalize_span(
-    span: SpanPb, scope_name: str | None, scope_version: str | None, resource: attrmap.Mapped
+    span: SpanPb,
+    scope_name: str | None,
+    scope_version: str | None,
+    resource: attrmap.Mapped,
+    withheld_outside_attributes: int,
 ) -> NormalizedSpan:
     mapped = attrmap.map_span(span.attributes)
     status = STATUS_CODES[span.status.code]
     error_type = mapped.values.get("error.type") or _exception_type(span)
+    # Empty name -> display fallback; unsafe name (R08) -> a distinct fallback, counted.
+    name, name_withheld = _label(attrmap.SPAN_NAME, span.name)
+    if name is None:
+        name = attrmap.REDACTED_SPAN_NAME if name_withheld else EMPTY_NAME
+    withheld = mapped.dropped + resource.dropped + withheld_outside_attributes + name_withheld
     return NormalizedSpan(
         trace_id=span.trace_id.hex(),
         span_id=span.span_id.hex(),
         parent_span_id=span.parent_span_id.hex() if span.parent_span_id else None,
-        name=attrmap.clean_str(span.name) or EMPTY_NAME,
+        name=name,
         kind=KINDS[span.kind],
         start_ns=span.start_time_unix_nano,
         end_ns=span.end_time_unix_nano,
@@ -144,8 +158,9 @@ def _normalize_span(
         resource_attributes=resource.values,
         attributes=mapped.values,
         provenance=_span_provenance(mapped.values, status),
-        # Resource attributes are stored per span, so resource drops count on every span.
-        server_dropped_attributes_count=min(mapped.dropped + resource.dropped, MAX_DROPPED_COUNT),
+        # Resource attributes and scope fields are stored per span, so their drops count on
+        # every span; a withheld span name or scope field counts as one each (R08).
+        server_dropped_attributes_count=min(withheld, MAX_DROPPED_COUNT),
     )
 
 
@@ -157,12 +172,22 @@ def normalize(req: ExportTraceServiceRequest) -> tuple[list[NormalizedSpan], lis
     for i, rs in enumerate(req.resource_spans):
         resource = attrmap.map_resource(rs.resource.attributes)
         for j, ss in enumerate(rs.scope_spans):
-            scope_name = attrmap.clean_str(ss.scope.name) or None
-            scope_version = attrmap.clean_str(ss.scope.version, MAX_SCOPE_VERSION) or None
+            scope_name, name_withheld = _label(attrmap.SCOPE_NAME, ss.scope.name)
+            scope_version, version_withheld = _label(
+                attrmap.SCOPE_VERSION, ss.scope.version, MAX_SCOPE_VERSION
+            )
             for k, span in enumerate(ss.spans):
                 found = validate_span(span, f"resource_spans[{i}].scope_spans[{j}].spans[{k}]")
                 if found:
                     violations += found
                 elif not violations:  # once invalid, skip the mapping work
-                    spans.append(_normalize_span(span, scope_name, scope_version, resource))
+                    spans.append(
+                        _normalize_span(
+                            span,
+                            scope_name,
+                            scope_version,
+                            resource,
+                            name_withheld + version_withheld,
+                        )
+                    )
     return (spans if not violations else []), violations

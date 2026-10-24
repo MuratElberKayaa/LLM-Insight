@@ -103,6 +103,9 @@ def test_e3_same_response_id_under_different_providers_is_not_merged(client, mak
 
 
 def test_e3_separator_inside_the_provider_cannot_forge_a_collision(client, make_key, db):
+    """Phase 1 final: a provider name containing ':' fails the provider format and is dropped
+    (namespace `unknown`); the percent-encoding in usage.py stays as a second layer
+    (unit-tested in test_provider_namespace_is_escaped_so_keys_cannot_collide)."""
     k = make_key()
     spans = [
         span(
@@ -116,8 +119,8 @@ def test_e3_separator_inside_the_provider_cannot_forge_a_collision(client, make_
     ]
     assert post(client, body(request(*spans)), k.key).status_code == 200
     keys = [u["canonical_call_key"] for u in usage(db)]
-    assert keys == ["resp:a%3Ab:c", "resp:a:b:c"]
-    assert [u["provider"] for u in usage(db)] == ["a:b", "a"]  # the column keeps the raw value
+    assert keys == ["resp:unknown:c", "resp:a:b:c"]
+    assert [u["provider"] for u in usage(db)] == ["unknown", "a"]
     assert stats(client).usage_key_collisions == 0
 
 
