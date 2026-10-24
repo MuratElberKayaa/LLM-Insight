@@ -1,0 +1,35 @@
+# Full lock for sdk/ dev environment (runtime + dev). Generated with pip freeze from sdk/.venv (Phase 2A, 2026-10-24).
+# Rule (CR-09): every version was first uploaded to PyPI on or before 2026-10-10. Shared packages match
+# backend/requirements.lock; ast_serialize is held at 0.12.1 (0.13.x was released after the cutoff).
+# Install: python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .
+ast_serialize==0.12.1
+certifi==2026.7.22
+charset-normalizer==3.5.2
+colorama==0.4.6
+googleapis-common-protos==1.75.5
+idna==3.20
+iniconfig==2.3.1
+librt==0.16.0
+mypy==2.4.0
+mypy_extensions==1.1.0
+opentelemetry-api==1.45.1
+opentelemetry-exporter-http-transport==0.66b1
+opentelemetry-exporter-otlp-common==0.66b1
+opentelemetry-exporter-otlp-proto-common==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-proto==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-semantic-conventions==0.66b1
+packaging==26.3
+pathspec==1.1.1
+pluggy==1.6.0
+protobuf==7.36.2
+psycopg==3.3.6
+psycopg-binary==3.3.6
+Pygments==2.21.0
+pytest==9.1.1
+requests==2.34.2
+ruff==0.17.0
+typing_extensions==4.16.0
+tzdata==2026.5
+urllib3==2.8.0

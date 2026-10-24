@@ -19,21 +19,21 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T06 | Ingestion | Corrupt protobuf | `400` + binary `google.rpc.Status` with `BadRequest` (no values echoed), nothing stored | ★ | | 1 | I | PASS (phase-1c) |
 | T07 | Ingestion | gzip valid | `Content-Encoding: gzip` decoded; corrupt gzip → `400` `INVALID_GZIP` | | | 1 | I | PASS (phase-1c) |
 | T08 | Ingestion | Oversized payload | Wire > 4 MiB, decompressed > 16 MiB, spans > 2048 → `413` each (count-based 413 is our policy) | ★ | | 1 | I | PASS (phase-1c) |
-| T09 | SDK | Real/mock client span attributes | CLIENT span `chat {model}` with required `gen_ai.*` + provenance | ★ | | 2 | U/I | NOT RUN |
-| T10 | SDK | Nested context | LLM span is a child of the demo FastAPI root span (same trace) | ★ | | 2→3 | I | NOT RUN |
-| T11 | SDK | Provider success usage | Provider-reported usage mapped to `gen_ai.usage.*`, `usage_source=provider_reported` | ★ | | 2 | U | NOT RUN |
-| T12 | SDK | 429 / timeout status | Span `ERROR`, `error.type` set, attempt recorded; app gets a handled error | ★ | | 2 | U | NOT RUN |
-| T13 | SDK | Export-down fail-open | Backend down: app request succeeds, no exception, latency bounded by design | ★ | | 2→5 | I | NOT RUN |
-| T14 | SDK | Retry attempt IDs | Same `call_id`, `attempt` 1..n; one usage row per attempt; M02 > M03 | | | 2 | U/I | PARTIAL (phase-1c) |
-| T15 | SDK | No secrets in span | No API key / auth header in any exported attribute | ★ | | 2→5 | U | NOT RUN |
-| T16 | SDK | No content default | No message content exported; backend drops it if sent (counted) | ★ | | 2→5 | U/I | PARTIAL (phase-1c) |
+| T09 | SDK | Real/mock client span attributes | CLIENT span `chat {model}` with required `gen_ai.*` + provenance | ★ | | 2 | U/I | PARTIAL (phase-2a) |
+| T10 | SDK | Nested context | LLM span is a child of the demo FastAPI root span (same trace) | ★ | | 2→3 | I | PARTIAL (phase-2a) |
+| T11 | SDK | Provider success usage | Provider-reported usage mapped to `gen_ai.usage.*`, `usage_source=provider_reported` | ★ | | 2 | U | PARTIAL (phase-2a) |
+| T12 | SDK | 429 / timeout status | Span `ERROR`, `error.type` set, attempt recorded; app gets a handled error | ★ | | 2 | U | PARTIAL (phase-2a) |
+| T13 | SDK | Export-down fail-open | Backend down: app request succeeds, no exception, latency bounded by design | ★ | | 2→5 | I | PASS (phase-2a) |
+| T14 | SDK | Retry attempt IDs | Same `call_id`, `attempt` 1..n; one usage row per attempt; M02 > M03 | | | 2 | U/I | PASS (phase-2a) |
+| T15 | SDK | No secrets in span | No API key / auth header in any exported attribute | ★ | | 2→5 | U | PARTIAL (phase-2a) |
+| T16 | SDK | No content default | No message content exported; backend drops it if sent (counted) | ★ | | 2→5 | U/I | PARTIAL (phase-2a) |
 | T17 | Cost/metrics | Provider token priority | Provider-reported values win over any estimate | ★ | ⛔ | 2 | U | NOT RUN |
-| T18 | Cost/metrics | Unknown token/cost null | Missing usage → NULL tokens, `cost_status=unknown` + reason, never 0 | ★ | | 2→3 | U/I | PARTIAL (phase-1c) |
+| T18 | Cost/metrics | Unknown token/cost null | Missing usage → NULL tokens, `cost_status=unknown` + reason, never 0 | ★ | | 2→3 | U/I | PARTIAL (phase-2a) |
 | T19 | Cost/metrics | Decimal known fixture | Hand-computed Decimal cost equals the stored value exactly | ★ | ⛔ | 2 | U | NOT RUN |
 | T20 | Cost/metrics | Cached subset no double count | Cached tokens priced once, not added to input | ★ | ⛔ | 2 | U | NOT RUN |
 | T21 | Cost/metrics | Reasoning subset no double count | Reasoning tokens not added to output | ★ | | 2 | U | NOT RUN |
 | T22 | Cost/metrics | Price version persisted | `price_version` + `model_price_id` stored per usage row; price change doesn't rewrite history | ★ | | 2 | I | NOT RUN |
-| T23 | Cost/metrics | Duplicate usage ignored | Re-export → one usage row, cost unchanged | ★ | ⛔ | 2→5 | I | PARTIAL (phase-1c) |
+| T23 | Cost/metrics | Duplicate usage ignored | Re-export → one usage row, cost unchanged | ★ | ⛔ | 2→5 | I | PARTIAL (phase-2a) |
 | T24 | Cost/metrics | p95 sample + percentiles math | SQL `percentile_cont` = NumPy `linear` on fixture; `n` returned | ★ | | 2→3 | U/I | NOT RUN |
 | T25 | API/DB | Pagination | Cursor pagination stable; `limit` max enforced | ★ | | 1→3 | I | PASS (phase-1c) |
 | T26 | API/DB | Timestamp timezone | ns epoch → UTC `TIMESTAMPTZ`; API returns ISO-8601 with `Z`; ns preserved | ★ | | 1→3 | U/I | PASS (phase-1c) |
@@ -68,7 +68,7 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 
 ## Sub-cases (inherit the parent's criticality)
 
-These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3).
+These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3; Phase 2A SDK evidence: `reports/phase-2a.md` §4).
 
 | Sub-case | Parent | Scenario | Expected outcome |
 |---|---|---|---|

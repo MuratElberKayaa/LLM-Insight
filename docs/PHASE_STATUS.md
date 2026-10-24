@@ -1,6 +1,6 @@
 # LLM Insight — Phase Status
 
-Last updated: 2026-10-24 (Phase 1 closed: final security hardening delivered, `phase-1` tag; awaiting architectural review before Phase 2). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
+Last updated: 2026-10-24 (Phase 2A delivered: Python telemetry SDK and deterministic mock integration; awaiting review. No `phase-2` tag). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
 
 | Phase | Window (target) | State |
 |---|---|---|
@@ -9,12 +9,13 @@ Last updated: 2026-10-24 (Phase 1 closed: final security hardening delivered, `p
 | 1B OTLP ingest | 25–27 Oct | Delivered (`reports/phase-1b.md`); accepted conditionally by the user (Phase 1C instruction), the conditions being the 1C tasks |
 | 1C Phase 1 integration and acceptance | 25–27 Oct | Delivered (`reports/phase-1c.md`); accepted by the user subject to closing R08 |
 | 1 Final security hardening and closure | 24 Oct | **Closed** (`reports/phase-1-final.md`): R08 mitigated, protocol decisions recorded, all Phase 1 gates pass, `phase-1` tag on the closure commit. Awaiting architectural review before Phase 2 |
-| 2 SDK / usage & cost | 28–30 Oct | Not started |
+| 2A SDK + mock integration | 24 Oct | Delivered (`reports/phase-2a.md`); awaiting user review |
+| 2 (rest) OpenAI adapter / pricing & cost / aggregates | 28–30 Oct | Not started |
 | 3 Dashboard | 31 Oct–2 Nov | Not started |
 | 4 Review / dataset / experiments | 3–4 Nov | Not started |
 | 5 QA & delivery | 5–7 Nov | Not started |
 
-**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. There is **no** SDK, no pricing, no other `/api/v1` endpoint and no frontend yet.
+**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. Phase 2A added `sdk/` (the installable `llm-insight-sdk` 0.1.0: config contract, OTLP/HTTP protobuf export through a bounded BatchSpanProcessor, GenAI CLIENT inference spans, deterministic mock provider, sync and async) and `demo_app/` (CLI demo, scenarios A–E). There is **no** OpenAI adapter, no pricing or cost calculation, no aggregate service, no other `/api/v1` endpoint and no frontend yet.
 
 ## Phase 0 — Definition
 - [x] Independent repo initialized; `git rev-parse --show-toplevel` = project folder; no remotes
@@ -71,16 +72,25 @@ Last updated: 2026-10-24 (Phase 1 closed: final security hardening delivered, `p
 - [x] Risks: R08 mitigated (residual Low); R23, R24 open and accepted for local use; public deployment not authorized; client provenance is not proof; unknown cost stays `NULL`
 - [x] Verification: full suite **876 passed, 0 failed, 0 skipped** (real PostgreSQL); Ruff; `pip check`; `alembic check` + migration cycle; compose; doc check; `git diff --check`
 - [x] Closure commit and `phase-1` tag (`phase-0` unchanged)
-- [ ] **Architectural review before Phase 2**
+- [x] Architectural review before Phase 2: the user issued the Phase 2A instruction (2026-10-24); no separate review findings were recorded
 
-## Phase 2 — SDK, usage and cost
-- [ ] Semconv pin re-checked (ADR-15)
-- [ ] `sdk/` installable; Resource, BatchSpanProcessor, OTLP/HTTP protobuf exporter, bounded queue, short timeout, flush/shutdown
-- [ ] Demo FastAPI root span → CLIENT inference span; OpenAI wrapper and deterministic mock adapter
+## Phase 2A — Python telemetry SDK and deterministic mock integration (evidence: `reports/phase-2a.md`)
+- [x] Prerequisites: clean tree at `cec668b`, `phase-1` tag; PostgreSQL healthy; baseline 876/876; ADR/contract check found no conflict and no migration need (report §2)
+- [x] Semconv pin re-checked (ADR-15): `9ffc7e00c639` is still `main` HEAD; `client-inference.md` unchanged since before the pin; no `attrmap.v2`
+- [x] `sdk/` installable (src layout, pinned OTel 1.45.1, typed, own venv and lock); clean-room wheel install and import outside the source tree; never imports the backend
+- [x] Explicit resource, private TracerProvider (no global override; opt-in `set_global` never replaces), idempotent `init`, BatchSpanProcessor with bounded queue/batch, request size under the 4/16 MiB limits, batch ≤ 2048, explicit exporter timeout in seconds, bounded `force_flush`/`shutdown`, `stats()`, fail-open, best-effort delivery documented
+- [x] Deterministic mock provider (success, delayed, 429, 500, timeout, retry), SYNTHETIC only, UUIDv4 `call_id`, one span per physical attempt, sync and async, no content, no exception events, client-side R08 rules
+- [x] Demo app A–E against the real `python -m app` and PostgreSQL; verified by SQL and the read API
+- [x] Tests: SDK 247 passed (237 unit + 10 live backend), 0 skipped; backend 876 passed; Ruff; strict mypy; `pip check`; `alembic check`; compose; doc check; `git diff --check`; mutation check 9/9
+- [x] Test matrix: T13, T14 `PASS (phase-2a)`; T09–T12, T15, T16, T18, T23 `PARTIAL (phase-2a)`
+- [ ] User review of Phase 2A
+
+## Phase 2 — remaining (not started)
+- [ ] Demo FastAPI root span → CLIENT inference span (completes T10); OpenAI wrapper
 - [ ] `usage_records` and `model_prices` per `ARCHITECTURE.md` §4.6–4.7; response-ID-first keys; verified prices only
 - [ ] Decimal cost, cached/reasoning subsets, unknown = NULL + reason
 - [ ] Aggregate services M01–M15 with provenance aggregation rules
-- [ ] Tests: T09–T24, T29, T32, T23-S1/S2; telemetry-down fail-open demonstrated
+- [ ] Tests: T09–T12, T15–T24, T29, T32, T23-S1/S2 completed (T13, T14 passed in 2A)
 - [ ] Real smoke run only with approval, otherwise marked NOT RUN
 - [ ] Report, status, commit + tag
 
@@ -122,4 +132,8 @@ Last updated: 2026-10-24 (Phase 1 closed: final security hardening delivered, `p
 | `ruff check .` / `ruff format --check .` (backend) | yes | Lint / format |
 | `python -m app` (backend) | yes | Dev server on `127.0.0.1:8000`, single worker; serves `/health/*`, `POST /v1/traces` and `GET /api/v1/traces[/{trace_id}]?project=<id>` (header `Authorization: Bearer $LLMI_ADMIN_TOKEN`) |
 | `python -m app.cli create-key --project <name>` / `list-keys` / `revoke-key --prefix <p>` (backend) | yes | Create a project and ingest key (the key is printed once; only its HMAC is stored), list prefixes, revoke |
+| `python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .` (sdk, in `sdk/.venv`) | yes | Install the locked SDK environment and the SDK (non-editable; reinstall after source changes) |
+| `python -m pytest tests/unit` / `LLMI_TEST_REQUIRE_DB=1 python -m pytest tests/integration` (sdk) | yes | SDK unit tests (local OTLP stub) / live-backend tests (starts `backend/.venv` `python -m app` on a disposable `*_test` DB) |
+| `ruff check .`, `ruff format --check .`, `python -m mypy src` (sdk) | yes | SDK lint / format / strict types (`--config pyproject.toml ../demo_app` for the demo) |
+| `sdk/.venv/Scripts/python -m demo_app` (root) | yes | Phase 2A demo A–E (mock only); needs `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>`, `OTEL_SERVICE_NAME` |
 | `npm run lint/typecheck/build`, `npx playwright test` | no | Planned (Phase 3) |

@@ -1,0 +1,63 @@
+[build-system]
+# Pinned build backend (two-week rule, CR-09): setuptools 84.0.0 was uploaded 2026-08-08.
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-insight-sdk"
+dynamic = ["version"]
+description = "LLM Insight telemetry SDK: OpenTelemetry GenAI client spans over OTLP/HTTP protobuf (local-only MVP)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Exact pins, the same versions as backend/requirements.lock (ARCHITECTURE.md §6, CR-09).
+# The SDK never imports the backend package (ADR-01).
+dependencies = [
+    "opentelemetry-api==1.45.1",
+    "opentelemetry-sdk==1.45.1",
+    "opentelemetry-exporter-otlp-proto-http==1.45.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.17.0",
+    "mypy==2.4.0",
+    # Live-backend integration tests read the disposable database directly.
+    "psycopg[binary]==3.3.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "llm_insight_sdk._version.__version__" }
+
+[tool.setuptools.package-data]
+llm_insight_sdk = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: needs the local PostgreSQL and the backend venv (live OTLP ingest)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["llm_insight_sdk", "demo_app"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert, subprocess and fixed dummy secrets on purpose.
+"tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
