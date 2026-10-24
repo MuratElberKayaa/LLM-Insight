@@ -10,9 +10,11 @@ Exit code 0 when every check passes, 1 otherwise.
 import json
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_PATH = os.path.join(ROOT, ".env")
 QUIET = "--quiet" in sys.argv[1:]
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="replace")  # Windows consoles may lack characters such as §
@@ -235,6 +237,8 @@ for dp, dn, fs in os.walk(ROOT):
         fp = os.path.join(dp, f)
         if os.path.abspath(fp) == os.path.abspath(__file__):
             continue  # this file contains the patterns themselves
+        if os.path.abspath(fp) == ENV_PATH:
+            continue  # local secrets by design; checked below to be git-ignored and untracked
         try:
             t = open(fp, encoding="utf-8").read()
         except (UnicodeDecodeError, OSError):
@@ -242,7 +246,16 @@ for dp, dn, fs in os.walk(ROOT):
         scanned += 1
         hits += [(os.path.relpath(fp, ROOT), m.group(0)[:8] + "...") for m in SECRET.finditer(t)]
 check(not hits, f"secret-pattern scan over {scanned} files: hits={hits}")
-check(not os.path.exists(os.path.join(ROOT, ".env")), "no .env file in the working tree")
+if os.path.exists(ENV_PATH):
+    # Phase 1A+: a local .env (scripts/dev/init_env.py) is expected; it must never be committable.
+    def git(*args):
+        return subprocess.run(["git", "-C", ROOT, *args], capture_output=True).returncode
+
+    ignored = git("check-ignore", "-q", ".env") == 0
+    tracked = git("ls-files", "--error-unmatch", ".env") == 0
+    check(ignored and not tracked, f"local .env is git-ignored ({ignored}) and untracked ({not tracked})")
+else:
+    check(True, "no .env file in the working tree")
 env = read(".env.example")
 env_pairs = [ln.split("=", 1) for ln in env.splitlines() if "=" in ln and not ln.lstrip().startswith("#")]
 bad = [k for k, v in env_pairs

@@ -315,6 +315,8 @@ The `UNIQUE` constraints listed per table are also indexes. A JSONB GIN index is
 
 **Migration tests:** T31 (upgrade → downgrade → upgrade on a disposable DB). The Phase 1 migration creates §4.2–4.6. §4.7 comes in Phase 2, and §4.8–4.12 in Phase 4. Each migration must match this contract column for column.
 
+**Migration sequencing (Phase 1A note, no column change):** `usage_records.model_price_id` references `model_prices`, which does not exist before Phase 2. The Phase 1 migration (`0001`) therefore creates the column without its FK. The Phase 2 migration that creates §4.7 adds `FK model_prices(id) ON DELETE RESTRICT`. Until then no row can be `computed` (no price exists), and the `cost_computed_has_price` check already holds.
+
 ## 5. API contract
 
 The backend binds to `127.0.0.1`.
@@ -355,6 +357,8 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 | Frontend | next 16.4.0 · react / react-dom 19.3.0 · tailwindcss 4.3.3 · recharts 3.10.1 · @playwright/test 1.64.0 · eslint 10.12.0 | |
 | TypeScript | **UNKNOWN, decided in Phase 3.** Options: 5.9.3, 6.0.3 or 7.0.2 | Next 16 compatibility with TS 7 (native port) not verified |
 
+**Phase 1A install (2026-10-24):** the backend runtime and dev pins above were re-checked on PyPI and installed into `backend/.venv`. The OTel/protobuf, provider and eval pins are not installed until the phase that uses them. Transitive versions are frozen in `backend/requirements.lock`. Three transitive packages were held below their newest release to keep the two-week rule: `starlette` 1.7.0 (1.10.0 was released 2026-10-24), `certifi` 2026.7.22 and `pluggy` 1.6.0. `opentelemetry-api` 1.45.1 arrives transitively through `fastapi` 0.143.0.
+
 ## 7. Repository layout (target)
 
 This follows master plan §G. Folders are created only by the phase that fills them, with no empty layers.
@@ -370,4 +374,4 @@ This follows master plan §G. Folders are created only by the phase that fills t
 
 ## 8. Deployment posture
 
-Local-only. Compose publishes the backend as `127.0.0.1:8000` and the frontend as `127.0.0.1:3000`; PostgreSQL is not published, or only on `127.0.0.1` in dev. Any public deployment requires a separate auth and threat review (`SECURITY.md` §7). There is no claim of production or billing-grade reliability.
+Local-only. Compose publishes the backend as `127.0.0.1:8000` and the frontend as `127.0.0.1:3000`; PostgreSQL is not published, or only on `127.0.0.1` in dev (Phase 1A: `127.0.0.1:55432`, `POSTGRES_HOST_PORT`, because a native PostgreSQL already listens on 5432 on the dev machine; R19). Any public deployment requires a separate auth and threat review (`SECURITY.md` §7). There is no claim of production or billing-grade reliability.
