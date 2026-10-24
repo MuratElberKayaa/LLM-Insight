@@ -34,8 +34,9 @@ Read `docs/MVP_MASTER_PLAN.md` for locked architecture, contracts and phase gate
 - Before any `git add`/`commit`, verify `git rev-parse --show-toplevel` is this project folder. Never change global git config.
 
 ## Contracts (read the one you need, not all)
-- `docs/ADR.md`: locked ADR-01…12, accepted CR-01…09, proposed PADR-01…09 (not binding until approved).
-- `docs/TELEMETRY_CONTRACT.md`: `/v1/traces` wire contract, attribute allowlist, usage/cost mapping.
-- `docs/ARCHITECTURE.md`: DB tables/enums, `/api/v1` contract, version pins, layout per phase.
-- `docs/SECURITY.md` · `docs/METRICS_CATALOG.md` · `docs/TEST_MATRIX.md` (T01–T48; 39 critical, 10 blockers).
+- `docs/ADR.md`: locked ADR-01…12, accepted CR-01…09 and ADR-13…21 (all binding; no open proposals).
+- `docs/TELEMETRY_CONTRACT.md`: `/v1/traces` wire contract (binary-protobuf subset of OTLP 1.11.1), allowlist, usage identity, provenance.
+- `docs/ARCHITECTURE.md`: column-level DB contract (§4; migrations must match it), `/api/v1` contract, version pins.
+- `docs/SECURITY.md` · `docs/METRICS_CATALOG.md` · `docs/TEST_MATRIX.md` (T01–T48; 42 critical, 10 blockers).
 - `docs/PRD.md` · `docs/DEMO_SCRIPT.md` · `docs/SOURCES_AND_RISKS.md` · `docs/fixtures/`.
+- Doc consistency check: `python -I scripts/verify_phase0.py` (stdlib only; must pass before any docs commit).

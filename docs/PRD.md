@@ -37,7 +37,7 @@ Generic APM tools don't model tokens, cost provenance, or prompt versions. Hoste
 | Failure Review | Trace-linked record with `issue_type`, `evidence`, `hypothesis`, `review_status` and `reviewer_decision` |
 | Trace-to-Testset | Saved only with human approval, using sanitized or synthetic input |
 | Offline evaluation | JSON Schema and golden match. Two `prompt_version`s on the same dataset. Real and mock results separated |
-| Quality bar | At least 24 critical automated tests (39 starred, CR-04), 48-scenario target matrix, README, demo, architecture diagram |
+| Quality bar | At least 24 critical automated tests (42 defined: the 39 starred plus 3 promoted by ADR-20; CR-04), 48-scenario target matrix, README, demo, architecture diagram |
 | Security | Metadata-only, allowlist, hashed keys, server-only admin token, local-only binding |
 
 ### P1 (only if P0 is complete)
@@ -62,5 +62,5 @@ ClickHouse scale-out, a Collector with a disk queue, a separate evaluation worke
 ## 6. Success criteria for the demo
 
 - One reproducible 3–5 minute run of `DEMO_SCRIPT.md` from `docker compose up --build`.
-- 0 FAIL on the 39 critical tests. Every one of the 48 is reported as PASS, FAIL or SKIP with a reason.
+- 0 FAIL on the 42 critical tests. Every one of the 48 is reported as PASS, FAIL or SKIP with a reason.
 - No fabricated numbers: every KPI is backed by DB rows, and synthetic data is labeled.

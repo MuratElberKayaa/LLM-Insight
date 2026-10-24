@@ -1,70 +1,119 @@
 # LLM Insight — Telemetry Contract (OTLP/HTTP + GenAI mapping)
 
-Contract version: `telemetry-contract/1` · Attribute mapping version: `llminsight.attrmap.v1`
-Verified against (accessed 2026-10-24):
+**Contract version:** `telemetry-contract/1`. **Attribute mapping version:** `llminsight.attrmap.v1`. **Status:** binding (ADR-13…21, accepted 2026-10-24).
+
+**Verified against** (accessed 2026-10-24):
 
 | Source | Version / status |
 |---|---|
 | OTLP spec — https://opentelemetry.io/docs/specs/otlp/ (source: `open-telemetry/opentelemetry-proto` `docs/specification.md`) | Spec 1.11.1 (proto release v1.11.1, 2026-09-29). **Stable** for traces. |
-| GenAI client inference — https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/client-inference.md | **Development**. Repo has no releases; pinned at commit `9ffc7e00c639` (2026-10-21). Core attrs `error.type`, `server.*` are Stable (semconv v1.44.0 links). |
+| GenAI client inference — https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/client-inference.md | **Development**. The repo has no releases; pinned at commit `9ffc7e00c639` (2026-10-21). Core attributes `error.type` and `server.*` are Stable (semconv v1.44.0 links). |
 | GenAI OpenAI conventions — `.../docs/gen-ai/openai.md` | **Development**. `gen_ai.provider.name` MUST be `openai`. |
-| Python `opentelemetry-proto` / `-sdk` / `-exporter-otlp-proto-http` | 1.45.1 (PyPI, 2026-10-06) |
+| `google.rpc.BadRequest` — https://github.com/googleapis/googleapis/blob/master/google/rpc/error_details.proto | `field_violations[]{field, description, reason, localized_message}` |
+| Python `opentelemetry-proto` / `-sdk` / `-exporter-otlp-proto-http` | 1.45.1 (PyPI, 2026-10-06). The exporter depends on `googleapis-common-protos ~=1.52`. |
 
-Because GenAI conventions are Development, every stored span records `attributes_schema_version` and all mapping lives in one adapter (PADR-02/03). Upstream renames are absorbed by adding alias rows, never by changing stored column semantics.
+GenAI conventions are still Development, so every stored span records `attributes_schema_version`, and all mapping lives in one adapter (ADR-14/15).
+
+## 0. Support statement (limited interoperability)
+
+LLM Insight implements an **OTLP/HTTP traces receiver for binary protobuf**: a subset of OTLP 1.11.1. It does **not** claim full OTLP support. The limitations:
+
+| Limitation | Effect on clients | Basis |
+|---|---|---|
+| No OTLP/JSON (`application/json` gets `415`) | JSON-only exporters (e.g. the OTel JS `exporter-trace-otlp-http`) cannot send | ADR-16; deviation from a spec **SHOULD** |
+| No OTLP/gRPC | gRPC exporters must switch to `http/protobuf` | ADR-03 |
+| Traces only. `/v1/metrics`, `/v1/logs` and profiles return `404` | Exporters for other signals must not point here | ADR-04 |
+| No partial acceptance | One invalid span rejects the whole batch (`400`, which is not retried) | ADR-18 |
+| Limits below the spec recommendation (4 / 16 MiB versus 64 MiB) plus a span-count limit | A larger batch gets `413` and is dropped by the client | ADR-17 |
+| `X-Project-Key` header is required (not part of OTLP) | Configure it with `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | ADR-08 |
+| Port 8000, not the OTLP default 4318 | Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` explicitly | Deployment choice |
+
+Expected compatible (still **untested**, see T01-S3): the Python `opentelemetry-exporter-otlp-proto-http` and the OTel Collector `otlphttp` exporter with protobuf encoding.
 
 ## 1. Endpoint `POST /v1/traces`
 
-| Aspect | Contract | Spec basis |
+| Aspect | Contract | Spec basis (OTLP 1.11.1) |
 |---|---|---|
-| Method / path | `POST /v1/traces`; other methods → `405` | OTLP default path `/v1/traces` (default port 4318 not required; we use backend port) |
-| Auth | Header `X-Project-Key: <key>`; project resolved **server-side** from the key. Any client-sent `project_id` attribute is ignored and dropped. | Product decision (ADR-08) |
-| Request Content-Type | `application/x-protobuf` only (parameters such as `; charset` ignored). Anything else, including `application/json` → `415` | Spec: client MUST set `application/x-protobuf` for binary; server SHOULD also accept JSON → deviation PADR-04 |
+| Path | `/v1/traces` | Default traces path |
+| Request Content-Type | Only `application/x-protobuf` is decoded (parameters ignored, media type compared case-insensitively) | Client MUST set it for binary; servers SHOULD also accept JSON (ADR-16 deviation) |
 | Request body | Binary `opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest` | Spec |
-| Content-Encoding | absent / `identity` / `gzip`. Others → `415`. Corrupt gzip → `400` | Spec: servers MUST support none and gzip |
-| Size limits | Wire body > `LLMI_OTLP_MAX_BODY_BYTES` (4 MiB) → `413`; decompressed > `LLMI_OTLP_MAX_DECOMPRESSED_BYTES` (16 MiB, enforced while streaming decompression) → `413`; spans > `LLMI_OTLP_MAX_SPANS_PER_REQUEST` (2048) → `413` | Spec: MUST limit incl. after decompression, `413 Content Too Large`; RECOMMENDED 64 MiB → deviation PADR-05 |
-| Response Content-Type | `application/x-protobuf` (same as request) for every response with a body, including errors | Spec: server MUST use same Content-Type as request |
-| Response compression | Not compressed in MVP (gzip response is MAY) | Spec |
+| Content-Encoding | Absent, `identity` or `gzip`. Anything else gets `415` | Servers MUST support none and gzip; other encodings are unspecified |
+| Auth | `X-Project-Key`. The project is resolved **server-side**; any client-sent project attribute is dropped | Product (ADR-08) |
+| Limits | Wire 4 MiB, decompressed 16 MiB, 2048 spans. All return `413` (ADR-17; the count-based 413 is our policy) | MUST limit including after decompression and use `413`; 64 MiB is RECOMMENDED |
+| Success | `200` with `ExportTraceServiceResponse`, `partial_success` **unset**, sent **only after the DB transaction commits** (ADR-18) | MUST 200 + response message; MUST leave `partial_success` unset on full success |
+| Response compression | None | Gzip responses are a MAY |
 
-### 1.1 Response semantics
+### 1.1 Processing order (first failing step decides the response)
 
-| Case | HTTP | Body | Client retry (per spec) |
-|---|---|---|---|
-| Full success (incl. full idempotent duplicate) | `200` | `ExportTraceServiceResponse`, `partial_success` **unset** | — |
-| Empty request (no spans) | `200` | `ExportTraceServiceResponse`, unset | — |
-| Undecodable protobuf, corrupt gzip, invalid IDs/timestamps/enum, any invalid span (batch is atomic, PADR-06) | `400` | `google.rpc.Status{message}`; `details` MAY carry `BadRequest` | MUST NOT retry |
-| Missing / unknown / revoked key (same generic message for all) | `401` | `google.rpc.Status` | not retryable |
-| Wrong method | `405` | `google.rpc.Status` | not retryable |
-| Body / decompressed / span-count limit | `413` | `google.rpc.Status` | not retryable |
-| Unsupported Content-Type / Content-Encoding | `415` | `google.rpc.Status` | not retryable |
-| Rate limited (in-process bucket) | `429` + `Retry-After: <seconds>` | `google.rpc.Status` | SHOULD retry, honour Retry-After |
-| DB unavailable / transaction failed (rolled back) | `503` + `Retry-After` | `google.rpc.Status` | SHOULD retry |
-| Unexpected server error (rolled back) | `500` | `google.rpc.Status` | not retryable per spec |
+| # | Check | Failure response |
+|---|---|---|
+| 1 | Method is `POST` | `405` |
+| 2 | Content-Type media type is `application/x-protobuf` | `415` |
+| 3 | Content-Encoding is absent, `identity` or `gzip` | `415` |
+| 4 | Client address is under the auth-failure limit (`LLMI_RATE_LIMIT_AUTHFAIL_PER_MIN`) | `429` + `Retry-After` |
+| 5 | `X-Project-Key` is present, known and not revoked. Every failure counts toward step 4 and uses the same generic message | `401` |
+| 6 | Per-key token bucket (`LLMI_RATE_LIMIT_INGEST_*`) | `429` + `Retry-After` |
+| 7 | `Content-Length` and the streamed wire bytes are ≤ 4 MiB | `413` |
+| 8 | gzip inflates incrementally to ≤ 16 MiB. Corrupt gzip | `413` / `400` |
+| 9 | Protobuf decodes | `400` |
+| 10 | Total spans ≤ 2048 | `413` |
+| 11 | Every span passes §1.3 validation | `400` + `BadRequest` |
+| 12 | No spans → nothing written | `200` |
+| 13 | One transaction: trace/span/usage upserts, then COMMIT | `200` after commit. DB unavailable or serialization failure: rollback, `503` + `Retry-After`. Other error: rollback, `500` |
 
-`partial_success` is never set in MVP (no partial acceptance mechanism; master plan §F). `Status.code` may be omitted (spec). `Status.message` is developer-facing, English, and never echoes the key, headers or attribute values.
+Steps 1–6 read headers only, so no unauthenticated body is buffered.
 
-### 1.2 Validation rules (any failure → whole batch `400`)
+### 1.2 Response encoding (spec: "MUST use the same Content-Type in the response as it received in the request")
 
-- `trace_id`: exactly 16 bytes, not all-zero. `span_id`: exactly 8 bytes, not all-zero. `parent_span_id`: empty or 8 bytes non-zero.
-- Stored as **lowercase hex** (32 / 16 chars). OTLP/JSON uses hex for these IDs, not base64; API responses use the same hex form.
-- `start_time_unix_nano` > 0, `end_time_unix_nano` ≥ start; values are uint64 ns and are stored as `BIGINT` (values ≥ 2^63 → `400`). Duration = `end_ns - start_ns`.
+| Request Content-Type | Response Content-Type | Body |
+|---|---|---|
+| `application/x-protobuf` | `application/x-protobuf` | Binary `ExportTraceServiceResponse` (200) or binary `google.rpc.Status` (4xx/5xx) |
+| `application/json` (always `415`) | `application/json` | `google.rpc.Status` in OTLP JSON encoding: `{"message": "..."}`, with `code` omitted |
+| Missing or any other type (always `405`/`415`) | `application/x-protobuf` | Binary `google.rpc.Status` |
+
+**Documented limitation:** for a media type that is neither OTLP encoding (e.g. `text/plain`), the spec rules "same Content-Type" and "body MUST be a Protobuf-encoded Status" can't both be met. We keep the Status body in the default binary encoding.
+
+Other rules for every error body:
+- `Status.code` is omitted (the spec allows this).
+- `Status.message` is a short developer-facing English text. It **never** contains key or header values, attribute values, span names or IDs.
+- The response body is ≤ 4 MiB in practice (spec response limit), which a cap of 20 violations guarantees.
+
+### 1.3 Bad data (`400`) and `BadRequest` details
+
+The spec says `400` `Status.details` "SHOULD contain a BadRequest". We always attach one `google.rpc.BadRequest`, packed as `Any` with type URL `type.googleapis.com/google.rpc.BadRequest`.
+
+- `field`: a proto path only, e.g. `resource_spans[0].scope_spans[1].spans[3].trace_id`, or `body` for decode/gzip errors.
+- `description`: the generic rule text, e.g. `must be 16 bytes and not all zero`. **Never the offending value.**
+- `reason`: an UPPER_SNAKE code from this list: `INVALID_PROTOBUF`, `INVALID_GZIP`, `INVALID_TRACE_ID`, `INVALID_SPAN_ID`, `INVALID_PARENT_SPAN_ID`, `INVALID_TIMESTAMP`, `END_BEFORE_START`, `TIMESTAMP_OUT_OF_RANGE`, `INVALID_SPAN_KIND`, `INVALID_STATUS_CODE`.
+- At most 20 violations are returned. `Status.message` gives the total count.
+
+**Validation rules:**
+- `trace_id` is exactly 16 bytes and not all-zero. `span_id` is 8 bytes and not all-zero. `parent_span_id` is empty, or 8 bytes, non-zero and ≠ `span_id`.
+- IDs are stored as lowercase hex (32 / 16 chars).
+- `start_time_unix_nano` > 0 and `end_time_unix_nano` ≥ start. Both must be < 2^63, because they are stored as `BIGINT`.
 - `kind` and `status.code` must be known enum values.
-- Missing parent in DB/batch is **not** an error: the span is stored and shown as orphan (T27).
+- A missing parent is **not** an error: the span is stored as an orphan (T27).
 
-### 1.3 Idempotency
+### 1.4 Idempotency (spans)
 
-OTLP itself has no dedup ("may result in duplicate data on the server side" — spec). We add it:
-- Span: `UNIQUE(project_id, trace_id, span_id)`; re-export → `ON CONFLICT DO NOTHING` (first write wins; content changes on re-export are ignored and counted in a server log metric).
-- Usage: `UNIQUE(project_id, canonical_call_key)` (see §4).
-- A batch is processed in one DB transaction; any failure rolls back everything.
+OTLP itself has no dedup; the spec says re-sending "may result in duplicate data on the server side". We add it:
+- **Spans:** `UNIQUE(project_id, trace_id, span_id)` with `ON CONFLICT DO NOTHING`. The first write wins, and changed content on re-export is ignored.
+- **Traces:** recomputed from all stored spans of that trace inside the same transaction (a derived row).
+- **Usage:** see §4.
 
 ## 2. Resource / scope / span traversal
 
-`ExportTraceServiceRequest.resource_spans[]` → `resource.attributes` + `scope_spans[]` → `scope{name,version}` + `spans[]`. Multiple `resource_spans` and `scope_spans` per request are supported (T03). `service.name` from resource; if absent → `unknown_service`.
-Span `events` and `links` are **not stored** in MVP; an `exception` event contributes only `exception.type` (mapped to `error_type` if `error.type` absent). `exception.message` / `exception.stacktrace` are dropped (possible PII).
+The request is walked as:
+`ExportTraceServiceRequest.resource_spans[]` → `resource.attributes` + `scope_spans[]` → `scope{name,version}` + `spans[]`
+
+- Multiple `resource_spans` and `scope_spans` are supported (T03-S1).
+- `service.name` comes from the resource; if absent it is `unknown_service`.
+- Span `events` and `links` are **not stored**. An `exception` event contributes only `exception.type`, which is mapped to `error_type` if `error.type` is absent. `exception.message` and `exception.stacktrace` are dropped.
+- The client's own `Span.dropped_attributes_count` is not stored. Ours is `server_dropped_attributes_count`.
 
 ## 3. Attribute allowlist (`llminsight.attrmap.v1`)
 
-Everything not listed is **dropped before persistence** and only counted in `spans.dropped_attributes_count`. String values truncated to 256 chars, arrays to 16 items (truncation flagged).
+Anything not listed below is dropped before persistence and counted in `spans.server_dropped_attributes_count`. String values are truncated to 256 chars and arrays to 16 items.
 
 **Resource:** `service.name`, `service.version`, `service.namespace`, `deployment.environment.name`, `telemetry.sdk.name`, `telemetry.sdk.language`, `telemetry.sdk.version`, `llminsight.sdk.version`.
 
@@ -72,47 +121,92 @@ Everything not listed is **dropped before persistence** and only counted in `spa
 
 | Attribute | Type | Stored as | Note |
 |---|---|---|---|
-| `gen_ai.operation.name` | string | span JSONB + inference detection | Required by semconv; inference ops: `chat`, `text_completion`, `generate_content`, `embeddings` |
-| `gen_ai.provider.name` | string | `usage_records.provider` | Required; alias `gen_ai.system` (PADR-02) |
-| `gen_ai.request.model` / `gen_ai.response.model` | string | `requested_model` / `response_model` | Both kept; never merged |
-| `gen_ai.response.id` | string | canonical key input | provider response ID |
+| `gen_ai.operation.name` | string | JSONB; inference detection (ADR-13) | Inference ops: `chat`, `text_completion`, `generate_content`, `embeddings` |
+| `gen_ai.provider.name` | string | `usage_records.provider` | Required by semconv. Alias `gen_ai.system` (ADR-14) |
+| `gen_ai.request.model` / `gen_ai.response.model` | string | `requested_model` / `response_model` | Both kept, never merged |
+| `gen_ai.response.id` | string | `provider_response_id`; canonical key input | |
 | `gen_ai.response.finish_reasons` | string[] | JSONB | |
 | `gen_ai.request.max_tokens`, `.temperature`, `.top_p`, `.seed`, `.stream` | num/bool | JSONB | |
 | `gen_ai.output.type` | string | JSONB | e.g. `json` |
-| `gen_ai.prompt.name`, `gen_ai.prompt.version` | string | JSONB; `traces.prompt_version` | semconv Development attrs replace a custom prompt-version attr |
-| `gen_ai.usage.input_tokens` | int | `input_tokens` | semconv: SHOULD include **all** input incl. cached |
-| `gen_ai.usage.output_tokens` | int | `output_tokens` | includes reasoning |
-| `gen_ai.usage.cache_read.input_tokens` | int | `cached_input_tokens` | subset of input — never added again |
-| `gen_ai.usage.cache_write.input_tokens` | int | `cache_write_input_tokens` | subset of input (PADR-09) |
-| `gen_ai.usage.reasoning.output_tokens` | int | `reasoning_output_tokens` | subset of output — never added again |
+| `gen_ai.prompt.name`, `gen_ai.prompt.version` | string | JSONB; `traces.prompt_version` | |
+| `gen_ai.usage.input_tokens` | int | `input_tokens` | Semconv: SHOULD include **all** input, cached included. Alias `gen_ai.usage.prompt_tokens` |
+| `gen_ai.usage.output_tokens` | int | `output_tokens` | Includes reasoning. Alias `gen_ai.usage.completion_tokens` |
+| `gen_ai.usage.cache_read.input_tokens` | int | `cached_input_tokens` | Subset of input; never added again |
+| `gen_ai.usage.cache_write.input_tokens` | int | `cache_write_input_tokens` | Subset of input |
+| `gen_ai.usage.reasoning.output_tokens` | int | `reasoning_output_tokens` | Subset of output; never added again |
 | `error.type` | string | `spans.error_type` | Stable |
 | `server.address`, `server.port` | string/int | JSONB | Stable |
 | `openai.request.service_tier`, `openai.response.service_tier`, `openai.response.system_fingerprint`, `openai.api.type` | string | JSONB | OpenAI conventions |
 
+**Alias precedence (ADR-14):** when both the standard name and its alias are present on one span, the **standard value wins**. The alias is dropped and counted.
+
 **Span — HTTP (root):** `http.request.method`, `http.route` (template only), `http.response.status_code`, `url.scheme`.
-**Span — LLM Insight (`llminsight.*`):** `llminsight.call_id` (UUID string, one logical call), `llminsight.attempt` (int ≥ 1, one physical attempt), `llminsight.provenance` (`real`|`synthetic`), `llminsight.usage_source` (`provider_reported`|`estimated`|`unknown`), `llminsight.validation.rule` (string), `llminsight.validation.passed` (bool).
 
-**Always denied (never stored, even if allowlisting is misconfigured):** `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.definitions`, `gen_ai.prompt.variable`, `gen_ai.conversation.id`, `url.full`, `url.query`, `http.request.header.*`, `http.response.header.*`, `client.address`, `user.*`, `enduser.*`, `exception.message`, `exception.stacktrace`, any key containing `authorization`, `api_key`, `apikey`, `password`, `secret`, `token` (except the explicit `gen_ai.usage.*_tokens` keys above).
+**Span — LLM Insight:**
+- `llminsight.call_id`: UUID string, one logical call.
+- `llminsight.attempt`: int ≥ 1, one physical attempt.
+- `llminsight.provenance`: `real` | `synthetic`.
+- `llminsight.usage_source`: `provider_reported` | `estimated` | `unknown`.
+- `llminsight.validation.rule`: string.
+- `llminsight.validation.passed`: bool.
 
-## 4. Usage ledger mapping
+**Always denied** (never stored, even under a misconfigured allowlist; ADR-19):
+- Content: `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.definitions`, `gen_ai.prompt.variable`, `gen_ai.conversation.id`.
+- URLs and headers: `url.full`, `url.query`, `http.request.header.*`, `http.response.header.*`.
+- Identity: `client.address`, `user.*`, `enduser.*`.
+- Exceptions: `exception.message`, `exception.stacktrace`.
+- Any key containing `authorization`, `api_key`, `apikey`, `password`, `secret` or `token`, except the explicit `gen_ai.usage.*_tokens` keys above.
 
-A `usage_records` row is created **only** for spans with an inference `gen_ai.operation.name` (one row per physical attempt). Parent / root spans never produce usage or cost (no double count, T20/T21/T23).
+## 4. Usage ledger: call identity and deduplication (ADR-21)
 
-`canonical_call_key` precedence (stored with `call_key_source`):
-1. `sdk:{llminsight.call_id}:{llminsight.attempt}` → `sdk_attempt` (preferred; stable across re-export)
-2. `resp:{gen_ai.provider.name}:{gen_ai.response.id}` → `provider_response_id`
-3. `span:{trace_id}:{span_id}` → `span_fallback` (best effort; documented as weaker)
+A `usage_records` row is created **only** for inference spans (ADR-13): one row per **physical attempt**. Parent and root spans never produce usage or cost (T20, T21, T23).
 
-Token rules: provider-reported values preferred (`usage_source=provider_reported`). Missing → `NULL` + `usage_source=unknown`, never `0`. `estimated` is reserved; MVP ships no tokenizer.
-Consistency: `cached_input_tokens + cache_write_input_tokens > input_tokens` or `reasoning_output_tokens > output_tokens` → tokens stored as received, `cost_status=unknown`, `cost_unknown_reason=usage_inconsistent`.
+**Project-scoped unique call identity:** `(project_id, canonical_call_key)`. A second guard allows at most one usage row per span: `UNIQUE(project_id, trace_id, span_id)`.
 
-Cost (Decimal, USD, per `model_prices` row effective at span start; full formula in `METRICS_CATALOG.md` M10):
-`uncached_in × input_price + cache_read × cached_input_price + cache_write × cache_write_price + output × output_price` (all ÷ 1,000,000). Subset attributes (`cache_read`, `cache_write`, `reasoning`) are emitted by semconv only "when available and non-zero". When one is absent it is stored as `NULL` (not reported) and treated as 0 **only inside the cost formula**. The LLM Insight SDK always emits provider-reported subsets explicitly, including 0. If `input_tokens` / `output_tokens` is missing, or a price needed for a non-zero term is missing, the result is `cost_usd=NULL`, `cost_status=unknown` with reason `price_missing` / `usage_missing` / `usage_inconsistent`. Cached tokens are **not** silently priced at the full input rate.
+`canonical_call_key` precedence (master plan §E order), stored with `call_key_source`:
 
-## 5. Provenance
+| # | Key | `call_key_source` | Available when | Limitation |
+|---|---|---|---|---|
+| 1 | `resp:{provider}:{gen_ai.response.id}` | `provider_response_id` | The provider returned a response | Assumes response IDs are unique per provider. Absent on failed attempts |
+| 2 | `sdk:{llminsight.call_id}:{llminsight.attempt}` | `sdk_attempt` | The span was produced by the LLM Insight SDK | Client-asserted. Relies on the SDK generating a fresh UUIDv4 per logical call and incrementing `attempt` |
+| 3 | `span:{trace_id}:{span_id}` | `span_fallback` | Always | Weakest. It cannot dedupe the same physical call reported by two instrumentations |
 
-`llminsight.provenance` on inference spans: `real` (live provider call) or `synthetic` (mock adapter / fixture). Missing → `unknown`. A trace is `synthetic` if any span is synthetic. The UI must show `SYNTHETIC` / `UNKNOWN` badges; real and synthetic aggregates are never silently merged.
+**Retry versus re-export:**
+
+| Situation | What arrives | Result |
+|---|---|---|
+| **Re-export** (the exporter or Collector resends the same span) | Same `trace_id` + `span_id`, same attributes | Span: `DO NOTHING`. Usage: same key, so `DO NOTHING`. Counts and cost unchanged (T04, T23) |
+| **Retry attempt** (a new physical API call after 429/timeout) | New span (new `span_id`), same `call_id`, `attempt` + 1, new response ID if it succeeded | A **new** usage row: each attempt is its own physical call and may be billable. M02 counts attempts and M03 counts logical calls (T14) |
+| **Double instrumentation** (two libraries report the same call) | Two spans with the same `gen_ai.response.id` | The second usage insert conflicts on the key. The first row is kept and the server counter `usage_key_collisions` is incremented. No error (T23-S1) |
+| Double instrumentation of a **failed** attempt | No response ID, so keys differ (`sdk_` versus `span_`) | **Not deduplicated** (known limitation). Both rows have unknown cost, so the inference count is inflated but known cost isn't |
+
+**Token rules:**
+- Provider-reported values are preferred (`usage_source=provider_reported`).
+- A missing `input_tokens` / `output_tokens` is stored as `NULL` with `usage_source=unknown`, never `0`. `estimated` is reserved; the MVP has no tokenizer.
+- Subset attributes (`cache_read`, `cache_write`, `reasoning`) are emitted by semconv only "when available and non-zero". An absent subset is stored as `NULL` (not reported) and treated as 0 **only inside the cost formula**. The LLM Insight SDK always emits provider-reported subsets explicitly, including 0.
+- Consistency check: if `cached_input_tokens + cache_write_input_tokens > input_tokens` or `reasoning_output_tokens > output_tokens`, the tokens are stored as received, with `cost_status=unknown` and `cost_unknown_reason=usage_inconsistent`.
+
+**Cost** (Decimal, USD; full formula in `METRICS_CATALOG.md` M10):
+- The price is the `model_prices` row whose `model` exactly equals `response_model` (falling back to `requested_model`) and whose `effective_from` ≤ the span start. There is no fuzzy or prefix model matching.
+- If a needed price or token count is unknown, then `cost_usd=NULL`, `cost_status=unknown`, and `cost_unknown_reason` is `price_missing`, `usage_missing` or `usage_inconsistent`. **Unknown cost is NULL, never 0.** Cached tokens are not silently priced at the full input rate.
+
+## 5. Provenance (ADR-21; aggregation rules in `METRICS_CATALOG.md`)
+
+- **Span level:** only inference spans carry meaningful provenance, from `llminsight.provenance` (`real` | `synthetic`). Missing gives `unknown`; non-inference spans are `unknown`.
+- **Server consistency downgrade:** an inference span that claims `real` with `status≠ERROR` but has no `gen_ai.response.id` is stored as `unknown`. A real successful provider call always has a response ID.
+- **Trace level** (derived over the trace's inference spans):
+
+| Inference-span provenances | Trace provenance |
+|---|---|
+| none (no inference spans) | `unknown` |
+| all `real` | `real` |
+| all `synthetic` | `synthetic` |
+| any other combination (e.g. real + synthetic, real + unknown) | `mixed` |
+
+- **Trust caveat:** `real` is **asserted by the instrumentation**, not cryptographically verified. The UI wording is "reported real", and `unknown` / `mixed` are never counted as real.
 
 ## 6. Representative fixture
 
-`docs/fixtures/otlp_trace_3span.json` is a **synthetic**, illustrative OTLP/JSON rendering of one `ExportTraceServiceRequest` with three spans in one trace (`SERVER` root → `CLIENT` inference + `INTERNAL` validation, two scopes). Expected ingest result is in `docs/fixtures/README.md`. Note: protobuf's generic JSON parser treats `bytes` as base64, whereas OTLP/JSON uses hex for `traceId`/`spanId`/`parentSpanId` — Phase 1 tooling must hex-decode IDs before building the binary protobuf request. The fixture has not been parsed by `opentelemetry-proto` yet (Phase 1, T01).
+`docs/fixtures/otlp_trace_3span.json` is a **synthetic**, illustrative OTLP/JSON rendering of one `ExportTraceServiceRequest`. It has three spans in one trace: a `SERVER` root, a `CLIENT` inference span and an `INTERNAL` validation span, across two scopes. The expected ingest result is in `docs/fixtures/README.md`.
+
+Phase 1 tooling must hex-decode the IDs before building the binary request. Protobuf's generic JSON parser reads `bytes` as base64, whereas OTLP/JSON uses hex. The fixture hasn't been parsed by `opentelemetry-proto` yet (Phase 1, T01).
