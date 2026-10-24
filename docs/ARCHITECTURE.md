@@ -399,6 +399,8 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 
 **Phase 1B install (2026-10-24):** the OTel/protobuf pins above were re-checked on PyPI and installed into `backend/.venv`. Runtime: `opentelemetry-proto` 1.45.1, `protobuf` 7.36.2, `googleapis-common-protos` 1.75.5. Dev only, for the standard-exporter round trip (T01-S3): `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` 1.45.1. Their transitives (`opentelemetry-semantic-conventions`, `-exporter-otlp-proto-common` / `-otlp-common` / `-http-transport` 0.66b1 or 1.45.1, `requests` 2.34.2, `urllib3` 2.8.0, `charset-normalizer` 3.5.2) were all first uploaded on or before 2026-10-10. No existing pin changed; `pip check` is clean.
 
+**Phase 2A install (2026-10-24):** a separate `sdk/.venv` (Python 3.12.6). SDK runtime: `opentelemetry-api` / `-sdk` / `-exporter-otlp-proto-http` 1.45.1, exactly pinned in `sdk/pyproject.toml` and installed with `backend/requirements.lock` as the constraint file, so every shared transitive has the backend's version. SDK dev: `pytest` 9.1.1, `ruff` 0.17.0, `psycopg[binary]` 3.3.6 (live-backend tests), plus the new type checker `mypy` 2.4.0 (2026-10-01) and its transitives `mypy_extensions` 1.1.0, `pathspec` 1.1.1 and `librt` 0.16.0. `ast_serialize` is held at 0.12.1 (2026-10-03), because 0.13.0/0.13.1 (2026-10-12/17) are newer than the two-week rule allows; mypy accepts `>=0.11.2,<1.0.0`. The build backend is pinned to `setuptools==84.0.0` (2026-08-08). Frozen in `sdk/requirements-dev.lock`; `pip check` is clean. The backend lock is unchanged.
+
 ## 7. Repository layout (target)
 
 This follows master plan §G. Folders are created only by the phase that fills them, with no empty layers.
@@ -407,7 +409,7 @@ This follows master plan §G. Folders are created only by the phase that fills t
 |---|---|
 | 0 | `docs/` (incl. `fixtures/`, `reports/`), `scripts/verify_phase0.py`, `.gitignore`, `.env.example` |
 | 1 | `backend/` (`pyproject.toml`, `alembic/`, `app/{main,api/otel,core,models,repositories,services/ingestion}`, `tests/`), `docker-compose.yml`, `scripts/dev` |
-| 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke` |
+| 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come) |
 | 3 | `frontend/`, `backend/app/api/{overview,traces}.py` (full) |
 | 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py` |
 | 5 | CI workflow, `README.md`, `docs/FINAL_DELIVERY_REPORT.md` |
