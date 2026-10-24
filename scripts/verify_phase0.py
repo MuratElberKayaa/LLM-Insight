@@ -90,7 +90,15 @@ block = {r[0] for r in rows if "⛔" in r[5]}
 check(len(crit) == EXPECTED["critical"], f"critical count = {len(crit)} (expected {EXPECTED['critical']})")
 check(len(block) == EXPECTED["blockers"], f"blocker count = {len(block)} (expected {EXPECTED['blockers']})")
 check(block <= crit, "all presentation blockers are critical (subset)")
-check(all(r[8] == "NOT RUN" for r in rows), "no test claims a result (all NOT RUN)")
+# A result may be claimed only as "PASS|PARTIAL|FAIL (phase-N)", and docs/reports/phase-N.md must
+# exist and name the test ID (Phase 1B+); everything else stays NOT RUN.
+for r in rows:
+    if r[8] == "NOT RUN":
+        continue
+    m = re.fullmatch(r"(PASS|PARTIAL|FAIL) \(phase-([0-9a-z]+)\)", r[8])
+    report = os.path.join(ROOT, "docs", "reports", f"phase-{m.group(2)}.md") if m else None
+    ok = bool(m) and os.path.isfile(report) and re.search(rf"\b{r[0]}\b", read(os.path.relpath(report, ROOT)))
+    check(bool(ok), f"{r[0]} status '{r[8]}' is NOT RUN or backed by a phase report naming it")
 
 mp = read("docs/MVP_MASTER_PLAN.md")
 sec_i = section(mp, "## I.", "## J.")

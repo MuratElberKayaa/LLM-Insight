@@ -1,18 +1,19 @@
 # LLM Insight — Phase Status
 
-Last updated: 2026-10-24 (Phase 1A delivered, awaiting review). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
+Last updated: 2026-10-24 (Phase 1B delivered, awaiting review). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
 
 | Phase | Window (target) | State |
 |---|---|---|
 | 0 Definition | 24 Oct | **Closed.** ADR-13…21 accepted; closure commit `0929a14` approved by the user |
-| 1A Backend foundation | 24 Oct | **Delivered; awaiting user review** (`reports/phase-1a.md`) |
-| 1B OTLP ingest | 25–27 Oct | Not started. Waits for the Phase 1A review |
+| 1A Backend foundation | 24 Oct | Delivered (`reports/phase-1a.md`); reviewed by the user (Phase 1B instruction) |
+| 1B OTLP ingest | 25–27 Oct | **Delivered; awaiting user review** (`reports/phase-1b.md`) |
+| 1C Phase 1 integration and acceptance | 25–27 Oct | Not started. Waits for the Phase 1B review |
 | 2 SDK / usage & cost | 28–30 Oct | Not started |
 | 3 Dashboard | 31 Oct–2 Nov | Not started |
 | 4 Review / dataset / experiments | 3–4 Nov | Not started |
 | 5 QA & delivery | 5–7 Nov | Not started |
 
-**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. There is **no** `/v1/traces` ingest, no ingest-key command, no `/api/v1` and no SDK yet.
+**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. There is **no** `/api/v1`, no SDK, no pricing and no frontend yet.
 
 ## Phase 0 — Definition
 - [x] Independent repo initialized; `git rev-parse --show-toplevel` = project folder; no remotes
@@ -38,16 +39,24 @@ Last updated: 2026-10-24 (Phase 1A delivered, awaiting review). Update this file
 - [x] `/health/live` (no DB) and `/health/ready` (`SELECT 1` within 1 s, else `503`), verified with the DB up, stopped and restarted. Neither is traced (no tracing exists yet)
 - [x] Unit + real-PostgreSQL integration tests and Ruff pass (counts in the report)
 - [x] Local `.env` created by `scripts/dev/init_env.py` (never overwrites, never prints values; git-ignored, untracked)
-- [ ] **User review of Phase 1A**
+- [x] User review of Phase 1A (Phase 1B instruction, 2026-10-24)
 
-## Phase 1B — OTLP ingest (not started)
-- [ ] Project + key init command; HMAC key hash; constant-time verify; revocation
-- [ ] `/v1/traces`: processing order, response encoding, `BadRequest`, limits, atomic batch, 200 only after commit, allowlist and attrmap v1
-- [ ] Idempotent span upsert, derived trace recompute, orphan support
-- [ ] `/api/v1/traces` and `/{trace_id}` stubs with project scope and pagination
-- [ ] Tests pass with real Postgres: T01–T08, T25–T28, T30, T31, T44 plus sub-cases T01-S1…S3, T03-S1/S2, T06-S1…S6, T08-S1…S3, T30-S1
-- [ ] The standard OTel exporter smoke reaches the DB; the same payload sent twice leaves counts unchanged
-- [ ] `reports/phase-1.md` (Phase 1 gate), this file updated, commit + tag
+## Phase 1B — OTLP ingest (evidence: `reports/phase-1b.md`)
+- [x] Prerequisites: Phase 1A reviewed; user instruction to install the pinned OTel/protobuf dependencies; PostgreSQL healthy; baseline 118/118
+- [x] Pinned OTel/protobuf runtime deps and the dev-only SDK/exporter installed and locked (all ≤ 2026-10-10; no existing pin changed; `pip check` clean)
+- [x] Project + key CLI (`python -m app.cli create-key / list-keys / revoke-key`); HMAC-SHA256 key hash with the pepper; constant-time verify; revocation
+- [x] `/v1/traces`: §1.1 processing order, §1.2 response encoding, `BadRequest` (≤ 20, no values), limits (4 / 16 MiB, 2048 spans, `413`), gzip with a bounded inflater, atomic batch, `200` only after COMMIT, allowlist and always-deny list, attrmap v1 aliases
+- [x] Auth-failure and per-key token buckets (`429` + `Retry-After`), single process only (CR-08)
+- [x] Idempotent span insert, derived trace recompute, orphan support, usage rows for inference spans only with response-ID-first call keys, collision counter, provenance downgrade; no cost computed (every row `unknown` with a reason)
+- [x] Tests pass with real Postgres: T01–T08, T30, T31, T44 plus sub-cases T01-S1…S3, T03-S1/S2, T06-S1…S6, T08-S1…S3, T30-S1 (counts in the report). Partial evidence only: T14, T16, T18, T23 (S1/S2), T26, T27, T28, T43, T48 (S1/S2)
+- [x] The standard OTel exporter (1.45.1) reaches the DB; the same spans exported twice leave counts unchanged; the real `python -m app` process smoke matches the contract
+- [ ] **User review of Phase 1B**, including the contract clarifications listed in `reports/phase-1b.md` §7
+
+## Phase 1C — Phase 1 integration and acceptance (not started)
+- [ ] `/api/v1/traces` and `/{trace_id}` stubs with the admin bearer token, project scope and cursor pagination (T25, and the API halves of T26, T27, T28)
+- [ ] Decisions on the Phase 1B contract clarifications applied (contract text or code)
+- [ ] Hardening candidates from the Phase 1B report (e.g. body-read timeout, R22)
+- [ ] `reports/phase-1.md` (Phase 1 gate: T01–T08, T25–T28, T30, T31, T44 and their sub-cases), this file updated, commit + `phase-1` tag
 
 ## Phase 2 — SDK, usage and cost
 - [ ] Semconv pin re-checked (ADR-15)
@@ -96,5 +105,6 @@ Last updated: 2026-10-24 (Phase 1A delivered, awaiting review). Update this file
 | `alembic upgrade head` / `alembic downgrade base` / `alembic check` (backend) | yes | Migrations (URL from `.env`) |
 | `LLMI_TEST_REQUIRE_DB=1 python -m pytest` (backend) | yes | Unit + integration tests; integration uses disposable `*_test` DBs. Without the variable, integration tests skip with a reason if PostgreSQL is unreachable |
 | `ruff check .` / `ruff format --check .` (backend) | yes | Lint / format |
-| `python -m app` (backend) | yes | Dev server on `127.0.0.1:8000`, single worker |
+| `python -m app` (backend) | yes | Dev server on `127.0.0.1:8000`, single worker; serves `/health/*` and `POST /v1/traces` |
+| `python -m app.cli create-key --project <name>` / `list-keys` / `revoke-key --prefix <p>` (backend) | yes | Create a project and ingest key (the key is printed once; only its HMAC is stored), list prefixes, revoke |
 | `npm run lint/typecheck/build`, `npx playwright test` | no | Planned (Phase 3) |
