@@ -6,7 +6,7 @@
 
 | Component | Tech | Responsibility | Phase |
 |---|---|---|---|
-| `backend/` | FastAPI modular monolith, SQLAlchemy 2, Alembic, PostgreSQL | OTLP ingest, query API, pricing/ledger, reviews, datasets, experiments | 1–4 |
+| `backend/` | FastAPI modular monolith, SQLAlchemy 2, Alembic, PostgreSQL | OTLP ingest, query API, pricing/ledger, trace diagnostics (4A, derived, not persisted), reviews, datasets, experiments | 1–4 |
 | `sdk/` | Independent Python package on the OTel SDK | Tracer/Resource setup, `BatchSpanProcessor`, OTLP/HTTP protobuf exporter, OpenAI wrapper, mock adapter | 2 |
 | `demo_app/` | Small FastAPI app | Root HTTP span → LLM child span; real (opt-in) or mock provider | 2 |
 | `frontend/` | Next.js, TypeScript, Tailwind, Recharts | Server-side data fetching, KPIs, trace explorer, review / dataset / experiment UI | 3–4 |
@@ -341,6 +341,7 @@ The backend binds to `127.0.0.1`.
 | `/v1/traces` | POST | See `TELEMETRY_CONTRACT.md` | 1 |
 | `/api/v1/traces` | GET | Params `project`, `from`, `to` (ISO-8601 UTC, max 31-day window), `model`, `status`, `provenance`, `limit` (default 50, max 200), `cursor`. Returns `{items, next_cursor}`, newest first | 1 (stub) / 3 |
 | `/api/v1/traces/{trace_id}` | GET | Span tree (parent-child + orphans), usage rows, linked reviews | 1 (stub) / 3 |
+| `/api/v1/traces/{trace_id}/diagnostics` | GET | Read-only, derived on request: deterministic, metadata-only findings (`llminsight.diagnostics.v1`, §5.6). Same auth, project scope, `404` and bounds as the detail; nothing persisted | 4A |
 | `/api/v1/overview` | GET | KPIs and trends (`METRICS_CATALOG.md`), each with `n` and a provenance split | 2 (backend, done in 2C, §5.2) / 3 (UI) |
 | `/api/v1/models/compare` | GET | Per provider/model/prompt_version totals, `cost_status` counts, sample N | 2C (backend, §5.2; M15) / 3 (UI) |
 | `/api/v1/projects` | GET | Bounded project listing for the dashboard selector: `{items[{id, name, created_at}], truncated, limit}`, `limit` 1–200 (default 100); no `project` parameter | 3C (§5.5) |
@@ -433,6 +434,63 @@ Uses the §5.1 endpoints exactly as implemented; no backend change, no new field
 **Model comparison (`/models`).** `GET /api/v1/models/compare` with a window (preset or custom UTC ≤ 31 days), `provenance`, attempt `status`, `limit` ∈ {10, 25, 50, 100, 200}. Backend order, no ranking; group-level invariants checked by the decoder (failed + succeeded = attempts, computed + unknown = attempts, `cost_complete` ⇔ no unknown, known cost ⇔ a priced call, token `n` = attempts).
 
 **Custom UTC ranges** on Overview, Models and Traces: form fields `from_utc`/`to_utc` (UTC by name), link fields `from`/`to` (ISO `Z`, ≤ 6 fraction digits); checked at microsecond precision against the 31-day maximum; refused ranges fall back to the default preset with the reason. On the Overview, a custom range's first and last trend buckets may be partial (stated on the page).
+
+### 5.6 Phase 4A: trace diagnostics (`backend/app/api/diagnostics.py`, `backend/app/services/diagnostics/`)
+
+**Status:** additive read-only endpoint, added by the Phase 4A user instruction (2026-10-25). No table, column, migration or index is added: results are derived on request and never persisted (ADR-21 unchanged). The endpoint is **not** part of the Failure Review contract (§4.9, CR-03): it writes nothing to `failure_reviews`, and its categories are a separate vocabulary from `issue_type`. It does not implement or satisfy T33–T40.
+
+**`GET /api/v1/traces/{trace_id}/diagnostics?project=<id>`.** Access is exactly that of the trace detail (§5.1): `require_admin` before any parameter is validated; `trace_id` 32 lowercase hex, else `422`; `project` required; an unknown project, an unknown trace and another project's trace are one byte-identical `404`; one `REPEATABLE READ, READ ONLY` snapshot; `Cache-Control: no-store`; the `/api/v1` rate limit.
+- **Work bound:** the detail's own statements (`get_trace`, `get_spans`, `get_usage`: at most 2000 spans by start time and 2000 usage rows), which were EXPLAIN-tested in Phase 1C. Four statements per request whatever the trace size (no per-span query, integration-tested). The rule pass is linear in the analysed rows and runs in a worker thread.
+- **Output bound:** at most 100 findings (catalogue order), 25 evidence spans per finding, 20 values per list fact; totals are always reported (`findings_total`, `evidence_total`, `*_count`).
+
+**Contract `llminsight.diagnostics.v1`, ruleset `llminsight.diagnostics.rules.v1`.** A schema change needs `diagnostics.v2`; a change of rule semantics or text needs `rules.v2`.
+
+```text
+{contract_version, ruleset_version,
+ method: {kind: "deterministic_rules", language_model_used: false, content_used: false, inputs},
+ trace: {trace_id, status, provenance, provenance_verified: false, span_count},
+ coverage: {complete, spans_stored, spans_analyzed, spans_truncated,
+            usage_rows_analyzed, usage_truncated, limitations[{code, text}]},
+ summary: {inference_attempts, failed_inference_attempts, logical_calls|null,
+           attempts_without_call_id, error_spans, usage_rows, cost_computed,
+           cost_unknown{price_missing, usage_missing, usage_inconsistent}, findings_by_category},
+ findings[{id, category, group, subject{type: trace|logical_call|span, ...}, trigger,
+           observed_facts[{name, value}], evidence[...], evidence_total, evidence_truncated,
+           hypothesis{code, statement, error_interpretation{code, statement}|null, verified: false},
+           established[], not_established[], limitations[{code, text}], data_complete,
+           investigation_steps[]}],
+ findings_total, findings_truncated,
+ not_assessed[{category, reason}]}
+```
+
+- **Evidence item:** `span_id`, `parent_span_id`, `role`, `kind`, `status`, `error_type`, `start_time_unix_nano`, `duration_ns`, `provenance`, `provenance_verified: false`, `server_dropped_attributes_count`, plus `inference` (operation, provider, models, `call_id`, `attempt`, `has_response_id`, `finish_reasons`, `request_max_tokens`), `usage` (`usage_source`, token fields, `cost_status`, `cost_unknown_reason`) and `validation` (`rule`, `passed`), each `null` when absent. These are stored, allowlisted fields only: no span name, no raw attribute object, no response ID value, no `cost_usd` (an unknown cost is never rendered, so it can never appear as `0`).
+- **Text:** every `trigger`, `statement`, `established`, `not_established`, limitation text and investigation step is a constant of the catalogue (`catalog.py`). No stored value is interpolated into prose; client metadata appears only as facts and evidence fields.
+- **Hypothesis:** always `verified: false`, always phrased "Possible explanation (not verified)"; no score, probability or confidence. `error_interpretation` applies only to failed **inference** attempts and only to the exact `error.type` identifiers in the catalogue table (HTTP `429`/`4xx`/`5xx` status codes, `timeout`, and the OpenAI Python SDK classes `openai.RateLimitError`, `openai.InternalServerError`, `openai.APITimeoutError`, `openai.APIConnectionError`); everything else is `error_type_not_interpreted` or `error_type_not_recorded`. A 5xx is never presented as a provider outage.
+- **Order and determinism:** findings by catalogue order, then first evidence span (start ns, span id), then subject; evidence by (start ns, span id). The engine is pure: the same stored rows give byte-identical responses, whatever the ingest order.
+- **Absence rule:** a finding that rests on missing data (`no_root_span`, `usage_ledger_row_missing`) is suppressed when the analysis was truncated; every other finding is marked `data_complete: false` with the limitation `analysis_truncated`.
+
+**Rule catalogue** (inputs are stored columns of §4.4–4.6 only; full trigger, limitation and false-positive/negative notes in `reports/phase-4a.md` §4):
+
+| Category | Group | Fires when (stored data) |
+|---|---|---|
+| `inference_call_failed_after_retries` | reliability | ≥ 2 attempts of one `llminsight.call_id`, all `status = ERROR` |
+| `inference_call_failed` | reliability | the only stored attempt of a call is ERROR, or an ERROR attempt without a usable call ID |
+| `inference_call_recovered_after_retry` | reliability | a call with an ERROR attempt whose highest-numbered attempt is not ERROR |
+| `non_inference_span_error` | reliability | a non-inference span is ERROR (with or without failed inference in its subtree) |
+| `application_validation_failed` | application_signal | `llminsight.validation.passed` is boolean false |
+| `inference_output_truncated` / `inference_content_filtered` | provider_signal | an `openai` attempt records finish reason `length` / `content_filter` |
+| `token_usage_missing` | usage_and_cost | a non-ERROR attempt's usage row has NULL `input_tokens`, or NULL `output_tokens` (not embeddings) |
+| `usage_ledger_row_missing` | usage_and_cost | an inference span has no usage row (call-identity collision) |
+| `usage_inconsistent` | usage_and_cost | `cost_unknown_reason = usage_inconsistent` |
+| `cost_unknown_price_missing` | usage_and_cost | `cost_unknown_reason = price_missing` |
+| `orphan_spans`, `multiple_root_spans`, `no_root_span`, `parent_cycle` | trace_structure | stored parent links: missing parent, ≥ 2 roots, no root (complete analysis only), a link cycle |
+| `retry_sequence_incomplete` | metadata_integrity | a call's attempt numbers are not 1..n without gaps |
+| `attempt_metadata_inconsistent` | metadata_integrity | duplicate attempt number, unusable number, failure after success, attempt without call ID, unusable call ID |
+| `attributes_dropped_at_ingest` | metadata_integrity | `server_dropped_attributes_count > 0` |
+
+**Not assessed** (listed in every response with the reason): elevated latency (no approved comparison basis), semantic quality, prompt quality, provider outage, root cause.
+
+**Frontend:** none in Phase 4A. The dashboard's backend path allowlist (§5.4) does not include this path; a Trace Detail integration is a later subphase (`reports/phase-4a.md` §9).
 
 ## 6. Version pins (candidates; CR-09)
 

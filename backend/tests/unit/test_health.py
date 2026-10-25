@@ -64,13 +64,15 @@ def test_ready_503_with_real_driver_against_closed_port(client):
 
 def test_routes_are_health_otlp_ingest_and_read_api(client):
     # Phase 1B adds POST /v1/traces; Phase 1C adds the two /api/v1 trace read endpoints;
-    # Phase 2C adds the two aggregate endpoints; Phase 3C adds the bounded project listing.
+    # Phase 2C adds the two aggregate endpoints; Phase 3C adds the bounded project listing;
+    # Phase 4A adds the read-only trace diagnostics (ARCHITECTURE.md §5.6).
     assert set(client.app.openapi()["paths"]) == {
         "/health/live",
         "/health/ready",
         "/v1/traces",
         "/api/v1/traces",
         "/api/v1/traces/{trace_id}",
+        "/api/v1/traces/{trace_id}/diagnostics",
         "/api/v1/overview",
         "/api/v1/models/compare",
         "/api/v1/projects",
