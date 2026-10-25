@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/*
+ * LLM Insight design tokens (dark-first). Series and provenance hues are the dark steps of
+ * the validated reference palette, checked against --color-surface (#15171c) with the
+ * dataviz palette validator: provenance real/synthetic/mixed and succeeded/failed both pass
+ * lightness, chroma, CVD (adjacent and all-pairs) and 3:1 contrast. Identity is never
+ * carried by color alone: every swatch sits next to a text label.
+ */
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
+
+  --color-canvas: #0c0d10;
+  --color-surface: #15171c;
+  --color-raised: #1c1f26;
+  --color-line: #272b34;
+  --color-grid: #24272f;
+  --color-axis: #3a3e48;
+  --color-ink: #eceae6;
+  --color-ink-2: #bdbbb3;
+  --color-ink-3: #8f8d86;
+  --color-focus: #8fb8f0;
+
+  --color-real: #3987e5;
+  --color-synthetic: #d95926;
+  --color-mixed: #199e70;
+  --color-unknown: #7d7b75;
+
+  --color-series-1: #3987e5;
+  --color-good: #0ca30c;
+  --color-warning: #fab219;
+  --color-serious: #ec835a;
+  --color-critical: #d03b3b;
+  /* Text on dark surfaces: the status red is 3.6:1, too low for small text. */
+  --color-critical-ink: #f08a8a;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Visible keyboard focus everywhere; mouse clicks do not show the ring. */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Numbers that align in columns and on axes. Large standalone values stay proportional. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chart tooltips and SVG text inherit the UI font. */
+.recharts-wrapper,
+.recharts-wrapper svg text {
+  font-family: var(--font-sans);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .swatch {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+  }
+}

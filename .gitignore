@@ -28,10 +28,14 @@ htmlcov/
 coverage.xml
 
 # --- Node / Next.js ---
+# Project-scoped Node.js runtime (scripts/dev/install_node.py)
+.tools/
 node_modules/
 .next/
 out/
 *.tsbuildinfo
+# Compiled unit tests (frontend/scripts/run-unit-tests.mjs)
+.test-build/
 next-env.d.ts
 npm-debug.log*
 .pnpm-debug.log*

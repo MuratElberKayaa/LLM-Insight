@@ -15,6 +15,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(ROOT, ".env")
+FRONTEND_ENV_PATH = os.path.abspath(os.path.join(ROOT, "frontend", ".env.local"))
 QUIET = "--quiet" in sys.argv[1:]
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="replace")  # Windows consoles may lack characters such as §
@@ -240,12 +241,13 @@ SECRET = re.compile(
     r"|lli_[A-Za-z0-9]{6,}_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{20,}\.)")
 hits, scanned = [], 0
 for dp, dn, fs in os.walk(ROOT):
-    dn[:] = [d for d in dn if d not in (".git", "node_modules", ".venv", "venv")]
+    # Dependencies and generated build/test output (all git-ignored; Phase 3A adds the frontend ones).
+    dn[:] = [d for d in dn if d not in (".git", "node_modules", ".venv", "venv", ".next", ".tools", ".test-build", "test-results", "playwright-report")]
     for f in fs:
         fp = os.path.join(dp, f)
         if os.path.abspath(fp) == os.path.abspath(__file__):
             continue  # this file contains the patterns themselves
-        if os.path.abspath(fp) == ENV_PATH:
+        if os.path.abspath(fp) in (ENV_PATH, FRONTEND_ENV_PATH):
             continue  # local secrets by design; checked below to be git-ignored and untracked
         try:
             t = open(fp, encoding="utf-8").read()
@@ -264,6 +266,11 @@ if os.path.exists(ENV_PATH):
     check(ignored and not tracked, f"local .env is git-ignored ({ignored}) and untracked ({not tracked})")
 else:
     check(True, "no .env file in the working tree")
+if os.path.exists(FRONTEND_ENV_PATH):
+    # Phase 3A+: the dashboard's server-side env (scripts/dev/init_frontend_env.py).
+    fe_ignored = subprocess.run(["git", "-C", ROOT, "check-ignore", "-q", "frontend/.env.local"], capture_output=True).returncode == 0
+    fe_tracked = subprocess.run(["git", "-C", ROOT, "ls-files", "--error-unmatch", "frontend/.env.local"], capture_output=True).returncode == 0
+    check(fe_ignored and not fe_tracked, f"frontend/.env.local is git-ignored ({fe_ignored}) and untracked ({not fe_tracked})")
 env = read(".env.example")
 env_pairs = [ln.split("=", 1) for ln in env.splitlines() if "=" in ln and not ln.lstrip().startswith("#")]
 bad = [k for k, v in env_pairs

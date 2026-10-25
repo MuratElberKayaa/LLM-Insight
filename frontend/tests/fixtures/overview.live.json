@@ -1,0 +1,639 @@
+{
+ "_note": "Recorded from the real local backend (Phase 3A round trip, 2026-10-25) for project 1 with SYNTHETIC telemetry from demo_app and demo_app.web. Contract fixture only; contains no credential.",
+ "response": {
+  "project": 1,
+  "window": {
+   "from": "2026-10-24T08:00:00.000000Z",
+   "to": "2026-10-25T08:00:00.000000Z"
+  },
+  "filters": {
+   "model": null,
+   "status": null,
+   "prompt_version": null,
+   "provenance": null
+  },
+  "provenance_label": "all provenance",
+  "provenance_verified": false,
+  "traces": {
+   "count": {
+    "total": 9,
+    "by_provenance": {
+     "real": 0,
+     "synthetic": 9,
+     "mixed": 0,
+     "unknown": 0
+    }
+   },
+   "error_rate": {
+    "total": {
+     "n": 9,
+     "error_traces": 4,
+     "rate": 0.444444
+    },
+    "by_provenance": {
+     "real": {
+      "n": 0,
+      "error_traces": 0,
+      "rate": null
+     },
+     "synthetic": {
+      "n": 9,
+      "error_traces": 4,
+      "rate": 0.444444
+     },
+     "mixed": {
+      "n": 0,
+      "error_traces": 0,
+      "rate": null
+     },
+     "unknown": {
+      "n": 0,
+      "error_traces": 0,
+      "rate": null
+     }
+    }
+   },
+   "latency": {
+    "total": {
+     "n": 9,
+     "p50_ms": 31.5687,
+     "p95_ms": 327.73966,
+     "p99_ms": 344.599212,
+     "low_sample": {
+      "p95": true,
+      "p99": true
+     }
+    },
+    "by_provenance": {
+     "real": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "low_sample": {
+       "p95": true,
+       "p99": true
+      }
+     },
+     "synthetic": {
+      "n": 9,
+      "p50_ms": 31.5687,
+      "p95_ms": 327.73966,
+      "p99_ms": 344.599212,
+      "low_sample": {
+       "p95": true,
+       "p99": true
+      }
+     },
+     "mixed": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "low_sample": {
+       "p95": true,
+       "p99": true
+      }
+     },
+     "unknown": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "low_sample": {
+       "p95": true,
+       "p99": true
+      }
+     }
+    },
+    "traces_without_root": 0
+   }
+  },
+  "inference": {
+   "attempts": {
+    "total": 16,
+    "by_provenance": {
+     "real": 0,
+     "synthetic": 16,
+     "unknown": 0
+    }
+   },
+   "logical_calls": {
+    "total": {
+     "value": 14,
+     "attempts_without_call_id": 0,
+     "n": 16
+    },
+    "by_provenance": {
+     "real": {
+      "value": null,
+      "attempts_without_call_id": 0,
+      "n": 0
+     },
+     "synthetic": {
+      "value": 14,
+      "attempts_without_call_id": 0,
+      "n": 16
+     },
+     "unknown": {
+      "value": null,
+      "attempts_without_call_id": 0,
+      "n": 0
+     }
+    }
+   },
+   "errors": {
+    "total": {
+     "n": 16,
+     "failed": 4,
+     "succeeded": 12,
+     "rate": 0.25
+    },
+    "by_provenance": {
+     "real": {
+      "n": 0,
+      "failed": 0,
+      "succeeded": 0,
+      "rate": null
+     },
+     "synthetic": {
+      "n": 16,
+      "failed": 4,
+      "succeeded": 12,
+      "rate": 0.25
+     },
+     "unknown": {
+      "n": 0,
+      "failed": 0,
+      "succeeded": 0,
+      "rate": null
+     }
+    },
+    "by_error_type": [
+     {
+      "error_type": "429",
+      "count": 2
+     },
+     {
+      "error_type": "500",
+      "count": 2
+     }
+    ],
+    "by_error_type_truncated": false
+   },
+   "latency": {
+    "total": {
+     "n": 16,
+     "p50_ms": 20.8243,
+     "p95_ms": 296.994125,
+     "p99_ms": 302.798585,
+     "low_sample": {
+      "p95": true,
+      "p99": true
+     }
+    },
+    "by_provenance": {
+     "real": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "low_sample": {
+       "p95": true,
+       "p99": true
+      }
+     },
+     "synthetic": {
+      "n": 16,
+      "p50_ms": 20.8243,
+      "p95_ms": 296.994125,
+      "p99_ms": 302.798585,
+      "low_sample": {
+       "p95": true,
+       "p99": true
+      }
+     },
+     "unknown": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "low_sample": {
+       "p95": true,
+       "p99": true
+      }
+     }
+    }
+   },
+   "time_to_first_chunk": {
+    "available": false,
+    "reason": "not_recorded",
+    "detail": "streaming time-to-first-chunk is not captured by the MVP (M20, P1)"
+   },
+   "tokens": {
+    "total": {
+     "n": 16,
+     "input_tokens": 4320,
+     "calls_with_unknown_input_tokens": 4,
+     "output_tokens": 1304,
+     "calls_with_unknown_output_tokens": 4,
+     "subsets": {
+      "cached_input_tokens": {
+       "sum": 2256,
+       "calls_reporting": 12
+      },
+      "cache_write_input_tokens": {
+       "sum": 128,
+       "calls_reporting": 10
+      },
+      "reasoning_output_tokens": {
+       "sum": 592,
+       "calls_reporting": 12
+      }
+     }
+    },
+    "by_provenance": {
+     "real": {
+      "n": 0,
+      "input_tokens": null,
+      "calls_with_unknown_input_tokens": 0,
+      "output_tokens": null,
+      "calls_with_unknown_output_tokens": 0,
+      "subsets": {
+       "cached_input_tokens": {
+        "sum": null,
+        "calls_reporting": 0
+       },
+       "cache_write_input_tokens": {
+        "sum": null,
+        "calls_reporting": 0
+       },
+       "reasoning_output_tokens": {
+        "sum": null,
+        "calls_reporting": 0
+       }
+      }
+     },
+     "synthetic": {
+      "n": 16,
+      "input_tokens": 4320,
+      "calls_with_unknown_input_tokens": 4,
+      "output_tokens": 1304,
+      "calls_with_unknown_output_tokens": 4,
+      "subsets": {
+       "cached_input_tokens": {
+        "sum": 2256,
+        "calls_reporting": 12
+       },
+       "cache_write_input_tokens": {
+        "sum": 128,
+        "calls_reporting": 10
+       },
+       "reasoning_output_tokens": {
+        "sum": 592,
+        "calls_reporting": 12
+       }
+      }
+     },
+     "unknown": {
+      "n": 0,
+      "input_tokens": null,
+      "calls_with_unknown_input_tokens": 0,
+      "output_tokens": null,
+      "calls_with_unknown_output_tokens": 0,
+      "subsets": {
+       "cached_input_tokens": {
+        "sum": null,
+        "calls_reporting": 0
+       },
+       "cache_write_input_tokens": {
+        "sum": null,
+        "calls_reporting": 0
+       },
+       "reasoning_output_tokens": {
+        "sum": null,
+        "calls_reporting": 0
+       }
+      }
+     }
+    }
+   },
+   "cost": {
+    "total": {
+     "n": 16,
+     "currency": "USD",
+     "known_cost_usd": "0.0031500000",
+     "computed_cost_calls": 2,
+     "unknown_cost_calls": 14,
+     "unknown_cost_by_reason": {
+      "price_missing": 10,
+      "usage_missing": 4,
+      "usage_inconsistent": 0
+     },
+     "cost_complete": false,
+     "known_cost_per_call_usd": "0.0015750000"
+    },
+    "by_provenance": {
+     "real": {
+      "n": 0,
+      "currency": "USD",
+      "known_cost_usd": null,
+      "computed_cost_calls": 0,
+      "unknown_cost_calls": 0,
+      "unknown_cost_by_reason": {
+       "price_missing": 0,
+       "usage_missing": 0,
+       "usage_inconsistent": 0
+      },
+      "cost_complete": null,
+      "known_cost_per_call_usd": null
+     },
+     "synthetic": {
+      "n": 16,
+      "currency": "USD",
+      "known_cost_usd": "0.0031500000",
+      "computed_cost_calls": 2,
+      "unknown_cost_calls": 14,
+      "unknown_cost_by_reason": {
+       "price_missing": 10,
+       "usage_missing": 4,
+       "usage_inconsistent": 0
+      },
+      "cost_complete": false,
+      "known_cost_per_call_usd": "0.0015750000"
+     },
+     "unknown": {
+      "n": 0,
+      "currency": "USD",
+      "known_cost_usd": null,
+      "computed_cost_calls": 0,
+      "unknown_cost_calls": 0,
+      "unknown_cost_by_reason": {
+       "price_missing": 0,
+       "usage_missing": 0,
+       "usage_inconsistent": 0
+      },
+      "cost_complete": null,
+      "known_cost_per_call_usd": null
+     }
+    }
+   },
+   "price_versions": {
+    "items": [
+     {
+      "provider": "openai",
+      "model": "gpt-5.4-mini-2026-03-17",
+      "price_version": "openai-2026-10-24",
+      "calls": 2
+     }
+    ],
+    "truncated": false
+   },
+   "usage_source": {
+    "total": {
+     "provider_reported": 12,
+     "estimated": 0,
+     "unknown": 4
+    },
+    "by_provenance": {
+     "real": {
+      "provider_reported": 0,
+      "estimated": 0,
+      "unknown": 0
+     },
+     "synthetic": {
+      "provider_reported": 12,
+      "estimated": 0,
+      "unknown": 4
+     },
+     "unknown": {
+      "provider_reported": 0,
+      "estimated": 0,
+      "unknown": 0
+     }
+    }
+   }
+  },
+  "trend": {
+   "bucket": "hour",
+   "items": [
+    {
+     "start": "2026-10-24T08:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T09:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T10:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T11:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T12:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T13:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T14:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T15:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T16:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T17:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T18:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T19:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T20:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T21:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T22:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-24T23:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T00:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T01:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T02:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T03:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T04:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T05:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T06:00:00.000000Z",
+     "traces": 0,
+     "error_traces": 0,
+     "inference_attempts": 0,
+     "failed_attempts": 0,
+     "known_cost_usd": null,
+     "unknown_cost_calls": 0
+    },
+    {
+     "start": "2026-10-25T07:00:00.000000Z",
+     "traces": 9,
+     "error_traces": 4,
+     "inference_attempts": 16,
+     "failed_attempts": 4,
+     "known_cost_usd": "0.0031500000",
+     "unknown_cost_calls": 14
+    }
+   ]
+  }
+ }
+}

@@ -1,6 +1,6 @@
 # LLM Insight — Architecture, Data & API Contracts
 
-**Status:** binding contract (Phase 0 closed by ADR-13…21, 2026-10-24). No component is implemented yet. Decisions are in `ADR.md`, wire details in `TELEMETRY_CONTRACT.md`, security in `SECURITY.md`.
+**Status:** binding contract (Phase 0 closed by ADR-13…21, 2026-10-24). Implementation state per phase: `PHASE_STATUS.md`. Decisions are in `ADR.md`, wire details in `TELEMETRY_CONTRACT.md`, security in `SECURITY.md`.
 
 ## 1. Components
 
@@ -404,6 +404,15 @@ No new index was needed. Responses carry `Cache-Control: no-store` and no CORS h
 
 **Index use** (EXPLAIN on 36,000 generated usage rows, one-day window; `tests/integration/test_metrics_plan.py`): usage-level queries range-scan `ix_usage_records_project_id_started_at` and reach each span through a spans index on `(project_id, trace_id, …)`; trace-level queries use `ix_traces_project_id_started_at`; no sequential scan. No new index was needed.
 
+### 5.3 Phase 3A dashboard access to the read API (`frontend/lib/server/`)
+
+The dashboard is the only consumer of `/api/v1` and adds no endpoint; the backend contract is unchanged.
+- **Server-side only.** Next.js server components call `lib/server/backend.ts`, the one module that sends `Authorization: Bearer <LLMI_API_TOKEN>`. Every `lib/server/*` module imports `server-only`; there are no route handlers and no Server Functions, so the browser cannot reach the backend through the dashboard (no generic proxy). The token is never in a `NEXT_PUBLIC_*` variable, HTML, RSC payload, client bundle, cookie or browser storage (T42).
+- **Requests.** Fixed paths (`/api/v1/overview`, `/api/v1/models/compare?limit=10`), the configured `project`, and `from`/`to` from a validated preset (6 h, 24 h, 7 d, 31 d; UTC; aligned to the trend bucket so every bucket is full width), plus an optional validated `provenance`. Unsupported URL values fall back to defaults with a notice and are never forwarded. `cache: "no-store"`, `redirect: "error"`, a deadline (`LLMI_API_TIMEOUT_MS`, default 5 s), a 2 MiB response cap, and a loopback-only base URL.
+- **Responses.** Each body is decoded against the §5.2 schema field by field (`frontend/lib/api/schema.ts`); a mismatch rejects the whole response (`malformed`) instead of rendering a guess. Failures map to fixed kinds (`config`, `unreachable`, `timeout`, `unauthorized`, `not_found`, `invalid_request`, `rate_limited`, `storage_unavailable`, `server_error`, `unexpected_status`, `malformed`) with fixed copy; no backend body, URL or credential is shown or logged. The compare request degrades its own section only. `GET /health/ready` (no token) feeds the header status.
+- **Presentation.** Values are the backend's: no metric is recomputed (the only arithmetic is `attempts − failed` for a stacked bar, the backend's own `succeeded` definition). Money stays a decimal string formatted with BigInt arithmetic; `null` is shown as unknown / not reported / no data, never 0. Provenance uses the backend buckets with text labels; synthetic data gets a banner; "real" is shown as an instrumentation claim.
+- **Request guard (`frontend/proxy.ts`).** Bound to `127.0.0.1:3001`; requests whose `Host` is not a loopback name get `421` (DNS-rebinding defence); methods other than GET/HEAD get `405`; each response carries a per-request nonce CSP plus `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, COOP/CORP.
+
 ## 6. Version pins (candidates; CR-09)
 
 Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is the newest stable release published **on or before 2026-10-10**, so it is at least two weeks old. Lockfiles are produced when a component is first implemented, with versions re-checked then. Nothing is installed in Phase 0.
@@ -411,14 +420,14 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 | Area | Pin | Local status / note |
 |---|---|---|
 | Python | 3.12.x (Docker `python:3.12-slim`) | 3.12.6 installed. SQLAlchemy 2.1 and pydantic-settings need ≥ 3.11 |
-| Node.js | 22 LTS (EOL 2027-04-30) | 22.11.0 installed. Next 16 needs ≥ 20.9. Update to the latest 22.x patch is recommended |
+| Node.js | 22 LTS (EOL 2027-04-30) | **22.23.4** for the frontend since Phase 3A, project-scoped in `.tools/` (`scripts/dev/install_node.py`); the global 22.11.0 is unchanged. Next 16 needs ≥ 20.9 |
 | PostgreSQL | 17 (Docker `postgres:17`, EOL 2029-11) | Conservative choice over 18 |
 | Backend | fastapi 0.143.0 · uvicorn 0.54.0 · pydantic 2.14.0 · pydantic-settings 2.15.0 · sqlalchemy 2.1.4 · alembic 1.20.0 · psycopg 3.3.6 | |
 | OTel / protos | opentelemetry-api / -sdk / -proto / -exporter-otlp-proto-http 1.45.1 · protobuf 7.36.2 (proto requires `>=5,<8`) · googleapis-common-protos 1.75.5 (`google.rpc.Status` / `BadRequest`; requires protobuf `>=6.33.5,<8`) · opentelemetry-instrumentation-fastapi 0.66b1 (beta line, demo only) | |
 | Provider | openai 3.28.0 | SDK adapter and demo only |
 | Eval / test | jsonschema 4.26.0 · pytest 9.1.1 · httpx 0.28.1 · ruff 0.17.0 | |
-| Frontend | next 16.4.0 · react / react-dom 19.3.0 · tailwindcss 4.3.3 · recharts 3.10.1 · @playwright/test 1.64.0 · eslint 10.12.0 | |
-| TypeScript | **UNKNOWN, decided in Phase 3.** Options: 5.9.3, 6.0.3 or 7.0.2 | Next 16 compatibility with TS 7 (native port) not verified |
+| Frontend | next **16.4.3** · react / react-dom / react-is **19.3.1** · tailwindcss 4.3.3 · recharts 3.10.1 · @playwright/test 1.64.0 · eslint **9.39.5** | Installed in Phase 3A (below). 16.4.0 and 19.3.0 were replaced for security fixes; ESLint 10 is blocked by plugin peer ranges |
+| TypeScript | **6.0.3** (decided in Phase 3A, R07) | `typescript-eslint` 8.x supports `<6.1.0`, which rules out 7.x |
 
 **Phase 1A install (2026-10-24):** the backend runtime and dev pins above were re-checked on PyPI and installed into `backend/.venv`. The OTel/protobuf, provider and eval pins are not installed until the phase that uses them. Transitive versions are frozen in `backend/requirements.lock`. Three transitive packages were held below their newest release to keep the two-week rule: `starlette` 1.7.0 (1.10.0 was released 2026-10-24), `certifi` 2026.7.22 and `pluggy` 1.6.0. `opentelemetry-api` 1.45.1 arrives transitively through `fastapi` 0.143.0.
 
@@ -430,6 +439,8 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 
 **Phase 2C install (2026-10-24, UTC):** `sdk/.venv` only, for the FastAPI demo (`demo_app/web.py`): `fastapi` 0.143.0, `uvicorn` 0.54.0 and their transitives `starlette` 1.7.0, `click` 8.5.0, `annotated-doc` 0.0.5, all **identical** to `backend/requirements.lock` (installed with it as the constraint file), so no new version enters the project. Added to the SDK `dev` extra and `sdk/requirements-dev.lock` (48 pins); `pip check` is clean. The backend gained no dependency.
 
+**Phase 3A install (2026-10-25, UTC):** `frontend/` only, with Node 22.23.4 / npm 10.9.9 from `.tools/` (official zip, SHA-256 checked against `SHASUMS256.txt`). Exact pins in `frontend/package.json`, lockfile `frontend/package-lock.json` (lockfileVersion 3), `npm ci` reproducible, `npm audit` 0 vulnerabilities, `npm ls` clean. Dependencies: `next` 16.4.3, `react`/`react-dom`/`react-is` 19.3.1, `recharts` 3.10.1, `server-only` 0.0.1. Dev: `typescript` 6.0.3, `eslint` 9.39.5, `eslint-config-next` 16.4.3, `tailwindcss` and `@tailwindcss/postcss` 4.3.3, `@playwright/test` 1.64.0, `@types/node` 22.20.5, `@types/react`/`@types/react-dom` 19.3.0. Exceptions to the two-week rule, each with a reason: Next.js 16.4.3 (2026-10-23; 16.4.1 fixed two critical unauthenticated RCE advisories in 16.4.0, and 16.4.3 is the current backport line, requested by the user), React 19.3.1 (2026-10-14; RSC transport hardening released with that fix), Node 22.23.4 (2026-10-20 security release, requested by the user), `zod` 4.6.6 (2026-10-11; first release fixing GHSA-mrhx-c7xc-m3w5, a dev-only transitive of `eslint-plugin-react-hooks`). Every other transitive package newer than 2026-10-10 is held by `overrides` at its newest earlier release (`typescript-eslint` family 8.71.1, `browserslist` 4.29.3 with its data packages, `@babel/*`, `immer`, `es-toolkit`, `ignore`, `napi-postinstall`, and `postcss` 8.5.29 under `@tailwindcss/postcss`; Next keeps its exact `postcss` 8.5.23). Vitest was evaluated and dropped (npm 10.9.9 crashes resolving its optional peer cycle with Vite 8); unit tests run on `node:test` after `tsc`, with no extra dependency. The backend and SDK gained no dependency.
+
 ## 7. Repository layout (target)
 
 This follows master plan §G. Folders are created only by the phase that fills them, with no empty layers.
@@ -439,12 +450,12 @@ This follows master plan §G. Folders are created only by the phase that fills t
 | 0 | `docs/` (incl. `fixtures/`, `reports/`), `scripts/verify_phase0.py`, `.gitignore`, `.env.example` |
 | 1 | `backend/` (`pyproject.toml`, `alembic/`, `app/{main,api/otel,core,models,repositories,services/ingestion}`, `tests/`), `docker-compose.yml`, `scripts/dev` |
 | 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come). Phase 2B added `backend/app/services/{pricing,pricing_catalog}.py`, `backend/app/repositories/pricing.py`, `backend/app/models/pricing.py`, migration `0002` and `sdk/src/llm_insight_sdk/openai_adapter.py`; the seed is a CLI command (`app.cli seed-prices`), so no `scripts/seed` was needed. Phase 2C added `backend/app/{repositories,services}/metrics.py`, `backend/app/api/overview.py` (the backend half of the Phase 3 row below), `backend/app/core/eventloop.py` and `demo_app/web.py` (the FastAPI demo root span); no `scripts/smoke` (the real smoke run is not authorized) |
-| 3 | `frontend/`, `backend/app/api/{overview,traces}.py` (full) |
+| 3 | `frontend/`, `backend/app/api/{overview,traces}.py` (full). Phase 3A created `frontend/` (`app/`, `components/`, `lib/{api,server}/`, `tests/{unit,e2e,fixtures,setup}/`, `scripts/`; see `frontend/README.md`) plus `scripts/dev/{install_node,init_frontend_env}.py`; no backend change |
 | 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py` |
 | 5 | CI workflow, `README.md`, `docs/FINAL_DELIVERY_REPORT.md` |
 
 ## 8. Deployment posture
 
-Local-only. Compose publishes the backend as `127.0.0.1:8000` and the frontend as `127.0.0.1:3000`; PostgreSQL is not published, or only on `127.0.0.1` in dev (Phase 1A: `127.0.0.1:55432`, `POSTGRES_HOST_PORT`, because a native PostgreSQL already listens on 5432 on the dev machine; R19). Any public deployment requires a separate auth and threat review (`SECURITY.md` §7). There is no claim of production or billing-grade reliability.
+Local-only. Compose publishes the backend as `127.0.0.1:8000`; the frontend runs on `127.0.0.1:3001` (Phase 3A; `3000` is taken on the dev machine, R19, and is not a compose service yet); PostgreSQL is not published, or only on `127.0.0.1` in dev (Phase 1A: `127.0.0.1:55432`, `POSTGRES_HOST_PORT`, because a native PostgreSQL already listens on 5432 on the dev machine; R19). Any public deployment requires a separate auth and threat review (`SECURITY.md` §7). There is no claim of production or billing-grade reliability.
 
 **Event loop (Phase 2C, R32):** the backend always runs on asyncio's selector loop (`app/core/eventloop.py`, passed to uvicorn by `python -m app`). On Windows uvicorn's default Proactor loop closes its listening socket after a client resets a connection before it is accepted (CPython 3.12). The selector loop's `select()` limits a Windows process to 512 sockets (R34), which suits the local single-user MVP only.
