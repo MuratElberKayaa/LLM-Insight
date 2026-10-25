@@ -11,12 +11,20 @@ export const ISSUE_TYPES = ["retrieval_missing", "chunk_boundary", "prompt_instr
 export const REVIEW_STATUSES = ["open", "in_review", "closed"] as const;
 export const REVIEWER_DECISIONS = ["pending", "hypothesis_supported", "hypothesis_rejected", "inconclusive"] as const;
 export const RULE_TYPES = ["json_schema", "field_match", "exact", "regex"] as const;
+/** Rule contract `llminsight.rule.v1` (Phase 4C, ADR-23): every rule carries `version: 1`. */
+export const RULE_VERSION = 1;
+export const OUTPUT_FORMATS = ["text", "json"] as const;
+export const MATCH_MODES = ["full", "search"] as const;
+/** Reviews whose decision may become a test case (a rejected one needs an expected output). */
+export const CONVERTIBLE_DECISIONS = ["hypothesis_supported", "hypothesis_rejected"] as const;
 export const REDACTION_CATEGORIES = ["credential", "email", "iban", "phone", "number"] as const;
 
 export type IssueType = (typeof ISSUE_TYPES)[number];
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export type ReviewerDecision = (typeof REVIEWER_DECISIONS)[number];
 export type RuleType = (typeof RULE_TYPES)[number];
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+export type MatchMode = (typeof MATCH_MODES)[number];
 export type RedactionCategory = (typeof REDACTION_CATEGORIES)[number];
 
 /** Field limits of §4.8–4.10 (the server enforces them; the forms mirror them). */

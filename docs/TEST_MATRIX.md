@@ -46,11 +46,11 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T33 | Eval/workflow | Failure review create | Valid enum values → `201`; invalid `issue_type` → `422`; duplicate open → `409` | ★ | | 4 | I | PASS (phase-4b) |
 | T34 | Eval/workflow | No approval no test case | Missing or false `approved` → `422`, no row | ★ | ⛔ | 4→5 | I | PASS (phase-4b) |
 | T35 | Eval/workflow | Redaction before case save | Email / phone / key-like input is masked before insert; `redaction_applied=true` | ★ | ⛔ | 4→5 | U/I | PASS (phase-4b) |
-| T36 | Eval/workflow | Golden JSON pass | Valid output passes the JSON Schema + field rule | ★ | | 4 | U | NOT RUN |
-| T37 | Eval/workflow | Golden JSON fail | Schema violation fails with `evaluation_detail` | ★ | | 4 | U | NOT RUN |
-| T38 | Eval/workflow | Prompt A/B same dataset | Both versions run on identical case IDs | | | 4 | I | NOT RUN |
-| T39 | Eval/workflow | Evaluation provenance labels | Each result carries `real`/`synthetic`; mock → synthetic | ★ | | 4 | I | NOT RUN |
-| T40 | Eval/workflow | Missing expected output handling | `passed=NULL` ("not evaluated"), excluded from the pass-rate denominator | | | 4 | U | NOT RUN |
+| T36 | Eval/workflow | Golden JSON pass | Valid output passes the JSON Schema + field rule | ★ | | 4 | U | PASS (phase-4c) |
+| T37 | Eval/workflow | Golden JSON fail | Schema violation fails with `evaluation_detail` | ★ | | 4 | U | PASS (phase-4c) |
+| T38 | Eval/workflow | Prompt A/B same dataset | Both versions run on identical case IDs | | | 4 | I | PASS (phase-4c) |
+| T39 | Eval/workflow | Evaluation provenance labels | Each result carries `real`/`synthetic`; mock → synthetic | ★ | | 4 | I | PASS (phase-4c) |
+| T40 | Eval/workflow | Missing expected output handling | `passed=NULL` ("not evaluated"), excluded from the pass-rate denominator | | | 4 | U | PASS (phase-4c) |
 | T41 | Security/UI | XSS escape on labels | `<script>` in a model/service name renders as text | ★ | | 3→5 | E | PASS (phase-3c) |
 | T42 | Security/UI | Server-only API secret | Build output / client bundle / HTML contain no admin token | ★ | ⛔ | 3→5 | E | PASS (phase-3c) |
 | T43 | Security/UI | Request rate limit | Burst over limit → `429` + Retry-After (ingest, auth-failure and API buckets) | ★ | | 3→5 | I | PARTIAL (phase-1c) |
@@ -71,6 +71,8 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 **Phase 4A (`reports/phase-4a.md`):** trace diagnostics are additive scope outside the 48 IDs. Their tests are recorded in the report as `D01`–`D20` (diagnostic test groups, not matrix IDs). **No matrix status changed:** T33–T40 test the human Failure Review, Trace-to-Testset, golden-set and A/B workflow, which Phase 4A does not implement, so they stay NOT RUN. The diagnostics endpoint re-applies the T18 (unknown never 0), T27 (orphans) and T28 (project isolation) rules to a new response; those statuses are unchanged.
 
 **Phase 4B (`reports/phase-4b.md` §6):** T33, T34 and T35 are implemented and **PASS (phase-4b)** on real PostgreSQL (integration) and through the browser (E2E: review, decision, dataset, approved test case, masked input), with mutation checks. T34 and T35 are blockers re-verified in Phase 5 (4→5). **T36–T40 stay NOT RUN:** they test the deterministic rule engine, A/B runs and evaluation results of Phase 4C; Phase 4B only stores well-formed rules and allows a case without `expected_output` (the precondition of T40), which is not evaluated. T31 was re-run with migration `0003` (upgrade → downgrade → upgrade, plus 0002→0003 with data and refused downgrade with human rows); its status stays `PASS (phase-2b)`. T41 (hostile review text, span names and test-case content render as text) and T42 (bundle scan 0, no token in any E2E response of the new pages) were re-verified on the Phase 4B pages; their statuses stay `PASS (phase-3c)`.
+
+**Phase 4C (`reports/phase-4c.md` §8):** T36–T40 are implemented and **PASS (phase-4c)**: unit tests of the deterministic engine (T36 schema and field rules pass, T37 schema violations fail with a `schema_violation: …` detail, T40 every rule type returns `passed = NULL` without an expected output and the report keeps it out of the denominator) and integration tests through the real API and PostgreSQL on the 12-case golden dataset (T38 identical case ids under both prompt versions, in the database and the report; T39 every result `synthetic` for a mock run, enforced by the service and a trigger), with mutation checks. T33, T34 and T35 were re-run on the Gate A code (conversion eligibility, decision freeze, partial unique index); their statuses stay `PASS (phase-4b)`. T31 was re-run with migrations `0004` and `0005` (full cycle, data preservation, refused upgrade/downgrade); status unchanged. **T48 (3→4,5) is not re-verified in Phase 4C:** there is no experiment page in the dashboard yet, so the Phase 4 re-check of provenance on the dashboard remains open (a Phase 4 closure prerequisite); its status stays `PASS (phase-3c)`.
 
 ## Sub-cases (inherit the parent's criticality)
 

@@ -251,6 +251,8 @@ Constraint: `UNIQUE(project_id, name)`. Tests: T34, T38.
 
 `hypothesis_supported` means the evidence supports the hypothesis; **it is not proof of root cause**.
 
+**Phase 4C (migration `0004`, ADR-24, no column change):** trigger `failure_reviews_integrity` keeps every column except `review_status`, `reviewer_decision` and `updated_at` immutable, and refuses a change of `reviewer_decision` once a test case cites the review (SQLSTATE 23000, constraint names `failure_reviews_immutable` / `failure_reviews_decision_frozen`; API `409 review_decision_frozen`).
+
 Tests: T33, T41.
 
 ### 4.10 `test_cases`
@@ -277,6 +279,12 @@ Tests: T34, T35, T40.
 - At most one test case per (dataset, review) (decision D5) is enforced in the insert transaction under `pg_advisory_xact_lock`, not by a new unique index.
 - Downgrade of `0003` refuses to run while any review, dataset or test case exists (human work that nothing else could restore). Upgrade leaves every Phase 1–3 row unchanged (tested with data, and on the dev database by row counts and content checksums).
 
+**Phase 4C (ADR-23, ADR-24; migration `0004`, no column change).**
+- `rule` follows contract `llminsight.rule.v1` (§5.9): `version: 1` plus exactly the keys of its type; unversioned (Phase 4B) payloads are refused on write and reported `rule_unsupported` by the engine, never reinterpreted. `expected_output` must satisfy its own rule; every rule type needs it to be evaluated (T40). `expected_output` and `rule` are written and read as exact JSON text (no float round trip).
+- Partial `UNIQUE(dataset_id, origin_review_id) WHERE origin_review_id IS NOT NULL` (`uq_test_cases_dataset_id_origin_review_id`) replaces the API-only rule of decision D5 as the guarantee; the API keeps its advisory lock and `409 duplicate_test_case`. Standalone cases are unaffected.
+- Trigger `test_cases_review_eligibility`: a cited review must be `hypothesis_supported`, or `hypothesis_rejected` with a non-NULL `expected_output`, of the same trace and of the dataset's project; it reads the review `FOR SHARE`, so a concurrent decision change and conversion serialize.
+- The `0004` upgrade refuses (changing nothing) when existing rows violate these rules; downgrade drops the index and triggers only.
+
 ### 4.11 `experiments`
 | Column | Type | Null | Default | Check / rule | Origin |
 |---|---|---|---|---|---|
@@ -291,6 +299,8 @@ Tests: T34, T35, T40.
 | finished_at | TIMESTAMPTZ | NULL | | ≥ `started_at` | §E |
 
 Tests: T38, T39.
+
+**Phase 4C implementation of §4.11–4.12 (migration `0005`, columns exactly as above, ADR-25).** Extra protection without a column: trigger `experiments_integrity` keeps every column immutable except `finished_at`, which may be set once; trigger `experiment_results_integrity` makes results append-only and refuses a result whose `prompt_version` is not one of its experiment's two versions, whose test case is in another dataset, that claims `real` in a `mock` experiment (T39), or that arrives after `finished_at`. Downgrade refuses while any experiment exists. `evaluation_detail` also carries the reason for `passed = NULL` ("not evaluated"), always as `<code>: <fixed text>` without output or expected values (§5.9).
 
 ### 4.12 `experiment_results`
 | Column | Type | Null | Default | Check / rule | Origin |
@@ -325,6 +335,8 @@ Tests: T36–T40, T48.
 | `usage_records(project_id, call_id) WHERE call_id IS NOT NULL` | ADD |
 | `project_api_keys(prefix)` (unique) | ADD |
 | `failure_reviews(project_id, trace_id)` | ADD |
+| `test_cases(dataset_id, origin_review_id) WHERE origin_review_id IS NOT NULL` (unique) | ADD (Phase 4C, ADR-24) |
+| `experiments(dataset_id)` | §E (FK index, §4.11) |
 
 The `UNIQUE` constraints listed per table are also indexes. A JSONB GIN index is added only for a measured need.
 
@@ -355,8 +367,8 @@ The backend binds to `127.0.0.1`.
 | `/api/v1/datasets/{dataset_id}/cases` | POST | Requires `approved: true`, `approved_by` and sanitized input, otherwise `422` with nothing stored | 4 (done in 4B, §5.7) |
 | `/api/v1/datasets` | GET, POST | Additive (decision D2): list a project's datasets with case counts (`limit` 1–200) / create one `{name}` → `201`, duplicate name → `409` | 4B (§5.7) |
 | `/api/v1/datasets/{dataset_id}/cases` | GET | Additive (D2): the dataset and its cases by id, keyset `after`, `limit` 1–200 | 4B (§5.7) |
-| `/api/v1/experiments` | POST | `{dataset_id, prompt_version_a, prompt_version_b, model, mode, budget_usd?}`. `mode=real` requires `budget_usd` and `LLMI_ALLOW_REAL_LLM=true` | 4 |
-| `/api/v1/experiments/{id}` | GET | Per-version pass/fail, N, p50/p95 duration, cost with unknown count, provenance label per result | 4 |
+| `/api/v1/experiments` | POST | `{dataset_id, prompt_version_a, prompt_version_b, model, mode, budget_usd?}`. `mode=real` requires `budget_usd` and `LLMI_ALLOW_REAL_LLM=true` | 4 (done in 4C, §5.9: mock runs only; `real` validated, then refused `409`) |
+| `/api/v1/experiments/{id}` | GET | Per-version pass/fail, N, p50/p95 duration, cost with unknown count, provenance label per result | 4 (done in 4C, §5.9) |
 
 `/api/v1/*` error body: `{"error": {"code": "...", "message": "..."}}` (JSON). Validation errors return `422`. Responses never include keys, tokens or stack traces.
 
@@ -520,11 +532,41 @@ Nothing derives a review or a case from telemetry or diagnostics: these handlers
 
 ### 5.8 Phase 4B: dashboard writes (`frontend/lib/actions/`, `frontend/proxy.ts`)
 
-This amends §5.3 ("no route handlers and no Server Functions") for the Phase 4B instruction, which requires a genuine human review workflow in the dashboard.
+This amends §5.3 ("no route handlers and no Server Functions") for the Phase 4B instruction, which requires a genuine human review workflow in the dashboard. **Recorded as ADR-22** (Phase 4C, architectural review): the four writes below are the exhaustive list; a new write needs a new ADR entry.
 - **Server Actions, narrowly.** Exactly two `"use server"` modules (`lib/actions/reviews.ts`, `lib/actions/datasets.ts`) with four exported actions (`submitReview`, `submitDecision`, `submitDataset`, `submitTestCase`). Each re-validates its untrusted `FormData` (`lib/review-forms.ts`), then calls one `lib/server` function that sends one allowlisted write (`sendJson` in `lib/server/backend.ts`: `POST /api/v1/failure-reviews`, `PATCH /api/v1/failure-reviews/<id>`, `POST /api/v1/datasets`, `POST /api/v1/datasets/<id>/cases`, each with exactly one method). The token stays server-side (CR-06). There are still no route handlers and no generic proxy; static tests pin all of this.
 - **CSRF.** The dashboard has no cookie or session, so the checks concern where a request comes from. `proxy.ts` allows `POST` only on the three pages that host forms (`/traces/<id>`, `/traces/<id>/reviews/<id>/test-case`, `/datasets`) and only when `Origin` is present and equals the loopback host, `Sec-Fetch-Site` (when sent) is `same-origin`, and the `Next-Action` header is present. A cross-site HTML form cannot send a header, and a cross-site script would need a CORS preflight that is never answered. Everything else is `403` (or `405` for other paths/methods). Next.js additionally compares `Origin` with `Host` for every Server Action; `serverActions.bodySizeLimit` is 128 KB; no extra allowed origins. Forms therefore need JavaScript.
 - **Explicit actions only.** No write runs on render or page load; submit buttons are disabled while a submission is pending; a refused submission keeps the typed values, and the form is cleared only after a stored success. A timeout after sending is reported as "outcome unknown", never as "nothing stored".
 - **Presentation.** Review text, test-case content and diagnostics are rendered as React text only (T41 rules). The human review section and the machine-observation panel are visually distinct and labelled; the review form starts empty, with no preselected issue type, and the test-case form starts empty with the approval box unticked.
+
+### 5.9 Phase 4C: deterministic evaluation and mock A/B experiments (`backend/app/services/evaluation/`, `backend/app/services/experiments/`, `backend/app/api/experiments.py`)
+
+**Rule contract `llminsight.rule.v1`** (ADR-23; `services/evaluation/rules.py`):
+
+```text
+{"version": 1, "type": "json_schema", "schema": <draft 2020-12 schema: object | boolean>}
+{"version": 1, "type": "field_match", "fields": ["<dotted.path>", ...]}      1-50 paths
+{"version": 1, "type": "exact", "output_format": "text" | "json"}
+{"version": 1, "type": "regex", "pattern": "<RE2>", "match": "full" | "search"}
+```
+
+- **Output representation:** the raw output text (valid Unicode, ≤ 32 KiB UTF-8). `json_schema`, `field_match` and `exact`/`json` parse it as strict exact JSON (`app/core/exact_json.py`: non-integers as `Decimal`, no NaN/Infinity, no duplicate keys, number literals ≤ 64 characters and |exponent| ≤ 400; depth ≤ 32, ≤ 10,000 values); `regex` and `exact`/`text` use the text.
+- **Semantics:** key order ignored, array order significant, booleans never numbers, numbers by exact value (`1 == 1.0`, `0.1 ≠ 0.10000000000000001`), strings by code point (no trimming, case folding or normalization). `field_match` compares each listed path of the output with the same path of `expected_output`; a missing path is a mismatch. `regex` uses RE2: `full` = the whole text, `search` = anywhere; inline flags (`(?i)`, `(?s)`) are part of the pattern.
+- **Expected output:** required for evaluation by every type; when present it must satisfy its own rule (checked on write).
+- **Outcomes** (`engine.evaluate`, pure and deterministic): `passed = true` (`pass`); `false` = checked and failed (`schema_violation`, `field_mismatch`, `exact_mismatch`, `regex_no_match`, `output_not_json`, `output_not_object`, `output_invalid_text`); `NULL` = not evaluated (`rule_unsupported`, `expected_output_missing`, `expected_output_invalid`, `output_too_large`, `output_limits_exceeded`, `evaluation_limit_exceeded`, and at run level `provider_timeout`, `provider_error`, `mock_no_scripted_output`, `budget_exhausted`). `NULL` is never a failure and never in a pass-rate denominator.
+- **`evaluation_detail`:** `<code>: <fixed sentence>` plus counts, lengths, JSON types, schema keyword names and paths; object keys appear in a path only when the rule or the approved expected output declares them (others are `*`). Never a value from the output or the expected output; ≤ 1000 characters.
+- **Safety:** RE2 only (`google-re2`, program ≤ 1500 instructions, 2 MiB, pattern ≤ 1000 chars, errors never logged; measured worst case ~0.5 s on 32 KiB). JSON Schema draft 2020-12 only, keyword allowlist at every depth (`pattern`, `patternProperties`, `format`, `content*`, `$id`, anchors, dynamic references refused), `$ref` only `#/$defs/<name>`, acyclic, ≤ 1000 subschemas and ≤ 5000 once expanded; meta-validated without a format checker; one explicit registry that cannot retrieve (no network); ≤ 200,000 keyword applications per evaluation.
+
+**`POST /api/v1/experiments?project=<id>`** (strict JSON body as §5.7): `dataset_id`; `prompt_version_a` / `prompt_version_b` (the ingest prompt-version identifier format, 1–64 characters, different); `model` (the ingest model identifier format, 1–256); `mode` `mock` | `real`; `budget_usd` optional JSON number (> 0, ≤ 10 decimal places).
+- `mode: real`: without `budget_usd` → `422`; otherwise `409 real_llm_not_allowed` (`LLMI_ALLOW_REAL_LLM` not true) or `409 real_mode_unavailable` (no real executor in this build). Nothing is written.
+- Dataset not in the project → `404`; no case → `409 dataset_empty`; more than 200 cases → `409 dataset_too_large`.
+- With `budget_usd`: estimated costs are checked before anything runs; any unknown estimate → `409 budget_unverifiable`, a total above the budget → `409 budget_exceeded`; nothing is written. A run-time guard stops issuing calls once the recorded known cost exceeds the budget (remaining pairs recorded `budget_exhausted`).
+- Execution: cases in id order, each under A then B (identical case ids, T38), one simulated attempt each (no retries), through the scripted mock provider (`services/experiments/mock_provider.py`, SYNTHETIC answers keyed by prompt version and input hash; unknown inputs get no invented answer). Each result: `passed` and `evaluation_detail` from the engine; `duration_ms`, tokens from the script (synthetic); cost from the stored price of (`openai`, `model`) in force at `started_at` with the ledger rules (`usage_missing`, `price_missing`, never 0); `provenance = synthetic` (T39). Model output is never stored. One transaction: experiment, results and `finished_at` (`clock_timestamp()`), or nothing (`503` on a storage error). `201` with the report. A repeated POST is a new experiment with identical results.
+
+**`GET /api/v1/experiments/{id}?project=<id>`** → the report `llminsight.experiment_report.v1` (`services/experiments/report.py`), built only from the stored rows: `experiment` (`state` finished/running, `budget_usd` decimal string), `evaluation` (`deterministic_rules`, `language_model_used: false`), `provenance` (label and counts), `cases` (`count`, `ids_identical_across_versions`), per version `passed`/`failed`/`not_evaluated` (+ by code), `pass_rate {value, numerator, denominator}` with denominator `passed + failed`, `duration_ms {n, p50, p95, p95_low_sample}` (linear interpolation), tokens `{sum, n}`, cost `{known_cost_usd, computed, unknown, unknown_by_reason, complete}`; `comparison.quality` on cases evaluated under both versions (cases NULL under both for a structural reason are excluded by design; any other one-sided NULL makes it `partial` and `higher_pass_rate` null); `comparison.cost` only when both versions are completely priced; constant `limitations`; per-result rows. Money is a decimal string; rates and milliseconds are numbers with 6 decimals; unknown is `null`, never `0`. Same access, `404` and `Cache-Control: no-store` as §5.1.
+
+**Golden dataset `golden-synthetic-v1`** (`services/experiments/golden.py`): 12 SYNTHETIC cases G01–G12 covering every rule type and outcome, with scripted answers for `golden-prompt-v1` / `golden-prompt-v2` and the documented expected outcome of each; loaded through the API by `scripts/dev/seed_golden_dataset.py`.
+
+**Frontend:** the test-case form emits contract v1 (output format and match mode selects), refuses decimals JavaScript cannot keep exactly, shows a cited review's decision as frozen and offers conversion only for supported/rejected hypotheses. There is no experiment page yet (a Phase 4 closure prerequisite, `reports/phase-4c.md` §12).
 
 ## 6. Version pins (candidates; CR-09)
 
@@ -554,6 +596,8 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 
 **Phase 3A install (2026-10-25, UTC):** `frontend/` only, with Node 22.23.4 / npm 10.9.9 from `.tools/` (official zip, SHA-256 checked against `SHASUMS256.txt`). Exact pins in `frontend/package.json`, lockfile `frontend/package-lock.json` (lockfileVersion 3), `npm ci` reproducible, `npm audit` 0 vulnerabilities, `npm ls` clean. Dependencies: `next` 16.4.3, `react`/`react-dom`/`react-is` 19.3.1, `recharts` 3.10.1, `server-only` 0.0.1. Dev: `typescript` 6.0.3, `eslint` 9.39.5, `eslint-config-next` 16.4.3, `tailwindcss` and `@tailwindcss/postcss` 4.3.3, `@playwright/test` 1.64.0, `@types/node` 22.20.5, `@types/react`/`@types/react-dom` 19.3.0. Exceptions to the two-week rule, each with a reason: Next.js 16.4.3 (2026-10-23; 16.4.1 fixed two critical unauthenticated RCE advisories in 16.4.0, and 16.4.3 is the current backport line, requested by the user), React 19.3.1 (2026-10-14; RSC transport hardening released with that fix), Node 22.23.4 (2026-10-20 security release, requested by the user), `zod` 4.6.6 (2026-10-11; first release fixing GHSA-mrhx-c7xc-m3w5, a dev-only transitive of `eslint-plugin-react-hooks`). Every other transitive package newer than 2026-10-10 is held by `overrides` at its newest earlier release (`typescript-eslint` family 8.71.1, `browserslist` 4.29.3 with its data packages, `@babel/*`, `immer`, `es-toolkit`, `ignore`, `napi-postinstall`, and `postcss` 8.5.29 under `@tailwindcss/postcss`; Next keeps its exact `postcss` 8.5.23). Vitest was evaluated and dropped (npm 10.9.9 crashes resolving its optional peer cycle with Vite 8); unit tests run on `node:test` after `tsc`, with no extra dependency. The backend and SDK gained no dependency.
 
+**Phase 4C install (2026-10-26, UTC):** `backend/.venv` only, wheels only, with `requirements.lock` as the constraint file: `jsonschema` 4.26.0 (2026-01-07) and `google-re2` 1.1.20251105 (2025-11-05; cp312 wheels for win_amd64 and manylinux_2_28 x86_64, no runtime dependency), with the new transitives `attrs` 26.1.0, `referencing` 0.37.0, `jsonschema-specifications` 2025.9.1 and `rpds-py` 2026.9.1 (2026-10-04). Every version was first uploaded at least two weeks before 2026-10-26. `pip check` is clean; the lock equals `pip freeze` (51 pins). No frontend or SDK dependency changed.
+
 ## 7. Repository layout (target)
 
 This follows master plan §G. Folders are created only by the phase that fills them, with no empty layers.
@@ -564,7 +608,7 @@ This follows master plan §G. Folders are created only by the phase that fills t
 | 1 | `backend/` (`pyproject.toml`, `alembic/`, `app/{main,api/otel,core,models,repositories,services/ingestion}`, `tests/`), `docker-compose.yml`, `scripts/dev` |
 | 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come). Phase 2B added `backend/app/services/{pricing,pricing_catalog}.py`, `backend/app/repositories/pricing.py`, `backend/app/models/pricing.py`, migration `0002` and `sdk/src/llm_insight_sdk/openai_adapter.py`; the seed is a CLI command (`app.cli seed-prices`), so no `scripts/seed` was needed. Phase 2C added `backend/app/{repositories,services}/metrics.py`, `backend/app/api/overview.py` (the backend half of the Phase 3 row below), `backend/app/core/eventloop.py` and `demo_app/web.py` (the FastAPI demo root span); no `scripts/smoke` (the real smoke run is not authorized) |
 | 3 | `frontend/`, `backend/app/api/{overview,traces}.py` (full). Phase 3A created `frontend/` (`app/`, `components/`, `lib/{api,server}/`, `tests/{unit,e2e,fixtures,setup}/`, `scripts/`; see `frontend/README.md`) plus `scripts/dev/{install_node,init_frontend_env}.py`; no backend change. Phase 3B added `frontend/app/traces/`, `frontend/components/traces/`, the trace modules in `frontend/lib/` and `scripts/dev/seed_trace_fixtures.py`; no backend change. Phase 3C added `backend/app/{api,repositories}/projects.py` (additive endpoint), `frontend/app/models/`, `frontend/components/models/`, `scripts/dev/e2e_fixtures.py`, `backend/Dockerfile`, `frontend/Dockerfile`, `.dockerignore` files, the compose `app` profile and `.github/workflows/ci.yml` |
-| 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py`. Phase 4A added `backend/app/{api,services}/diagnostics`. Phase 4B added `backend/app/api/{reviews,datasets,human_input,json_body}.py`, `backend/app/repositories/{reviews,datasets}.py`, `backend/app/services/{redaction,case_rules}.py`, `backend/app/models/{review,dataset}.py`, migration `0003`; `frontend/app/datasets/`, `frontend/app/traces/[traceId]/reviews/`, `frontend/components/{reviews,datasets}/`, `frontend/lib/actions/`, `frontend/lib/server/{reviews,datasets,review-page}.ts`, `frontend/lib/api/{review-types,review-schema,diagnostics,ids}.ts`, `frontend/lib/{review-forms,action-state}.ts`. `experiments.py` and `services/evaluation.py` remain Phase 4C |
+| 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py`. Phase 4A added `backend/app/{api,services}/diagnostics`. Phase 4B added `backend/app/api/{reviews,datasets,human_input,json_body}.py`, `backend/app/repositories/{reviews,datasets}.py`, `backend/app/services/{redaction,case_rules}.py`, `backend/app/models/{review,dataset}.py`, migration `0003`; `frontend/app/datasets/`, `frontend/app/traces/[traceId]/reviews/`, `frontend/components/{reviews,datasets}/`, `frontend/lib/actions/`, `frontend/lib/server/{reviews,datasets,review-page}.ts`, `frontend/lib/api/{review-types,review-schema,diagnostics,ids}.ts`, `frontend/lib/{review-forms,action-state}.ts`. Phase 4C added `backend/app/core/exact_json.py`, `backend/app/services/evaluation/` (the planned `services/evaluation.py`, as a package), `backend/app/services/experiments/`, `backend/app/api/experiments.py`, `backend/app/repositories/experiments.py`, `backend/app/models/experiment.py`, migrations `0004` and `0005`, and `scripts/dev/seed_golden_dataset.py` |
 | 5 | `README.md`, `docs/FINAL_DELIVERY_REPORT.md` (the CI workflow `.github/workflows/ci.yml` was added early, in Phase 3C) |
 
 ## 8. Deployment posture

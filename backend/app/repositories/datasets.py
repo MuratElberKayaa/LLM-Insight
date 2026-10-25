@@ -2,13 +2,17 @@
 
 `test_cases` has no `project_id`: every case statement joins or filters through its dataset,
 whose `project_id` scopes the request. Bound parameters only (SECURITY.md §3).
+
+Phase 4C: `expected_output` and `rule` are written from exact JSON text and read back as
+`jsonb::text` (`*_json` columns), so a number keeps its exact digits end to end; psycopg's
+default `jsonb` loader would turn non-integers into binary floats.
 """
 
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Row, exists, func, select, text
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Row, String, Text, bindparam, cast, exists, func, select, text
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import Session
 
 from app.models import TestCase, TestDataset
@@ -19,8 +23,8 @@ CASE_COLUMNS = (
     TestCase.origin_trace_id,
     TestCase.origin_review_id,
     TestCase.sanitized_input,
-    TestCase.expected_output,
-    TestCase.rule,
+    cast(TestCase.expected_output, Text).label("expected_output_json"),
+    cast(TestCase.rule, Text).label("rule_json"),
     TestCase.redaction_applied,
     TestCase.approved_by,
     TestCase.approved_at,
@@ -82,8 +86,28 @@ def case_exists_for_review(session: Session, dataset_id: int, review_id: int) ->
     return session.execute(stmt).scalar_one_or_none()
 
 
-def insert_case(session: Session, values: dict[str, Any]) -> Row[Any]:
-    stmt = insert(TestCase).values(approved_at=func.now(), **values).returning(*CASE_COLUMNS)
+def _jsonb(name: str, text_value: str | None) -> Any:
+    """`CAST(:text AS jsonb)`: PostgreSQL parses the exact JSON text itself."""
+    if text_value is None:
+        return None
+    return cast(bindparam(name, text_value, type_=String), JSONB)
+
+
+def insert_case(
+    session: Session, values: dict[str, Any], expected_json: str | None, rule_json: str
+) -> Row[Any]:
+    """`values` holds the plain columns; `expected_json` / `rule_json` are exact JSON text
+    (`app.core.exact_json.dumps`)."""
+    stmt = (
+        insert(TestCase)
+        .values(
+            approved_at=func.now(),
+            expected_output=_jsonb("expected_json", expected_json),
+            rule=_jsonb("rule_json", rule_json),
+            **values,
+        )
+        .returning(*CASE_COLUMNS)
+    )
     return session.execute(stmt).one()
 
 

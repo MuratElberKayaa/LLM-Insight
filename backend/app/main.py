@@ -8,7 +8,18 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import admin, datasets, diagnostics, health, otel, overview, projects, reviews, traces
+from app.api import (
+    admin,
+    datasets,
+    diagnostics,
+    experiments,
+    health,
+    otel,
+    overview,
+    projects,
+    reviews,
+    traces,
+)
 from app.core.config import Settings, get_settings
 from app.core.db import create_db_engine, create_session_factory
 from app.core.ratelimit import Clock, KeyedTokenBucket
@@ -65,4 +76,5 @@ def create_app(settings: Settings | None = None, clock: Clock = time.monotonic) 
     app.include_router(projects.router)
     app.include_router(reviews.router)
     app.include_router(datasets.router)
+    app.include_router(experiments.router)
     return app

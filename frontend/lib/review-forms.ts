@@ -9,8 +9,21 @@
  */
 
 import { isProjectId } from "./project";
-import { parseJsonLossless, LosslessInt } from "./json";
-import { ISSUE_TYPES, LIMITS, REVIEW_STATUSES, REVIEWER_DECISIONS, RULE_TYPES, type IssueType, type ReviewerDecision, type ReviewStatus, type RuleType } from "./api/review-types";
+import { parseJsonLossless, LosslessInt, InexactNumber } from "./json";
+import {
+  ISSUE_TYPES,
+  LIMITS,
+  MATCH_MODES,
+  OUTPUT_FORMATS,
+  REVIEW_STATUSES,
+  REVIEWER_DECISIONS,
+  RULE_TYPES,
+  RULE_VERSION,
+  type IssueType,
+  type ReviewerDecision,
+  type ReviewStatus,
+  type RuleType,
+} from "./api/review-types";
 
 const TRACE_ID_RE = /^[0-9a-f]{32}$/;
 const SPAN_ID_RE = /^[0-9a-f]{16}$/;
@@ -137,7 +150,7 @@ export function parseDatasetForm(fd: FormData): Parsed<DatasetInput> {
   return { ok: true, value: { project: p.value, body: { name: name.value } } };
 }
 
-// ---------------------------------------------------------------- test case (§4.10, D1, D4)
+// ---------------------------------------------------------------- test case (§4.10, rule contract v1, D4)
 export interface CaseInput {
   project: string;
   datasetId: string;
@@ -153,12 +166,14 @@ export interface CaseInput {
   };
 }
 
-/** User-typed JSON: valid, finite, no integer beyond ±2^53 (it could not round-trip exactly). */
+/** User-typed JSON: valid, finite, and every number exactly representable: an integer beyond ±2^53 or a
+ * decimal with more digits than a JavaScript number keeps would be sent as a different value, so it is refused
+ * (the backend stores numbers exactly; send such values through the API directly). */
 export function parseUserJson(text: string, field: string, label: string): Parsed<unknown> {
   if (new TextEncoder().encode(text).length > LIMITS.assertionJson) return fail(field, `${label} must be at most ${LIMITS.assertionJson} bytes.`);
   let value: unknown;
   try {
-    value = parseJsonLossless(text);
+    value = parseJsonLossless(text, { refuseInexact: true });
   } catch {
     return fail(field, `${label} is not valid JSON.`);
   }
@@ -166,6 +181,7 @@ export function parseUserJson(text: string, field: string, label: string): Parse
   while (stack.length > 0) {
     const v = stack.pop();
     if (v instanceof LosslessInt) return fail(field, `${label} contains an integer too large to keep exactly.`);
+    if (v instanceof InexactNumber) return fail(field, `${label} contains a number with more digits than this form can keep exactly.`);
     if (Array.isArray(v)) stack.push(...v);
     else if (typeof v === "object" && v !== null) stack.push(...Object.values(v));
   }
@@ -173,11 +189,18 @@ export function parseUserJson(text: string, field: string, label: string): Parse
 }
 
 function rule(fd: FormData, type: RuleType): Parsed<Record<string, unknown>> {
-  if (type === "exact") return { ok: true, value: { type } };
+  const version = RULE_VERSION;
+  if (type === "exact") {
+    const format = oneOf(fd, "rule_output_format", OUTPUT_FORMATS, "Choose whether the output is compared as text or as JSON.");
+    if (!format.ok) return format;
+    return { ok: true, value: { version, type, output_format: format.value } };
+  }
   if (type === "regex") {
     const pattern = str(fd, "rule_pattern");
     if (pattern.length === 0 || pattern.length > LIMITS.pattern) return fail("rule_pattern", `The pattern must be 1–${LIMITS.pattern} characters.`);
-    return { ok: true, value: { type, pattern } };
+    const match = oneOf(fd, "rule_match", MATCH_MODES, "Choose whether the pattern must match the whole output or anywhere in it.");
+    if (!match.ok) return match;
+    return { ok: true, value: { version, type, pattern, match: match.value } };
   }
   if (type === "field_match") {
     const fields = str(fd, "rule_fields")
@@ -187,14 +210,14 @@ function rule(fd: FormData, type: RuleType): Parsed<Record<string, unknown>> {
       return fail("rule_fields", "List 1–50 field paths such as summary or meta.lang, separated by commas.");
     }
     if (new Set(fields).size !== fields.length) return fail("rule_fields", "A field path is listed twice.");
-    return { ok: true, value: { type, fields } };
+    return { ok: true, value: { version, type, fields } };
   }
   const schema = parseUserJson(str(fd, "rule_schema").trim(), "rule_schema", "The JSON Schema");
   if (!schema.ok) return schema;
   if (typeof schema.value !== "boolean" && (typeof schema.value !== "object" || schema.value === null || Array.isArray(schema.value))) {
     return fail("rule_schema", "The JSON Schema must be an object (or true/false).");
   }
-  return { ok: true, value: { type, schema: schema.value } };
+  return { ok: true, value: { version, type, schema: schema.value } };
 }
 
 export function parseCaseForm(fd: FormData): Parsed<CaseInput> {

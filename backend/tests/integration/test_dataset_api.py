@@ -1,6 +1,8 @@
 """Phase 4B: datasets and human-approved Trace-to-Testset (T34, T35; decisions D2, D4, D5, D9)
 against real PostgreSQL. Traces come through the real `/v1/traces` ingest; every test input,
-expected output and review text is SYNTHETIC.
+expected output and review text is SYNTHETIC. Phase 4C: rules follow contract
+`llminsight.rule.v1`; the Gate A integrity rules have their own tests
+(`test_phase4c_integrity.py`).
 """
 
 import concurrent.futures
@@ -28,6 +30,7 @@ from tests.otlp import body, request
 pytestmark = pytest.mark.integration
 
 SCHEMA_RULE = {
+    "version": 1,
     "type": "json_schema",
     "schema": {
         "type": "object",
@@ -35,6 +38,8 @@ SCHEMA_RULE = {
         "properties": {"summary": {"type": "string"}},
     },
 }
+EXACT_TEXT = {"version": 1, "type": "exact", "output_format": "text"}
+EXACT_JSON = {"version": 1, "type": "exact", "output_format": "json"}
 TELEMETRY = ("projects", "project_api_keys", "traces", "spans", "usage_records", "model_prices")
 
 
@@ -201,7 +206,7 @@ def test_t35_clean_input_still_records_redaction_applied(api_client, setup, db):
         ("expected_output", {"jane.roe@example.invalid": "x"}),
         ("expected_output", {"t": "zero\u200bwidth"}),
         # literal contact data in an assertion (an escaped pattern holds none and is allowed)
-        ("rule", {"type": "regex", "pattern": "^jane.roe@example.invalid$"}),
+        ("rule", {"version": 1, "type": "regex", "pattern": "^jane.roe@example.invalid$"}),
         ("approved_by", "jane.roe@example.invalid"),
     ],
 )
@@ -223,14 +228,24 @@ def test_structured_fields_and_labels_with_sensitive_values_are_refused(
         ({"sanitized_input": "  "}, "sanitized_input"),
         ({"sanitized_input": "x" * 8001}, "sanitized_input"),
         ({"sanitized_input": "a\u202eb"}, "sanitized_input"),
-        ({"rule": {"type": "llm_judge"}}, "rule"),
-        ({"rule": {"type": "exact", "weight": 1}}, "rule"),
+        ({"rule": {"version": 1, "type": "llm_judge"}}, "rule"),
+        ({"rule": {"version": 1, "type": "exact", "output_format": "json", "weight": 1}}, "rule"),
+        ({"rule": {"type": "exact", "output_format": "json"}}, "rule"),  # unversioned (4B)
         (
-            {"rule": {"type": "json_schema", "schema": {"$ref": "https://example.invalid/x"}}},
+            {
+                "rule": {
+                    "version": 1,
+                    "type": "json_schema",
+                    "schema": {"$ref": "https://example.invalid/x"},
+                }
+            },
             "rule",
         ),
-        ({"rule": {"type": "regex", "pattern": "("}}, "rule"),
-        ({"rule": {"type": "field_match", "fields": ["missing"]}}, "expected_output"),
+        ({"rule": {"version": 1, "type": "regex", "pattern": "(", "match": "full"}}, "rule"),
+        (
+            {"rule": {"version": 1, "type": "field_match", "fields": ["missing"]}},
+            "expected_output",
+        ),
         ({"rule": "exact"}, "rule"),
         ({"expected_output": {"a": "x" * 17000}}, "expected_output"),
         ({"surprise": 1}, "surprise"),
@@ -248,7 +263,7 @@ def test_case_without_expected_output_is_stored_for_later_not_evaluated(api_clie
         api_client,
         setup["demo"],
         setup["demo_dataset"],
-        case_body(setup, expected_output=None, rule={"type": "exact"}),
+        case_body(setup, expected_output=None, rule=EXACT_TEXT),
     )
     assert r.status_code == 201 and r.json()["expected_output"] is None
     assert rows(db, "SELECT expected_output IS NULL AS n FROM test_cases") == [{"n": True}]
@@ -392,8 +407,8 @@ def test_concurrent_conversions_store_exactly_one_case(api_settings, setup, db):
 def test_storage_failure_after_insert_rolls_back(api_client, setup, db, monkeypatch):
     original = datasets_api.repo.insert_case
 
-    def insert_then_fail(session, values):
-        original(session, values)
+    def insert_then_fail(session, values, expected_json, rule_json):
+        original(session, values, expected_json, rule_json)
         assert session.execute(text("SELECT count(*) FROM test_cases")).scalar_one() == 1
         raise OperationalError("SELECT 1", {}, Exception("SYNTHETIC connection loss"))
 
@@ -412,7 +427,7 @@ def test_case_listing_is_stable_paginated_and_deterministic(api_client, setup, d
             api_client,
             demo,
             ds,
-            case_body(sanitized_input=f"SYNTHETIC case {i}", rule={"type": "exact"}),
+            case_body(sanitized_input=f"SYNTHETIC case {i}", rule=EXACT_JSON),
         ).json()["id"]
         for i in range(5)
     ]
@@ -444,7 +459,7 @@ def test_case_listing_is_stable_paginated_and_deterministic(api_client, setup, d
         "approved_at",
         "created_at",
     }
-    assert item["rule"] == {"type": "exact"}
+    assert item["rule"] == EXACT_JSON
 
 
 # ---------------------------------------------------------------- immutability

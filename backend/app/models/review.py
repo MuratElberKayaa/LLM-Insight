@@ -5,6 +5,10 @@ by `PATCH /api/v1/failure-reviews/{id}`. It references its trace softly (no FK),
 lineage trace -> review -> test case survives telemetry retention (§4.1); the API checks the
 trace exists in the project at insert time. `hypothesis_supported` means the evidence supports
 the hypothesis, never that a root cause is proven (ADR-10).
+
+Phase 4C (migration 0004, ADR-24): the trigger `failure_reviews_integrity` keeps every column
+except `review_status`, `reviewer_decision` and `updated_at` immutable, and freezes
+`reviewer_decision` once a test case cites the review.
 """
 
 from datetime import datetime
@@ -29,6 +33,9 @@ HYPOTHESIS_MAX = 2000
 ACTOR_MAX = 100  # created_by / approved_by: self-declared, there is no user auth in the MVP
 
 OPEN_REVIEW_INDEX = "uq_failure_reviews_project_id_trace_id_issue_type"
+# Raised by the migration-0004 trigger (`RAISE ... CONSTRAINT`), reported like constraints.
+DECISION_FROZEN = "failure_reviews_decision_frozen"
+REVIEW_IMMUTABLE = "failure_reviews_immutable"
 
 
 class FailureReview(Base):

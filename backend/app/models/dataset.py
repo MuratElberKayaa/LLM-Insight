@@ -6,6 +6,11 @@ Its content is typed by a human: telemetry never stored prompts or completions (
 nothing is copied from a trace. `origin_trace_id` is a soft reference (lineage survives
 retention, §4.1); `origin_review_id` keeps the ADR-12 lineage review -> case and becomes NULL
 if the review is ever deleted.
+
+Phase 4C (migration 0004, ADR-24): a partial unique index allows one case per (dataset, review),
+and the trigger `test_cases_review_eligibility` (not modelled here; `alembic check` does not
+compare triggers) refuses a case whose review is not eligible (decision not supported or
+rejected, a rejected review without `expected_output`, another trace, another project).
 """
 
 from datetime import datetime
@@ -17,9 +22,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,6 +36,8 @@ from app.models.base import Base, hex32, length
 DATASET_NAME_MAX = 100
 SANITIZED_INPUT_MAX = 8000
 RULE_TYPES = ("json_schema", "field_match", "exact", "regex")
+# Phase 4C (migration 0004, decision D5 as approved): at most one case per (dataset, review).
+CASE_REVIEW_INDEX = "uq_test_cases_dataset_id_origin_review_id"
 
 
 class TestDataset(Base):
@@ -62,6 +71,13 @@ class TestCase(Base):
             name="rule_type_enum",
         ),
         length("approved_by", 100),
+        Index(
+            CASE_REVIEW_INDEX,
+            "dataset_id",
+            "origin_review_id",
+            unique=True,
+            postgresql_where=text("origin_review_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
