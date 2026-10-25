@@ -11,14 +11,17 @@ TABLES = {
     "spans",
     "usage_records",
     "model_prices",
-    # Phase 4B (§4.8–4.10); experiments (§4.11–4.12) belong to Phase 4C
+    # Phase 4B (§4.8–4.10)
     "test_datasets",
     "failure_reviews",
     "test_cases",
+    # Phase 4C (§4.11–4.12)
+    "experiments",
+    "experiment_results",
 }
 
 
-def test_only_phase1_to_phase4b_tables_defined():
+def test_exactly_the_contract_tables_are_defined():
     assert set(Base.metadata.tables) == TABLES
 
 

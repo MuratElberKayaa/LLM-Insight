@@ -173,7 +173,8 @@ test("human review → decision → dataset → approved test case, end to end",
   expect(cases).toHaveLength(1);
   expect(cases[0]).toMatchObject({ origin_trace_id: traceId, origin_review_id: stored[0].id, redaction_applied: true, approved_by: `e2e-${RUN}` });
   expect(cases[0].sanitized_input).toContain("[REDACTED:phone]");
-  expect(cases[0].rule).toEqual({ type: "json_schema", schema: { type: "object", required: ["summary"], properties: { summary: { type: "string" } } } });
+  // Phase 4C: the form sends rule contract llminsight.rule.v1.
+  expect(cases[0].rule).toEqual({ version: 1, type: "json_schema", schema: { type: "object", required: ["summary"], properties: { summary: { type: "string" } } } });
   await shot(page, "phase4b-03-test-case-approved");
 
   // 7. A second conversion of the same review into the same dataset is refused.
@@ -197,6 +198,9 @@ test("human review → decision → dataset → approved test case, end to end",
   await expect(page.getByTestId("trace-table").locator("tr", { has: page.locator(`[data-trace-id="${traceId}"]`) }).getByTestId("review-cell")).toHaveText("1 review · 1 not closed");
   await page.goto(u(`/traces/${traceId}`));
   await expect(page.getByTestId("review-test-cases")).toContainText(datasetName);
+  // Phase 4C (ADR-24): the cited review's decision is frozen; only its status stays editable.
+  await expect(page.getByTestId("decision-frozen")).toContainText("frozen: a test case cites this review");
+  await expect(page.getByTestId("decision-decision")).toHaveCount(0);
 
   // 9. No credential in any response; no console errors, CSP violations or dialogs.
   const leaks = bodies.filter((b) => b.includes(TOKEN) || /LLMI_API_TOKEN|LLMI_ADMIN_TOKEN|Bearer\s+[A-Za-z0-9]/.test(b));

@@ -7,13 +7,22 @@
 - `GET /api/v1/datasets`, `POST /api/v1/datasets` and `GET /api/v1/datasets/{id}/cases` are
   additive (decision D2): the contract has no way to create or list datasets or to read cases.
 
-Trace-to-testset (decisions D4, D5): a case that cites a trace must also cite a review of that
-trace in the same project whose `reviewer_decision` is not `pending`, and at most one case per
-(dataset, review) exists. The content is typed by the human: telemetry holds no prompt or
-completion to copy (ADR-19), so only the references come from the trace. No case is ever
-created implicitly, and nothing here evaluates a case (Phase 4C).
+Trace-to-testset (decisions D4, D5 as revised by the architectural review, ADR-24): a case
+that cites a trace must also cite a review of that trace in the same project whose decision
+is `hypothesis_supported`, or `hypothesis_rejected` together with an independently supplied
+`expected_output`; `pending` and `inconclusive` reviews are not eligible. At most one case per
+(dataset, review) exists (advisory lock here, partial unique index in the database). Once a
+case cites a review, the review's decision is frozen (`api/reviews.py`, database trigger). The
+content is typed by the human: telemetry holds no prompt or completion to copy (ADR-19), so
+only the references come from the trace. No case is ever created implicitly; cases are
+evaluated only by experiments (`api/experiments.py`).
+
+`rule` follows contract `llminsight.rule.v1` and an `expected_output` must satisfy its own rule
+(`services/evaluation/rules.py`). Numbers are exact: bodies are parsed with `Decimal`, stored
+as exact JSON text and returned with their digits (`ExactJSONResponse`).
 """
 
+from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -24,9 +33,10 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.admin import NO_STORE, APIError, invalid, not_found, require_admin
 from app.api.human_input import conflict, free_text, label, write_transaction
-from app.api.json_body import parse_model, read_json
+from app.api.json_body import ExactJSONResponse, parse_model, read_json
 from app.api.traces import BIGINT_MAX, ProjectParam, iso_from_datetime, read_snapshot
-from app.models.dataset import DATASET_NAME_MAX, SANITIZED_INPUT_MAX
+from app.core import exact_json
+from app.models.dataset import CASE_REVIEW_INDEX, DATASET_NAME_MAX, SANITIZED_INPUT_MAX
 from app.models.review import ACTOR_MAX
 from app.repositories import datasets as repo
 from app.repositories import reviews as review_repo
@@ -62,8 +72,31 @@ class CaseCreate(BaseModel):
     origin_review_id: int | None = None
 
 
+CONVERTIBLE_DECISIONS = ("hypothesis_supported", "hypothesis_rejected")
+
+
 def _duplicate_dataset() -> APIError:
     return conflict("duplicate_dataset", "this project already has a dataset with this name")
+
+
+def _duplicate_test_case() -> APIError:
+    return conflict("duplicate_test_case", "this review already has a test case in this dataset")
+
+
+def _review_not_eligible() -> APIError:
+    return conflict(
+        "review_not_eligible",
+        "only a review whose hypothesis was supported, or rejected with an independently"
+        " supplied expected output, can become a test case",
+    )
+
+
+# Database-side guards (migration 0004) mapped to the same answers as the API checks, for the
+# case where a concurrent change slips between the check and the insert.
+CASE_CONFLICTS = {
+    CASE_REVIEW_INDEX: _duplicate_test_case,
+    "test_cases_review_eligibility": _review_not_eligible,
+}
 
 
 def dataset_json(r: Any, case_count: int) -> dict[str, Any]:
@@ -75,6 +108,10 @@ def dataset_json(r: Any, case_count: int) -> dict[str, Any]:
     }
 
 
+def _stored_json(text: str | None) -> Any:
+    return None if text is None else exact_json.loads(text)
+
+
 def case_json(r: Any) -> dict[str, Any]:
     return {
         "id": r.id,
@@ -82,8 +119,8 @@ def case_json(r: Any) -> dict[str, Any]:
         "origin_trace_id": r.origin_trace_id,
         "origin_review_id": r.origin_review_id,
         "sanitized_input": r.sanitized_input,
-        "expected_output": r.expected_output,
-        "rule": r.rule,
+        "expected_output": _stored_json(r.expected_output_json),
+        "rule": _stored_json(r.rule_json),
         "redaction_applied": r.redaction_applied,
         "approved_by": r.approved_by,
         "approved_at": iso_from_datetime(r.approved_at),
@@ -112,7 +149,9 @@ def _assertion_value(field: str, value: Any) -> None:
             stack.extend(v.values())
         elif isinstance(v, list):
             stack.extend(v)
-        elif type(v) is int and len(str(abs(v))) >= _MIN_SENSITIVE_INT_DIGITS:
+        elif (type(v) is int or isinstance(v, Decimal)) and len(
+            str(int(abs(v)))
+        ) >= _MIN_SENSITIVE_INT_DIGITS:
             raise invalid(field, f"{field} contains a number that looks like an ID or phone")
 
 
@@ -193,7 +232,7 @@ async def list_cases(
 
     dataset, rows = await run_in_threadpool(read_snapshot, request, read)
     page = rows[:limit]
-    return JSONResponse(
+    return ExactJSONResponse(
         {
             "dataset": dataset_json(dataset, int(dataset.case_count)),
             "items": [case_json(r) for r in page],
@@ -241,12 +280,17 @@ async def create_case(
                     "review_not_decided",
                     "record a reviewer decision before converting the review to a test case",
                 )
+            if review.reviewer_decision not in CONVERTIBLE_DECISIONS:
+                raise _review_not_eligible()  # inconclusive
+            if review.reviewer_decision == "hypothesis_rejected" and expected is None:
+                raise invalid(
+                    "expected_output",
+                    "a case from a rejected hypothesis needs an independently supplied"
+                    " expected_output",
+                )
             repo.lock_review_conversion(session, dataset_id, review_id)
             if repo.case_exists_for_review(session, dataset_id, review_id) is not None:
-                raise conflict(
-                    "duplicate_test_case",
-                    "this review already has a test case in this dataset",
-                )
+                raise _duplicate_test_case()
         return repo.insert_case(
             session,
             {
@@ -254,15 +298,15 @@ async def create_case(
                 "origin_trace_id": trace_id,
                 "origin_review_id": review_id,
                 "sanitized_input": text.text,
-                "expected_output": expected,
-                "rule": rule,
                 "redaction_applied": True,
                 "approved_by": approved_by,
             },
+            None if expected is None else exact_json.dumps(expected),
+            exact_json.dumps(rule),
         )
 
-    row = await run_in_threadpool(write_transaction, request, write)
-    return JSONResponse(
+    row = await run_in_threadpool(write_transaction, request, write, CASE_CONFLICTS)
+    return ExactJSONResponse(
         {
             **case_json(row),
             "redaction": {"applied": True, "masked": {"sanitized_input": text.masked}},

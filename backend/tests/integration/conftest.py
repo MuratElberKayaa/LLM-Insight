@@ -136,7 +136,7 @@ def settings_for(migrated_url) -> Callable[..., Settings]:
 
 INGEST_TABLES = (
     "projects, project_api_keys, traces, spans, usage_records,"
-    " test_datasets, failure_reviews, test_cases"
+    " test_datasets, failure_reviews, test_cases, experiments, experiment_results"
 )
 
 

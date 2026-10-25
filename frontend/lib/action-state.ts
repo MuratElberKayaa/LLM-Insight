@@ -31,6 +31,9 @@ const CONFLICT_MESSAGES: Record<ConflictCode, string> = {
   duplicate_dataset: "This project already has a dataset with this name.",
   duplicate_test_case: "This review already has a test case in this dataset. Nothing new was stored.",
   review_not_decided: "Record a reviewer decision before converting this review into a test case.",
+  review_not_eligible: "Only a review whose hypothesis was supported, or rejected with an expected output you supply, can become a test case. Nothing was stored.",
+  review_decision_frozen: "A test case already cites this review, so its decision can no longer change. The status can still change. Nothing was stored.",
+  review_immutable: "A review's text and references cannot change. Nothing was stored.",
 };
 
 /** Map a failed write to the message its form shows. */

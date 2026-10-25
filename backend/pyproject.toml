@@ -21,6 +21,10 @@ dependencies = [
     "opentelemetry-proto==1.45.1",
     "protobuf==7.36.2",
     "googleapis-common-protos==1.75.5",
+    # Deterministic evaluation (Phase 4C, ADR-23): JSON Schema draft 2020-12 (no format checker,
+    # no remote retrieval) and RE2 for regex rules (linear time, no backtracking).
+    "jsonschema==4.26.0",
+    "google-re2==1.1.20251105",
 ]
 
 [project.optional-dependencies]

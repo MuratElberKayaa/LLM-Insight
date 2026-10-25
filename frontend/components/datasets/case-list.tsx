@@ -47,7 +47,7 @@ function CaseCard({ c, project }: { c: TestCase; project: string }) {
           <dt className="text-xs text-ink-3">Expected output</dt>
           <dd className="mt-0.5">
             {c.expected_output === null ? (
-              <span className="text-xs text-ink-3">None: rules that need it will report this case as not evaluated.</span>
+              <span className="text-xs text-ink-3">None: this case is never evaluated (every experiment reports it as not evaluated).</span>
             ) : (
               <pre className="max-h-64 overflow-auto rounded-md bg-canvas p-2 font-mono text-xs text-ink-2">{jsonText(c.expected_output)}</pre>
             )}

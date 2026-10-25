@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { submitTestCase } from "../../lib/actions/datasets";
-import { LIMITS, RULE_LABELS, RULE_TYPES, type Dataset, type RuleType } from "../../lib/api/review-types";
+import { LIMITS, MATCH_MODES, OUTPUT_FORMATS, RULE_LABELS, RULE_TYPES, type Dataset, type RuleType } from "../../lib/api/review-types";
 import { ActionMessage, FieldLabel, inputClass, SubmitButton, useWriteForm } from "../reviews/form-parts";
 
 /**
@@ -49,7 +49,7 @@ export function TestCaseForm({ project, traceId, reviewId, datasets }: { project
         />
       </div>
       <div>
-        <FieldLabel htmlFor="rule_type" hint="Checks are deterministic. Nothing is evaluated now: evaluation is Phase 4C.">
+        <FieldLabel htmlFor="rule_type" hint="Checks are deterministic (rule contract llminsight.rule.v1). Nothing is evaluated now: cases are evaluated by experiments.">
           How the output will be checked
         </FieldLabel>
         <select
@@ -75,7 +75,10 @@ export function TestCaseForm({ project, traceId, reviewId, datasets }: { project
       </div>
       {ruleType === "json_schema" && (
         <div>
-          <FieldLabel htmlFor="rule_schema" hint="A JSON Schema object. Only local references ($ref starting with #) are accepted.">
+          <FieldLabel
+            htmlFor="rule_schema"
+            hint="A JSON Schema (draft 2020-12) object. References must be #/$defs/<name>; pattern, patternProperties, format and remote or recursive references are refused."
+          >
             JSON Schema
           </FieldLabel>
           <textarea
@@ -99,9 +102,64 @@ export function TestCaseForm({ project, traceId, reviewId, datasets }: { project
           <input id="rule_fields" name="rule_fields" required aria-invalid={invalid("rule_fields") || invalid("rule")} aria-describedby="rule_fields-hint" className={inputClass} data-testid="case-rule-fields" />
         </div>
       )}
+      {ruleType === "exact" && (
+        <div>
+          <FieldLabel htmlFor="rule_output_format" hint="Text: the output must equal the expected JSON string exactly. JSON: the output is parsed and compared by structure (key order ignored, array order kept, numbers by exact value).">
+            Compare the output as
+          </FieldLabel>
+          <select
+            id="rule_output_format"
+            name="rule_output_format"
+            required
+            defaultValue=""
+            aria-invalid={invalid("rule_output_format") || invalid("rule")}
+            aria-describedby="rule_output_format-hint"
+            className={inputClass}
+            data-testid="case-rule-output-format"
+          >
+            <option value="" disabled>
+              Choose text or JSON…
+            </option>
+            {OUTPUT_FORMATS.map((f) => (
+              <option key={f} value={f}>
+                {f === "text" ? "Text (exact characters)" : "JSON (structural equality)"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {ruleType === "regex" && (
         <div>
-          <FieldLabel htmlFor="rule_pattern" hint={`A regular expression the output must match (at most ${LIMITS.pattern} characters).`}>
+          <FieldLabel htmlFor="rule_match" hint="Whole output: the pattern must match all of it. Anywhere: a match somewhere in the output is enough.">
+            Pattern must match
+          </FieldLabel>
+          <select
+            id="rule_match"
+            name="rule_match"
+            required
+            defaultValue=""
+            aria-invalid={invalid("rule_match") || invalid("rule")}
+            aria-describedby="rule_match-hint"
+            className={inputClass}
+            data-testid="case-rule-match"
+          >
+            <option value="" disabled>
+              Choose how the pattern matches…
+            </option>
+            {MATCH_MODES.map((m) => (
+              <option key={m} value={m}>
+                {m === "full" ? "The whole output" : "Anywhere in the output"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {ruleType === "regex" && (
+        <div>
+          <FieldLabel
+            htmlFor="rule_pattern"
+            hint={`An RE2 regular expression (at most ${LIMITS.pattern} characters). Backreferences and lookaround are not supported, so no pattern can run away.`}
+          >
             Pattern
           </FieldLabel>
           <input
@@ -120,7 +178,7 @@ export function TestCaseForm({ project, traceId, reviewId, datasets }: { project
       <div>
         <FieldLabel
           htmlFor="expected_output"
-          hint="Optional JSON. Exact and field-match rules need it; a case without one is stored and later reported as not evaluated. Values that look like personal data or secrets are refused."
+          hint="JSON. It must satisfy the rule above. A case without one is stored but never evaluated (reported as not evaluated); a case from a rejected hypothesis needs one. Values that look like personal data or secrets are refused."
         >
           Expected output (JSON)
         </FieldLabel>

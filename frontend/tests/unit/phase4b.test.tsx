@@ -59,7 +59,7 @@ function testCase(over: Partial<TestCase> = {}): TestCase {
     origin_review_id: 11,
     sanitized_input: "SYNTHETIC: summarize 'v2 adds dark mode'",
     expected_output: { summary: "SYNTHETIC" },
-    rule: { type: "json_schema", schema: { type: "object" } },
+    rule: { version: 1, type: "json_schema", schema: { type: "object" } },
     redaction_applied: true,
     approved_by: "reviewer-a",
     approved_at: "2026-10-25T18:05:00.000001Z",
@@ -196,7 +196,7 @@ describe("test case form parsing", () => {
       approved_by: "reviewer-a",
       sanitized_input: "SYNTHETIC input",
       expected_output: { summary: "SYNTHETIC" },
-      rule: { type: "json_schema", schema: { type: "object", required: ["summary"] } },
+      rule: { version: 1, type: "json_schema", schema: { type: "object", required: ["summary"] } },
       origin_trace_id: TRACE,
       origin_review_id: 11,
     });
@@ -209,14 +209,17 @@ describe("test case form parsing", () => {
     assert.equal(parseCaseForm(missing).ok, false);
   });
 
-  it("builds each rule type and refuses malformed parameters", () => {
-    const exact = parseCaseForm(form({ ...valid, rule_type: "exact" }));
-    assert.ok(exact.ok && JSON.stringify(exact.value.body.rule) === '{"type":"exact"}');
+  it("builds each rule type as contract llminsight.rule.v1 and refuses malformed parameters", () => {
+    const exact = parseCaseForm(form({ ...valid, rule_type: "exact", rule_output_format: "json" }));
+    assert.ok(exact.ok && JSON.stringify(exact.value.body.rule) === '{"version":1,"type":"exact","output_format":"json"}');
+    const exactText = parseCaseForm(form({ ...valid, rule_type: "exact", rule_output_format: "text", expected_output: '"ACK"' }));
+    assert.ok(exactText.ok && JSON.stringify(exactText.value.body.rule) === '{"version":1,"type":"exact","output_format":"text"}');
     const fields = parseCaseForm(form({ ...valid, rule_type: "field_match", rule_fields: "summary, meta.lang" }));
     assert.ok(fields.ok);
-    assert.deepEqual(fields.value.body.rule, { type: "field_match", fields: ["summary", "meta.lang"] });
-    const regex = parseCaseForm(form({ ...valid, rule_type: "regex", rule_pattern: "^\\{" }));
+    assert.deepEqual(fields.value.body.rule, { version: 1, type: "field_match", fields: ["summary", "meta.lang"] });
+    const regex = parseCaseForm(form({ ...valid, rule_type: "regex", rule_pattern: "^\\{", rule_match: "full" }));
     assert.ok(regex.ok);
+    assert.deepEqual(regex.value.body.rule, { version: 1, type: "regex", pattern: "^\\{", match: "full" });
     const noExpected = parseCaseForm(form({ ...valid, expected_output: "  " }));
     assert.ok(noExpected.ok && noExpected.value.body.expected_output === null);
     const bad: [Record<string, string>, string][] = [
@@ -226,7 +229,12 @@ describe("test case form parsing", () => {
       [{ rule_schema: "[1]" }, "rule_schema"],
       [{ rule_type: "field_match", rule_fields: "a b..c" }, "rule_fields"],
       [{ rule_type: "field_match", rule_fields: "a,a" }, "rule_fields"],
-      [{ rule_type: "regex", rule_pattern: "" }, "rule_pattern"],
+      [{ rule_type: "regex", rule_pattern: "", rule_match: "full" }, "rule_pattern"],
+      [{ rule_type: "regex", rule_pattern: "a" }, "rule_match"],
+      [{ rule_type: "regex", rule_pattern: "a", rule_match: "contains" }, "rule_match"],
+      [{ rule_type: "exact" }, "rule_output_format"],
+      [{ rule_type: "exact", rule_output_format: "xml" }, "rule_output_format"],
+      [{ expected_output: '{"price": 0.1000000000000000000001}' }, "expected_output"],
       [{ expected_output: '{"n": 12345678901234567890}' }, "expected_output"],
       [{ expected_output: "NaN" }, "expected_output"],
       [{ dataset_id: "" }, "dataset_id"],
@@ -244,6 +252,12 @@ describe("test case form parsing", () => {
     const r = parseUserJson('{"a":[1,2.5,"x",null,true]}', "f", "F");
     assert.ok(r.ok);
     assert.equal(parseUserJson("9007199254740993", "f", "F").ok, false);
+    // Decimals: refused only when JavaScript would send a different value.
+    for (const exact of ["0.1", "1.10", "2.5e3", "-0.0", "1E-7", "123.456"]) assert.ok(parseUserJson(`[${exact}]`, "f", "F").ok, exact);
+    for (const inexact of ["0.1000000000000000000001", "3.14159265358979323846", "1.00000000000000001"]) {
+      const refused = parseUserJson(`[${inexact}]`, "f", "F");
+      assert.ok(!refused.ok && /more digits/.test(refused.message), inexact);
+    }
     assert.equal(parseUserJson("x".repeat(20_000), "f", "F").ok, false);
   });
 });
@@ -539,7 +553,7 @@ describe("test case form and case list", () => {
     assert.match(m, /review #11/);
     assert.match(m, /Standalone case/);
     assert.match(m, /Not evaluated yet/);
-    assert.match(m, /rules that need it will report this case as not evaluated/);
+    assert.match(m, /this case is never evaluated/);
   });
 });
 

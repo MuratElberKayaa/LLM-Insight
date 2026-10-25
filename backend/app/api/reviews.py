@@ -8,6 +8,11 @@ separate vocabulary and are never mapped to `issue_type`). The `hypothesis` is t
 own text; `hypothesis_supported` means the evidence supports it, not that a root cause is
 proven (ADR-10).
 
+Phase 4C (ADR-24): once a test case cites a review, its `reviewer_decision` is frozen: a PATCH
+that would change or clear it is `409 review_decision_frozen` (checked under the review's row
+lock, which a concurrent conversion also takes, and enforced again by a database trigger).
+The status may still change within the §4.9 invariant. Text is immutable at all times.
+
 Access is that of the read API (§5.1): `require_admin` first, then the mandatory `project`;
 an unknown project, an unknown trace or review and another project's record are one
 indistinguishable `404`. Creation needs the trace to exist in the project at insert time
@@ -29,10 +34,12 @@ from app.api.json_body import parse_model, read_json
 from app.api.traces import BIGINT_MAX, ProjectParam, review_json
 from app.models.review import (
     ACTOR_MAX,
+    DECISION_FROZEN,
     EVIDENCE_MAX,
     HYPOTHESIS_MAX,
     ISSUE_TYPES,
     OPEN_REVIEW_INDEX,
+    REVIEW_IMMUTABLE,
     REVIEW_STATUSES,
     REVIEWER_DECISIONS,
 )
@@ -69,7 +76,22 @@ def _duplicate_open_review() -> APIError:
     )
 
 
-CONFLICTS = {OPEN_REVIEW_INDEX: _duplicate_open_review}
+def _decision_frozen() -> APIError:
+    return conflict(
+        "review_decision_frozen",
+        "a test case cites this review, so its reviewer decision can no longer change",
+    )
+
+
+def _review_immutable() -> APIError:
+    return conflict("review_immutable", "a review's text and references cannot change")
+
+
+CONFLICTS = {
+    OPEN_REVIEW_INDEX: _duplicate_open_review,
+    DECISION_FROZEN: _decision_frozen,
+    REVIEW_IMMUTABLE: _review_immutable,
+}
 
 
 def _hex(field: str, value: str, pattern: re.Pattern[str]) -> str:
@@ -161,6 +183,8 @@ async def update_review(
             )
         if (status, decision) == (current.review_status, current.reviewer_decision):
             return current  # nothing changes: no write, updated_at stays
+        if decision != current.reviewer_decision and repo.review_has_cases(session, review_id):
+            raise _decision_frozen()
         return repo.update_review(session, project, review_id, status, decision)
 
     row = await run_in_threadpool(write_transaction, request, write, CONFLICTS)

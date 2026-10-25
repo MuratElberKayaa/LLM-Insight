@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DECISION_LABELS, ISSUE_TYPE_LABELS, STATUS_LABELS, type FailureReview } from "../../lib/api/review-types";
+import { CONVERTIBLE_DECISIONS, DECISION_LABELS, ISSUE_TYPE_LABELS, STATUS_LABELS, type FailureReview } from "../../lib/api/review-types";
 import type { SpanRecord } from "../../lib/api/trace-types";
 import { formatIsoNs } from "../../lib/nanos";
 import { Ident } from "../traces/trace-values";
@@ -21,7 +21,8 @@ function Pill({ children, tone = "neutral", testId }: { children: string; tone?:
 }
 
 function ReviewCard({ review, project, spanHref, convertHref }: { review: FailureReview; project: string; spanHref: (spanId: string) => string; convertHref: string }) {
-  const decided = review.reviewer_decision !== "pending";
+  const eligible = (CONVERTIBLE_DECISIONS as readonly string[]).includes(review.reviewer_decision);
+  const frozen = review.test_cases.length > 0;
   return (
     <li className="rounded-lg border border-line bg-surface px-4 py-4" data-testid="review-card" data-review-id={review.id}>
       <div className="flex flex-wrap items-center gap-2">
@@ -74,15 +75,17 @@ function ReviewCard({ review, project, spanHref, convertHref }: { review: Failur
           ))}
         </div>
       )}
-      <DecisionForm project={project} traceId={review.trace_id} reviewId={review.id} status={review.review_status} decision={review.reviewer_decision} />
+      <DecisionForm project={project} traceId={review.trace_id} reviewId={review.id} status={review.review_status} decision={review.reviewer_decision} frozen={frozen} />
       <div className="mt-3 text-sm">
-        {decided ? (
+        {eligible ? (
           <Link href={convertHref} className="font-medium text-ink underline underline-offset-2" data-testid="convert-link">
             Convert to a regression test case…
           </Link>
         ) : (
           <span className="text-ink-3" data-testid="convert-unavailable">
-            Converting to a test case needs a reviewer decision first.
+            {review.reviewer_decision === "pending"
+              ? "Converting to a test case needs a reviewer decision first."
+              : "An inconclusive review cannot become a test case: only a supported or rejected hypothesis can."}
           </span>
         )}
       </div>

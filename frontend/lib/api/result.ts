@@ -32,8 +32,16 @@ export interface ApiFailure {
   code?: ConflictCode;
 }
 
-/** The 409 codes of the Phase 4B write endpoints (ARCHITECTURE.md §5.7). */
-export const CONFLICT_CODES = ["duplicate_open_review", "duplicate_dataset", "duplicate_test_case", "review_not_decided"] as const;
+/** The 409 codes of the write endpoints (ARCHITECTURE.md §5.7; Phase 4C adds the review-integrity codes, ADR-24). */
+export const CONFLICT_CODES = [
+  "duplicate_open_review",
+  "duplicate_dataset",
+  "duplicate_test_case",
+  "review_not_decided",
+  "review_not_eligible",
+  "review_decision_frozen",
+  "review_immutable",
+] as const;
 export type ConflictCode = (typeof CONFLICT_CODES)[number];
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiFailure };

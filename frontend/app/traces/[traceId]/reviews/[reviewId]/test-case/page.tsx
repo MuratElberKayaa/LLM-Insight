@@ -71,6 +71,10 @@ export default async function TestCasePage({ params, searchParams }: PageProps) 
                 <Notice tone="caution" title="This review has no decision yet" testId="review-pending-notice">
                   Record a reviewer decision on the trace page first; the backend refuses to convert an undecided review.
                 </Notice>
+              ) : review.reviewer_decision === "inconclusive" ? (
+                <Notice tone="caution" title="An inconclusive review cannot become a test case" testId="review-inconclusive-notice">
+                  Only a review whose hypothesis was supported, or rejected with an expected output you supply, can become a golden test case.
+                </Notice>
               ) : datasets === null || !datasets.ok ? (
                 datasets === null ? null : <ErrorState error={datasets.error} resource="the datasets" compact />
               ) : datasets.data.items.length === 0 ? (
@@ -78,7 +82,16 @@ export default async function TestCasePage({ params, searchParams }: PageProps) 
                   Create a dataset in the panel on the right; it then appears in this form.
                 </Notice>
               ) : (
-                ctx.projectId !== null && <TestCaseForm project={ctx.projectId} traceId={traceId} reviewId={review.id} datasets={datasets.data.items} />
+                ctx.projectId !== null && (
+                  <>
+                    {review.reviewer_decision === "hypothesis_rejected" && (
+                      <Notice tone="info" title="Rejected hypothesis: supply the expected output" testId="review-rejected-notice">
+                        The reviewer rejected this hypothesis, so the case needs an expected output that you supply independently; the backend refuses the case without one.
+                      </Notice>
+                    )}
+                    <TestCaseForm project={ctx.projectId} traceId={traceId} reviewId={review.id} datasets={datasets.data.items} />
+                  </>
+                )
               )}
             </div>
             <aside className="space-y-4" aria-label="Source and datasets">

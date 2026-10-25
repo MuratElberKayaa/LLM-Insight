@@ -62,6 +62,12 @@ def get_review(
     return session.execute(stmt).one_or_none()
 
 
+def review_has_cases(session: Session, review_id: int) -> bool:
+    """Whether any test case cites the review (its decision is then frozen, ADR-24)."""
+    stmt = select(exists().where(TestCase.origin_review_id == review_id))
+    return session.execute(stmt).scalar_one()
+
+
 def update_review(
     session: Session, project_id: int, review_id: int, status: str, decision: str
 ) -> Row[Any]:

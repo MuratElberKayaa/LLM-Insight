@@ -155,4 +155,65 @@ No source conflict required changing ADR-01…12.
 - **Affected files:** `ARCHITECTURE.md` §4, `TELEMETRY_CONTRACT.md` §4–5, `METRICS_CATALOG.md`, `fixtures/README.md`.
 - **Tests:** listed per table in `ARCHITECTURE.md` §4.
 
+## 4. Accepted ADRs from the Phase 4B architectural review (recorded in Phase 4C, 2026-10-26)
+
+The architectural review of Phase 4B (decisions D1–D9, `reports/phase-4b.md` §2.4) approved D2, D7 and D9 as delivered, approved D6 for recording as an ADR, revised D1, D3, D4 and D5, and deferred D8. ADR-22…24 record the binding result. Final dispositions: `reports/phase-4c.md` §2.
+
+### ADR-22 — Local dashboard writes through narrow Server Actions (records D6)
+- **Status:** Accepted (architectural review, 2026-10-26). **Supersedes** the read-only restriction of `ARCHITECTURE.md` §5.3 and `SECURITY.md` §5 ("no route handlers and no Server Functions"; "methods other than GET/HEAD get `405`") **for the writes listed below only**. CR-06 and ADR-08 are unchanged.
+- **Context:** CR-03 and the Trace-to-Testset contract need a human to record reviews, decisions, datasets and approved test cases from the dashboard. The Phase 3 dashboard could not write.
+- **Decision:**
+  - **Permitted writes (exhaustive):** four Server Actions, `submitReview` → `POST /api/v1/failure-reviews`, `submitDecision` → `PATCH /api/v1/failure-reviews/{id}`, `submitDataset` → `POST /api/v1/datasets`, `submitTestCase` → `POST /api/v1/datasets/{id}/cases`. Each is bound to exactly one backend path and method through an allowlist (`sendJson`). No route handlers, no generic proxy, no other Server Function. A new write needs a new ADR entry.
+  - **Admin token:** read only by `server-only` modules on the Next.js server and sent only as a bearer header to a loopback backend; never in a `NEXT_PUBLIC_*` variable, HTML, RSC payload, client bundle, cookie, browser storage, URL or log (CR-06, T42).
+  - **Origin and request validation:** `proxy.ts` accepts `POST` only on the three pages that host forms, only with an `Origin` equal to the loopback host, `Sec-Fetch-Site: same-origin` when sent, and a `Next-Action` header; everything else is `403` (or `405`). Next.js also compares `Origin` with `Host` for every Server Action. Action bodies are capped at 128 KB.
+  - **CSRF:** there is no cookie or session to ride on; a cross-site HTML form cannot send `Next-Action`, and a cross-site script would need a CORS preflight that is never answered. Forms therefore need JavaScript (R59).
+  - **Backend validation and authorization:** the backend re-validates every field (strict schemas, `422` without echo), requires the admin token, scopes everything by the mandatory `project` (one indistinguishable `404`), and enforces the data rules itself (approval, redaction, rule contract, review integrity); the dashboard's own checks are convenience only.
+  - **Security boundary:** the dashboard and the backend bind to `127.0.0.1` and refuse non-loopback `Host` headers (`421`). The boundary is the local machine.
+  - **No authenticated identity:** there is no user login. `created_by` and `approved_by` are self-declared labels and must never be presented as verified approvers or reviewers (R55). Who changed a decision is not recorded (D8, deferred).
+- **Why public deployment remains prohibited:** any process or person able to reach the loopback port can write (R54); there is no authentication, per-user authorization, audit trail, TLS or distributed rate limit. Public or shared deployment requires the review of `SECURITY.md` §7 and a superseding ADR.
+- **Alternatives rejected:** route handlers as a backend proxy (a generic write surface); writes from the browser with a token (breaks CR-06); a session cookie (needs real authentication, out of MVP scope).
+- **Affected files:** `frontend/lib/actions/`, `frontend/proxy.ts`, `frontend/lib/request-guard.ts`, `frontend/lib/server/backend.ts`, `ARCHITECTURE.md` §5.3/§5.8, `SECURITY.md` §5.
+- **Tests:** frontend static and unit tests for the action set, allowlist and guard; live E2E CSRF refusals; T41, T42.
+
+### ADR-23 — Versioned deterministic rule contract `llminsight.rule.v1` with bounded engines (revises D1)
+- **Status:** Accepted (architectural review, 2026-10-26). Refines ADR-10; no schema change (`rule` stays JSONB, `ARCHITECTURE.md` §4.10).
+- **Decision:**
+  - Every stored rule carries `"version": 1` (JSON integer) and exactly the keys of its type: `json_schema {schema}`, `field_match {fields}`, `exact {output_format: text|json}`, `regex {pattern, match: full|search}`. Unknown keys, unknown versions and unversioned (Phase 4B) payloads are refused on write; the engine reports a stored rule it cannot read as `rule_unsupported` (not evaluated) and never reinterprets it. The development database held 0 test cases when this was introduced.
+  - **Output representation:** the raw model output text (valid Unicode, at most 32 KiB as UTF-8). Structured rules parse it as strict, exact JSON (non-integers as `Decimal`, no NaN/Infinity, no duplicate keys, bounded number literals, depth ≤ 32, ≤ 10,000 values).
+  - **Semantics:** structural equality with key order ignored, array order significant, booleans never numbers, numbers by exact value, strings by code point (no normalization). `regex` matches the raw text with RE2 in the stated `match` mode.
+  - **Expected output:** every rule type needs an approved `expected_output`; without one a case is never evaluated (`passed = NULL`, T40). A present expected output must satisfy its own rule (refused on write otherwise).
+  - **Outcomes:** `true` (pass), `false` (checked and failed, including malformed output), `NULL` (not evaluable or a limit hit), each with a stable code; `NULL` is never a failure and never enters a pass-rate denominator. `evaluation_detail` never contains output or expected values.
+  - **Regex:** `google-re2` 1.1.20251105 only (linear time, no backtracking constructs, no fallback engine), pattern ≤ 1000 chars, compiled program ≤ 1500 instructions, 2 MiB memory, errors never logged. User patterns never reach Python `re`.
+  - **JSON Schema:** `jsonschema` 4.26.0, draft 2020-12 only; keyword allowlist at every depth; `pattern`, `patternProperties`, `format`, `content*`, `$id`, anchors and dynamic references refused; `$ref` only `#/$defs/<name>`, acyclic, expansion-bounded; meta-validated without a format checker; an explicit registry that cannot retrieve (no network); a per-evaluation keyword budget.
+- **Alternatives rejected:** Python `re` with a timeout (a C-level match cannot be interrupted safely); trusting `jsonschema` defaults (remote retrieval via `urlopen`; `regex` format checks with `re.compile`); a default version for unversioned rules (silent reinterpretation).
+- **Affected files:** `backend/app/services/evaluation/`, `backend/app/services/case_rules.py`, `backend/app/core/exact_json.py`, `backend/app/api/json_body.py`, `frontend/lib/review-forms.ts`, `ARCHITECTURE.md` §4.10/§5.7/§5.9, `SECURITY.md` §1.
+- **Tests:** T36, T37, T40; unit suites for exact JSON, RE2 safety, schema safety, the engine and static boundaries.
+
+### ADR-24 — Review integrity and one case per review in the database (revises D3, D4, D5)
+- **Status:** Accepted (architectural review, 2026-10-26). Migration `0004`; no column added or changed (ADR-21 note).
+- **Decision:**
+  - **Conversion eligibility (D4):** a test case may cite a review only when its `reviewer_decision` is `hypothesis_supported`, or `hypothesis_rejected` together with an independently supplied `expected_output`; undecided reviews (the default decision, see §4.9) and `inconclusive` reviews are not eligible. Conversion always needs the separate explicit approval (`approved: true`, T34).
+  - **Freeze (D3):** once a test case cites a review, its `reviewer_decision` cannot change or be cleared (`409 review_decision_frozen`); the status may still change within the §4.9 invariant. `evidence`, `hypothesis` and every reference column of a review are immutable at all times.
+  - **Uniqueness (D5):** partial `UNIQUE(dataset_id, origin_review_id) WHERE origin_review_id IS NOT NULL` on `test_cases`; standalone cases are unaffected. The API keeps its advisory lock and friendly `409 duplicate_test_case`.
+  - **Transactional enforcement:** the API checks under row locks (the conversion reads the review `FOR SHARE`, the PATCH `FOR UPDATE`), and two triggers enforce the same rules for every writer (`failure_reviews_integrity`, `test_cases_review_eligibility`, SQLSTATE 23000 with a constraint name). The upgrade refuses, changing nothing, if existing rows violate the new rules.
+  - **Identity:** nothing is inferred from self-declared names; no identity system is added. D8 (recording the actor of a decision) is deferred to a later phase.
+- **Affected files:** `backend/alembic/versions/0004_phase4c_review_case_integrity.py`, `backend/app/api/{reviews,datasets}.py`, `backend/app/models/{review,dataset}.py`, `frontend/components/reviews/*`, `ARCHITECTURE.md` §4.9/§4.10/§5.7.
+- **Tests:** `test_phase4c_integrity.py` (API and raw-SQL concurrency), `test_migrations.py` (0004 lifecycle, triggers, index), T33–T35 regression.
+
+## 5. Phase 4C decision (recorded for the architectural review, 2026-10-26)
+
+### ADR-25 — Deterministic mock A/B experiments over the locked §4.11–4.12 schema
+- **Status:** Accepted within the Phase 4C instruction (mock-only, deterministic experiments; no real or paid provider); recorded here for the architectural review. Schema exactly `ARCHITECTURE.md` §4.11–4.12 (migration `0005`), no column added.
+- **Decision:**
+  - **Execution:** only `mode: "mock"` runs. A scripted mock provider returns SYNTHETIC answers keyed by (prompt version, SHA-256 of the case input); an unknown input gets `mock_no_scripted_output` (never an invented or copied answer). One attempt per (case, version), no retries, so one result row is one physical attempt. `mode: "real"` is validated (budget, `LLMI_ALLOW_REAL_LLM`) and then refused with `409`; no real executor exists in this build.
+  - **Identity:** cases in id order, each under A then B: both versions always run on the identical case ids (T38). Variant identity is the `prompt_version` string within the experiment, enforced by a trigger.
+  - **Provenance:** every mock result is `synthetic` (T39), enforced by the service and by a trigger.
+  - **Atomicity and evidence:** one transaction stores the experiment, all results and `finished_at`; results are append-only and an experiment changes only by setting `finished_at` once (triggers). Model output is never stored.
+  - **Cost:** synthetic token counts priced at the stored price of (`openai`, model) in force at `started_at`, with the ledger's unknown-cost rules (never 0). This is a labelled synthetic estimate; nothing is spent and no usage-ledger row is written.
+  - **Budget:** optional for mock runs; when given, checked before anything runs (unknown estimate → `budget_unverifiable`, over budget → `budget_exceeded`), plus a run-time guard (`budget_exhausted`).
+  - **Report:** built only from stored rows; pass rate = passed / (passed + failed); quality compared only on cases evaluated under both versions, and no better version is named when evidence is incomplete; cost compared only when both versions are fully priced; latency per version only.
+- **Alternatives rejected:** writing experiment calls into the usage ledger (would mix synthetic estimates with telemetry); measuring wall-clock latency of the in-process mock (meaningless); naming a winner from per-version rates with different denominators.
+- **Affected files:** `backend/app/services/experiments/`, `backend/app/api/experiments.py`, `backend/app/repositories/experiments.py`, `backend/app/models/experiment.py`, `backend/alembic/versions/0005_phase4c_experiments.py`, `ARCHITECTURE.md` §4.11–4.12/§5.9.
+- **Tests:** T38, T39 (integration), T36, T37, T40; `test_experiment_api.py`, `test_experiment_runner.py`, `test_experiment_report.py`, migration tests for `0005`.
+
 **Supersession rule:** changing an accepted ADR needs evidence and a new ADR entry that names the one it supersedes.
