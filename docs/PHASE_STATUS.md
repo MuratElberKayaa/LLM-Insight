@@ -1,6 +1,6 @@
 # LLM Insight — Phase Status
 
-Last updated: 2026-10-25 UTC (Phase 2 **accepted and closed for the offline MVP scope**: final regression passed, verified prices seeded into the local dev DB, real OpenAI smoke NOT RUN, `phase-2` tag on the closure commit; evidence `reports/phase-2-final.md`. Phase 3 not started). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
+Last updated: 2026-10-25 UTC (Phase 3A **delivered**: frontend foundation and Overview dashboard on the real backend; evidence `reports/phase-3a.md`. Awaiting user review; Phase 3B/3C not started. Phase 2 closed for the offline MVP scope, `reports/phase-2-final.md`). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
 
 | Phase | Window (target) | State |
 |---|---|---|
@@ -13,11 +13,12 @@ Last updated: 2026-10-25 UTC (Phase 2 **accepted and closed for the offline MVP 
 | 2B OpenAI adapter, pricing & cost engine | 24 Oct | Delivered (`reports/phase-2b.md`); reviewed by the user (Phase 2C instruction) |
 | 2C Metrics, demo integration & security gate | 24–25 Oct | Delivered (`reports/phase-2c.md`); technically accepted by the user (Phase 2 final instruction) |
 | 2 Final acceptance and closure | 25 Oct | **Closed** (`reports/phase-2-final.md`) for the offline MVP scope: baseline verified, prices re-verified and seeded (dev DB only), backend 1082 / SDK 343 passed, 0 failed, 0 skipped; real OpenAI smoke NOT RUN; `phase-2` tag on the closure commit |
-| 3 Dashboard | 31 Oct–2 Nov | Not started |
+| 3A Frontend foundation & Overview | 25 Oct | Delivered (`reports/phase-3a.md`); awaiting user review |
+| 3B/3C Dashboard (remaining) | 31 Oct–2 Nov | Not started |
 | 4 Review / dataset / experiments | 3–4 Nov | Not started |
 | 5 QA & delivery | 5–7 Nov | Not started |
 
-**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. Phase 2A added `sdk/` (the installable `llm-insight-sdk` 0.1.0: config contract, OTLP/HTTP protobuf export through a bounded BatchSpanProcessor, GenAI CLIENT inference spans, deterministic mock provider, sync and async) and `demo_app/` (CLI demo, scenarios A–E). Phase 2B added migration `0002` (`model_prices`, append-only, plus the `usage_records.model_price_id` FK), the verified OpenAI catalogue `openai-2026-10-24` with `python -m app.cli seed-prices`, the Decimal cost engine applied once at ingest, and the offline-tested OpenAI Chat Completions adapter (`llm-insight-sdk` 0.2.0, extra `openai`). The dev database is at `0002 (head)` with **no** price rows seeded. Phase 2C added the test-output redaction layers in both suites and rotated the local PostgreSQL password (R33), runs the backend on the selector event loop (R32 fix, `app/core/eventloop.py`), re-verified the price catalogue (unchanged), added the aggregate metrics M01–M15 (`app/{repositories,services}/metrics.py`) with `GET /api/v1/overview` and `GET /api/v1/models/compare`, and the FastAPI demo `demo_app/web.py` (SERVER request span → CLIENT inference spans, mock and offline fake OpenAI). At the Phase 2 closure (no code change) the six verified price rows `openai-2026-10-24` were seeded into the dev database, which is at `0002 (head)` with no telemetry. There is no real OpenAI call and no frontend yet.
+**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. Phase 2A added `sdk/` (the installable `llm-insight-sdk` 0.1.0: config contract, OTLP/HTTP protobuf export through a bounded BatchSpanProcessor, GenAI CLIENT inference spans, deterministic mock provider, sync and async) and `demo_app/` (CLI demo, scenarios A–E). Phase 2B added migration `0002` (`model_prices`, append-only, plus the `usage_records.model_price_id` FK), the verified OpenAI catalogue `openai-2026-10-24` with `python -m app.cli seed-prices`, the Decimal cost engine applied once at ingest, and the offline-tested OpenAI Chat Completions adapter (`llm-insight-sdk` 0.2.0, extra `openai`). The dev database is at `0002 (head)` with **no** price rows seeded. Phase 2C added the test-output redaction layers in both suites and rotated the local PostgreSQL password (R33), runs the backend on the selector event loop (R32 fix, `app/core/eventloop.py`), re-verified the price catalogue (unchanged), added the aggregate metrics M01–M15 (`app/{repositories,services}/metrics.py`) with `GET /api/v1/overview` and `GET /api/v1/models/compare`, and the FastAPI demo `demo_app/web.py` (SERVER request span → CLIENT inference spans, mock and offline fake OpenAI). At the Phase 2 closure (no code change) the six verified price rows `openai-2026-10-24` were seeded into the dev database, which is at `0002 (head)` with no telemetry. There is no real OpenAI call. Phase 3A added `frontend/` (Next.js 16.4.3 App Router, TypeScript 6.0.3 strict, Tailwind 4, Recharts 3; Node 22.23.4 project-scoped in `.tools/`): app shell and design system, a `server-only` backend access layer (token server-side only, loopback-only, validated parameters, schema-decoded responses, no proxy surface, loopback `Host` guard and nonce CSP in `proxy.ts`) and the Overview page over `GET /api/v1/overview` and `GET /api/v1/models/compare`; plus `scripts/dev/install_node.py` and `scripts/dev/init_frontend_env.py`. No backend change. The dev DB now holds project 1 (`phase3a-demo`) with SYNTHETIC telemetry from the Phase 2 demos.
 
 ## Phase 0 — Definition
 - [x] Independent repo initialized; `git rev-parse --show-toplevel` = project folder; no remotes
@@ -119,10 +120,21 @@ Last updated: 2026-10-25 UTC (Phase 2 **accepted and closed for the offline MVP 
 - [x] Limitations recorded (report §5): R32 attribution caveat, R34, pricing and privacy limits, T48 dashboard half, open critical tests
 - [x] Closure commit and annotated `phase-2` tag (`phase-0`, `phase-1` unchanged; not pushed)
 
-## Phase 3 — Dashboard
-- [ ] Prerequisites: explicit user instruction to start; TypeScript version decided (R07); Node 22 patch updated (R12); free loopback frontend port (R19); see `reports/phase-2-final.md` §8
+## Phase 3A — Frontend foundation and Overview (evidence: `reports/phase-3a.md`)
+- [x] Prerequisites: user instruction (Phase 3A); clean tree at `75ff8c3`, annotated `phase-2`; PostgreSQL healthy; backend ready; no backend contract change needed (report §1)
+- [x] Toolchain: Node 22.23.4 project-scoped and checksum-verified (R12; global 22.11.0 untouched); TypeScript 6.0.3 (R07 resolved); Next.js 16.4.3, React 19.3.1, Tailwind 4.3.3, Recharts 3.10.1, ESLint 9.39.5, Playwright 1.64.0 with installed Edge; exact pins, lockfile, `npm audit` 0; two-week-rule exceptions recorded (R37)
+- [x] Frontend package, design system (shell, nav, header, metric cards, charts with table views, filters, status, provenance badges, skeleton/empty/error states, accessible tables), palette validated
+- [x] Secure integration: server-only token, loopback-only config, fixed paths, validated window/filters, timeout, size cap, no redirects, schema decode, fixed failure kinds; no route handlers or Server Functions; `Host` guard (`421`), GET/HEAD only, nonce CSP; port 3001 (R19)
+- [x] Overview M01–M14 + trend, M15 top groups, M11/M13/M14 breakdowns; unknown cost never 0; synthetic labelled; UTC windows aligned to trend buckets; time range and provenance controls re-query the backend
+- [x] Live round trip: empty-DB state, synthetic data from `demo_app` and `demo_app.web --drive` (no OpenAI), UI equal to API, outage state, no secret in logs/responses/bundle; screenshots
+- [x] Tests: frontend typecheck, lint, 107/107 unit+component, build, bundle scan (0 findings, mutation-checked), 12/12 E2E; backend 1082 passed, SDK 343 passed (no regression)
+- [x] Test matrix: T42 `PASS (phase-3a)`; T41, T48 `PARTIAL (phase-3a)`
+- [ ] User review of Phase 3A
+
+## Phase 3 — Dashboard (remaining: 3B/3C)
+- [x] Prerequisites: TypeScript version decided (R07); Node 22 patch updated for the frontend (R12); free loopback frontend port 3001 (R19) — done in Phase 3A
 - [ ] Overview, models/compare, full traces API with filters (including provenance), null handling and `n`
-- [ ] Next.js server-side fetching only; KPIs, trends, model compare, trace list, span tree, provenance badges (real / synthetic / mixed / unknown)
+- [ ] Next.js server-side fetching only; KPIs, trends (Overview done in 3A), model compare, trace list, span tree, provenance badges (real / synthetic / mixed / unknown)
 - [ ] Empty, loading and error states; no constant mock KPIs
 - [ ] Tests: T24–T32 re-verified, T41–T43, T45, T46, T48 (+S1/S2); lint, typecheck, build, Playwright; screenshots
 - [ ] Report, status, commit + tag
@@ -163,4 +175,10 @@ Last updated: 2026-10-25 UTC (Phase 2 **accepted and closed for the offline MVP 
 | `ruff check .`, `ruff format --check .`, `python -m mypy src` (sdk) | yes | SDK lint / format / strict types (`--config pyproject.toml ../demo_app` for the demo) |
 | `sdk/.venv/Scripts/python -m demo_app` (root) | yes | Phase 2A demo A–E (mock only); needs `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>`, `OTEL_SERVICE_NAME` |
 | `sdk/.venv/Scripts/python -m demo_app.web [--drive]` (root) | yes | Phase 2C FastAPI demo on `127.0.0.1:8100` (`LLMI_DEMO_PORT`): request spans as parents of mock and offline fake-OpenAI inference spans; `--drive` sends one request per route and prints trace IDs. Same environment as `python -m demo_app` |
-| `npm run lint/typecheck/build`, `npx playwright test` | no | Planned (Phase 3) |
+| `python -I scripts/dev/install_node.py [--print-bin]` (root) | yes | Install Node 22.23.4 into `.tools/` (SHA-256 checked) / print its bin directory to prepend to PATH for frontend commands; never touches the global Node |
+| `python -I scripts/dev/init_frontend_env.py --project-id <id> [--force]` (root) | yes | Create `frontend/.env.local` (git-ignored) with the backend URL, server-side token (not printed) and project id |
+| `npm ci` (frontend) | yes | Install the locked frontend dependencies |
+| `npm run dev` / `npm run build` / `npm start` (frontend) | yes | Dashboard on `127.0.0.1:3001` (dev / production); Node 22.23.4 enforced, Next.js telemetry off |
+| `npm run typecheck` / `npm run lint` / `npm test` (frontend) | yes | Strict tsc / ESLint (0 warnings) / unit + component tests (tsc → node:test) |
+| `npm run check:bundle` (frontend, after build) | yes | T42: token value and secret variable names absent from `.next/` |
+| `npm run test:e2e` (frontend) | yes | Playwright (installed Edge) against the real backend on :8000; starts dashboards on :3001 and an outage instance on :3002 (ports must be free); `LLMI_SCREENSHOT_DIR=<dir>` saves screenshots |

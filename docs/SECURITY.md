@@ -66,10 +66,13 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 
 ## 5. Web / UI
 
-- React escaping only; no `dangerouslySetInnerHTML` for telemetry-derived strings (T41).
-- All backend calls are made from Next.js server components or route handlers.
-- A CSP header is evaluated in Phase 3.
-- The dashboard has **no user login**. That is acceptable only because it is bound to `127.0.0.1`.
+- React escaping only; no `dangerouslySetInnerHTML` for telemetry-derived strings (T41). Enforced by ESLint (`react/no-danger`) and a static test.
+- All backend calls are made from Next.js server components (Phase 3A: `frontend/lib/server/backend.ts` only). There are no route handlers and no Server Functions, so the dashboard is not a proxy to the backend (`ARCHITECTURE.md` §5.3).
+- **Token handling (Phase 3A, T42).** `LLMI_API_TOKEN` lives in `frontend/.env.local` (git-ignored, written by `scripts/dev/init_frontend_env.py` without printing it), is read only in `lib/server/config.ts` (a `server-only` module), is sent only as a bearer header to a loopback backend origin (other hosts are refused by config validation), and never in a URL, log line, error object, HTML, RSC payload, client bundle, cookie or browser storage. The Next.js process receives only the three dashboard variables, not the pepper or the database URL. Verified by the build-output scan `npm run check:bundle` (with a mutation check), a live E2E scan of every response body, and static source tests.
+- **CSP (Phase 3A).** Per-request nonce set in `frontend/proxy.ts`: `script-src 'self' 'nonce-…' 'strict-dynamic'` (dev adds `'unsafe-eval'` and the HMR websocket), `default-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`. `style-src` allows `'unsafe-inline'` because the chart library writes inline `style` attributes, which a nonce cannot authorize; no telemetry string is placed in a style. Also `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, COOP/CORP `same-origin`, a restrictive `Permissions-Policy`, and `Cache-Control: no-store` on pages.
+- **Loopback guard (Phase 3A).** The dashboard binds to `127.0.0.1:3001`. Requests whose `Host` header is not `127.0.0.1`, `localhost` or `[::1]` get `421`, so a DNS-rebinding page cannot read it through a foreign hostname; methods other than GET/HEAD get `405`.
+- The dashboard has **no user login**. That is acceptable only because it is bound to `127.0.0.1`. Any other bind needs the review in §7.
+- Next.js anonymous telemetry is disabled per process (`frontend/scripts/next.mjs`), not through the global Next.js config.
 
 ## 6. Cost safety
 
@@ -91,7 +94,8 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 | Ingest key guessing | Auth-failure limiter per client address, generic `401`, 256-bit keys | Per-process limiter only |
 | Mislabelled provenance (fake "real") | Server downgrade of `real` without a response ID (a response ID never upgrades a claim); mixed and unknown never counted as real; the API returns `provenance_verified: false` | Provenance is client-asserted, not cryptographically verified |
 | Error responses leaking data | `Status.message` / `BadRequest` carry field paths and rule text only, never values | — |
-| Secret in client bundle | Server-only env, T42 bundle scan | Developer error with `NEXT_PUBLIC_*`, caught by the scan |
+| Secret in client bundle | Server-only env, `server-only` modules, T42 bundle and live-response scans (Phase 3A) | Developer error with `NEXT_PUBLIC_*`, caught by ESLint, the static test and the scan |
+| Dashboard used as a proxy or read via DNS rebinding | No route handlers or Server Functions; fixed backend paths and validated parameters; loopback `Host` check (`421`); GET/HEAD only (Phase 3A) | A local process on the same machine can still read the dashboard (no login; loopback trust model) |
 | Accidental public exposure | Bind to 127.0.0.1, no public ingress | Changing the bind is a manual act and needs a new review |
 | Malicious attribute content (XSS) | Escaped rendering (T41) | — |
 

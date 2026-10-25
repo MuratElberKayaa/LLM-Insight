@@ -1,0 +1,139 @@
+{
+ "_note": "Recorded from the real local backend (Phase 3A round trip, 2026-10-25) for project 1 with SYNTHETIC telemetry from demo_app and demo_app.web. Contract fixture only; contains no credential.",
+ "response": {
+  "project": 1,
+  "window": {
+   "from": "2026-10-24T08:00:00.000000Z",
+   "to": "2026-10-25T08:00:00.000000Z"
+  },
+  "filters": {
+   "model": null,
+   "status": null,
+   "prompt_version": null,
+   "provenance": null
+  },
+  "provenance_label": "all provenance",
+  "provenance_verified": false,
+  "groups": [
+   {
+    "provider": "llminsight.mock",
+    "requested_model": "mock-chat-small",
+    "response_model": "mock-chat-small-2026-10-01",
+    "prompt_version": "v1",
+    "attempts": 10,
+    "errors": {
+     "failed": 0,
+     "succeeded": 10,
+     "rate": 0.0
+    },
+    "latency": {
+     "n": 10,
+     "p50_ms": 21.252,
+     "p95_ms": 299.896355,
+     "p99_ms": 303.379031,
+     "low_sample": {
+      "p95": true,
+      "p99": true
+     }
+    },
+    "cost": {
+     "currency": "USD",
+     "known_cost_usd": null,
+     "computed_cost_calls": 0,
+     "unknown_cost_calls": 10,
+     "unknown_cost_by_reason": {
+      "price_missing": 10,
+      "usage_missing": 0,
+      "usage_inconsistent": 0
+     },
+     "cost_complete": false
+    },
+    "by_provenance": {
+     "real": 0,
+     "synthetic": 10,
+     "unknown": 0
+    }
+   },
+   {
+    "provider": "llminsight.mock",
+    "requested_model": "mock-chat-small",
+    "response_model": null,
+    "prompt_version": "v1",
+    "attempts": 4,
+    "errors": {
+     "failed": 4,
+     "succeeded": 0,
+     "rate": 1.0
+    },
+    "latency": {
+     "n": 4,
+     "p50_ms": 10.7363,
+     "p95_ms": 11.19732,
+     "p99_ms": 11.249304,
+     "low_sample": {
+      "p95": true,
+      "p99": true
+     }
+    },
+    "cost": {
+     "currency": "USD",
+     "known_cost_usd": null,
+     "computed_cost_calls": 0,
+     "unknown_cost_calls": 4,
+     "unknown_cost_by_reason": {
+      "price_missing": 0,
+      "usage_missing": 4,
+      "usage_inconsistent": 0
+     },
+     "cost_complete": false
+    },
+    "by_provenance": {
+     "real": 0,
+     "synthetic": 4,
+     "unknown": 0
+    }
+   },
+   {
+    "provider": "openai",
+    "requested_model": "gpt-5.4-mini",
+    "response_model": "gpt-5.4-mini-2026-03-17",
+    "prompt_version": "v1",
+    "attempts": 2,
+    "errors": {
+     "failed": 0,
+     "succeeded": 2,
+     "rate": 0.0
+    },
+    "latency": {
+     "n": 2,
+     "p50_ms": 36.9329,
+     "p95_ms": 68.76869,
+     "p99_ms": 71.598538,
+     "low_sample": {
+      "p95": true,
+      "p99": true
+     }
+    },
+    "cost": {
+     "currency": "USD",
+     "known_cost_usd": "0.0031500000",
+     "computed_cost_calls": 2,
+     "unknown_cost_calls": 0,
+     "unknown_cost_by_reason": {
+      "price_missing": 0,
+      "usage_missing": 0,
+      "usage_inconsistent": 0
+     },
+     "cost_complete": true
+    },
+    "by_provenance": {
+     "real": 0,
+     "synthetic": 2,
+     "unknown": 0
+    }
+   }
+  ],
+  "groups_truncated": false,
+  "limit": 10
+ }
+}

@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "incremental": false,
+    "outDir": ".test-build",
+    "rootDir": ".",
+    "module": "commonjs",
+    "moduleResolution": "bundler",
+    "sourceMap": true,
+    "plugins": []
+  },
+  "include": ["lib/**/*.ts", "lib/**/*.tsx", "components/**/*.ts", "components/**/*.tsx", "tests/unit/**/*.ts", "tests/unit/**/*.tsx", "tests/fixtures/**/*.ts"],
+  "exclude": ["node_modules", ".test-build", ".next"]
+}
