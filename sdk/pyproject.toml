@@ -29,6 +29,9 @@ dev = [
     "psycopg[binary]==3.3.6",
     # Offline adapter tests (fake transports only; no request ever leaves the machine).
     "openai==3.28.0",
+    # FastAPI root-span demo (demo_app/web.py, Phase 2C): the backend's exact pins.
+    "fastapi==0.143.0",
+    "uvicorn==0.54.0",
 ]
 
 [tool.setuptools.packages.find]

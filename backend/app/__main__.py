@@ -3,6 +3,7 @@
 import uvicorn
 
 from app.core.config import get_settings
+from app.core.eventloop import UVICORN_LOOP
 
 
 def main() -> None:
@@ -13,6 +14,7 @@ def main() -> None:
         host=settings.bind_host,
         port=settings.port,
         workers=1,  # in-process rate limiting assumes one process (CR-08)
+        loop=UVICORN_LOOP,  # selector loop: the Windows Proactor one can stop accepting (R32)
     )
 
 

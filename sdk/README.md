@@ -81,6 +81,11 @@ with telemetry.inference_span(
 The demo application runs every scenario against a live backend:
 `sdk/.venv/Scripts/python -m demo_app` (from the repository root).
 
+The FastAPI demo (Phase 2C) shows request spans as the parents of inference spans:
+`sdk/.venv/Scripts/python -m demo_app.web [--drive]` (offline: mock provider and the `openai`
+client on an in-process fake transport; see `demo_app/web.py`). It needs the `dev` extra
+(`fastapi`, `uvicorn`, pinned to the backend's versions).
+
 ## Configuration
 
 `LLMInsightConfig(...)` takes keyword arguments; `LLMInsightConfig.from_env()` reads the

@@ -48,6 +48,23 @@ Provenance values are defined in `TELEMETRY_CONTRACT.md` §5. Usage rows and spa
 | M18 | Review counts | count by `issue_type`, `review_status`, `reviewer_decision` | failure_reviews | Counts of hypotheses, not of root causes |
 | M19 | Server-dropped attribute count | `SUM(server_dropped_attributes_count)` | spans | Privacy health signal. Excludes the client's own OTLP `dropped_attributes_count`, which is not stored |
 
+## Phase 2C implementation notes (M01–M15; no formula changed)
+
+Implemented in `backend/app/repositories/metrics.py` (SQL) and `backend/app/services/metrics.py` (assembly), served by `/api/v1/overview` and `/api/v1/models/compare` (`ARCHITECTURE.md` §5.2). Where this catalog leaves a detail open, the implementation chose:
+- **Populations.** Usage-level metrics: the usage rows of the project whose `started_at` is in `[from, to)`, each joined to its own inference span (status, `duration_ns`, `gen_ai.prompt.version`). Trace-level metrics: the traces whose `started_at` is in `[from, to)`.
+- **M02** is `COUNT(DISTINCT canonical_call_key)` as written (equal to the row count, because the key is unique per project). **M03** counts distinct `usage_records.call_id`, which ingest copies from the inference span's `llminsight.call_id`; `null` ("n/a") when no attempt carries one, with `attempts_without_call_id`.
+- **M04** counts inference spans with `status = ERROR` (UNSET and OK are not errors); `failed` and `succeeded` are reported with `n`. **M05** is labelled `traces.error_rate`, separately from M04.
+- **M06** over the inference spans of the population. **M07** over root spans (no parent) of the traces in the window; a trace with several roots contributes each; traces with no stored root are excluded and counted (`traces_without_root`).
+- **M08/M09** sums skip `NULL`; a sum is `null` when no row reports the value. Subsets carry `calls_reporting`, because an absent subset may mean 0 or not reported.
+- **M10/M11/M12**: `cost_complete` is true only when no row of the population has an unknown cost (`null` for an empty population). M12 is the exact quotient rounded once, half-even, to 10 places.
+- **M13** lists `(provider, model, price_version)` of computed rows through their exact `model_price_id`.
+- **M15** groups by `provider`, `requested_model`, `response_model` and the span's prompt version, and reports M02, M04, M06, M10, M11 plus the provenance counts per group.
+- **Filters** apply at each metric's own level (trace columns for trace-level metrics, the usage row and its span for usage-level metrics). `provenance=mixed` selects mixed traces; no usage row is mixed, so usage-level metrics are then empty.
+- **Rates** are JSON numbers rounded to 6 places next to their numerator and denominator; money is never a float.
+- **Trend** = the same counts and sums per UTC hour (windows ≤ 2 days) or day.
+- **Not recorded, reported as unavailable:** client time-to-first-chunk (M20, P1). The MVP has no streaming and `llminsight.attrmap.v1` does not allowlist the attribute; the API returns `{"available": false, "reason": "not_recorded"}`, never an estimate.
+- **T24 cross-check:** NumPy is not a project dependency. The tests compare `percentile_cont` with an exact implementation of NumPy's documented `linear` method (Hyndman–Fan type 7) and with hand-computed values (`backend/tests/integration/test_metrics_api.py`).
+
 ## P1 metrics (only if P0 is complete)
 
 | ID | Metric | Note |

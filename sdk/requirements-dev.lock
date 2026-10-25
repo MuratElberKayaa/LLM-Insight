@@ -3,13 +3,18 @@
 # backend/requirements.lock; ast_serialize is held at 0.12.1 (0.13.x was released after the cutoff).
 # Phase 2B: openai 3.28.0 (2026-10-09) and its new transitives httpx2/httpcore2 2.13.1, jiter 0.17.0, sniffio 1.3.1;
 # truststore is held at 0.10.4 (0.10.5 was released after the cutoff).
+# Phase 2C: fastapi 0.143.0, starlette 1.7.0, uvicorn 0.54.0, click 8.5.0, annotated-doc 0.0.5 for the FastAPI demo,
+# all identical to backend/requirements.lock (no new version enters the project).
 # Install: python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .
+annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 ast_serialize==0.12.1
 certifi==2026.7.22
 charset-normalizer==3.5.2
+click==8.5.0
 colorama==0.4.6
+fastapi==0.143.0
 googleapis-common-protos==1.75.5
 h11==0.16.0
 httpcore2==2.13.1
@@ -42,8 +47,10 @@ pytest==9.1.1
 requests==2.34.2
 ruff==0.17.0
 sniffio==1.3.1
+starlette==1.7.0
 truststore==0.10.4
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.5
 urllib3==2.8.0
+uvicorn==0.54.0

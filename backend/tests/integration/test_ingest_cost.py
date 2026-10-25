@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.models import ModelPrice
 from app.repositories import pricing as pricing_repo
 from app.services import pricing_catalog
+from tests.helpers import letters
 from tests.integration.conftest import ADMIN_AUTH
 from tests.integration.ingest_helpers import post, rows
 from tests.otlp import MS, body, inference_attrs, request, span
@@ -50,7 +51,7 @@ def verified_catalogue(ingest_engine) -> dict[str, int]:
 @pytest.fixture
 def synthetic_provider(ingest_engine):
     """A fresh SYNTHETIC provider namespace and a helper to add its prices."""
-    provider = f"synthetic.t{uuid.uuid4().hex[:12]}"
+    provider = f"synthetic.t{letters()}"
 
     def add(version: str, effective_from: datetime, **prices: Decimal) -> int:
         values = {

@@ -15,6 +15,10 @@ Status: **draft (Phase 0)**. None of the steps run yet. The default demo uses **
 | 6 | Run experiment v1 vs v2 (mock) on the 10+ case dataset | Pass rate with N, p50/p95 latency, cost (or unknown), SYNTHETIC label | `experiments` / `experiment_results` |
 | 7 | "How we measure" slide | OTLP protobuf ingest, idempotent ledger, unknown ≠ $0, metadata-only privacy | `ARCHITECTURE.md` diagrams |
 
+## Implemented so far (Phase 2C)
+
+The FastAPI demo exists (`demo_app/web.py`, mock and offline fake-OpenAI only): `sdk/.venv/Scripts/python -m demo_app.web` serves `POST /v1/summarize`, `/v1/summarize/multi`, `/v1/summarize/failure`, `/v1/summarize/retry` and `/v1/summarize/openai` on `127.0.0.1:8100`; `--drive` sends one request per route and prints the trace IDs. Each request is a `SERVER` root span (`POST /v1/summarize…`) with one `CLIENT` inference span per physical attempt, and the numbers appear in `/api/v1/overview`. Steps 1–3 can be rehearsed against the API now; the dashboard (Phase 3), the `validate_output` span and steps 4–6 (Phase 4) do not exist yet.
+
 ## Optional real-mode step (requires approval)
 
 Before step 1, send one real OpenAI request with `LLMI_PROVIDER_MODE=real`. The trace then shows `provenance=real`. The cost is `computed` only if a verified `model_prices` row exists; otherwise it stays `unknown`.

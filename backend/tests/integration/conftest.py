@@ -26,9 +26,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings
+from app.core.eventloop import UVICORN_LOOP
 from app.main import create_app
 from app.repositories import api_keys
 from tests.helpers import DUMMY_PEPPER, DUMMY_TOKEN, alembic_config, make_settings
+from tests.redaction import RedactedUrl
 
 REQUIRE_DB = os.environ.get("LLMI_TEST_REQUIRE_DB") == "1"
 
@@ -58,13 +60,16 @@ def _server_url() -> URL:
     return make_url(raw)
 
 
-def _render(url: URL) -> str:
-    return url.render_as_string(hide_password=False)
+def _render(url: URL) -> RedactedUrl:
+    """The URL with its password, as a `RedactedUrl`: it is passed to helpers and fixtures,
+    and pytest prints their arguments when a test fails (tests/redaction.py)."""
+    return RedactedUrl(url.render_as_string(hide_password=False))
 
 
 @pytest.fixture(scope="session")
 def disposable_db() -> Iterator[Callable[[str], str]]:
-    """Factory: create an empty `<name>` database (must end with _test), return its URL."""
+    """Factory: create an empty `<name>` database (must end with _test), return its URL
+    (a `RedactedUrl`)."""
     server = _server_url()
     admin = create_engine(
         server.set(database="postgres"),
@@ -179,10 +184,13 @@ def make_key(db) -> Callable[..., ProjectKey]:
 
 @contextmanager
 def run_live_server(settings: Settings) -> Iterator[LiveServer]:
-    """The real app under uvicorn on a free loopback port."""
+    """The real app under uvicorn on a free loopback port, on the same event loop as
+    `python -m app`."""
     app = create_app(settings)
     server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", lifespan="on")
+        uvicorn.Config(
+            app, host="127.0.0.1", port=0, log_level="warning", lifespan="on", loop=UVICORN_LOOP
+        )
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
