@@ -77,7 +77,7 @@ Backend log during the E2E run: 435 × `200`, 7 × `404` (unknown-project tests)
 | 6 | `npm run test:e2e` (frontend; real backend :8000 + PostgreSQL; dashboards :3001/:3002/:3003) | **44 passed, 0 failed, 0 skipped, 0 flaky** (44 distinct `ok`); run `847f406c7b99`, teardown deleted 27, 28, 29, remaining none | 0 |
 | 7 | `npm audit` / `npm ls --all` (frontend) | 0 vulnerabilities / clean | 0 / 0 |
 | 8 | `LLMI_TEST_REQUIRE_DB=1 python -m pytest -q -rs -p no:cacheprovider` (backend) | **1104 passed, 0 failed, 0 skipped**, 1 warning (R20) | 0 |
-| 9 | same (sdk) | **343 passed, 0 failed, 0 skipped** (unit + live backend) | 0 |
+| 9 | same (sdk) | **343 passed, 0 failed, 0 skipped** (unit + live backend); re-run after the §6.1 test fix: 343 passed, 0 skipped (Windows) and 343 passed (Linux container) | 0 |
 | 10 | `ruff check .` / `ruff format --check .` / `pip check` (backend) | passed / 89 files formatted / no broken requirements | 0 |
 | 11 | `ruff check` + `ruff format --check` on `scripts/dev/{seed_trace_fixtures,e2e_fixtures}.py` (root) | passed / 2 files formatted | 0 |
 | 12 | `alembic current` / `alembic check` (backend, dev DB) | `0002 (head)` / no new upgrade operations | 0 |
@@ -96,15 +96,50 @@ Not re-run in this task (unchanged since Phase 3C, documented there): the compos
 - **3A:** Next.js 16.4.3 / TypeScript 6.0.3 strict / Tailwind 4 / Recharts 3 dashboard on `127.0.0.1:3001`, project-scoped Node 22.23.4; `server-only` backend layer, loopback `Host` guard, nonce CSP; Overview M01–M15 with provenance and unknown-cost handling. Unit 107, E2E 12.
 - **3B:** Trace Explorer and Trace Detail (span tree + waterfall, logical calls/retries, attempts, span table), lossless JSON and BigInt ns. Unit 194, E2E 30.
 - **3C:** `/models` comparison, `GET /api/v1/projects` + selector, R40 `usage.models`, custom UTC ranges, bounded auto-refresh, R41 run-owned fixtures, compose `app` profile, CI workflow. Backend 1104, unit 236, E2E 44.
-- **Final:** truncated project listing stated explicitly (§2); full regression (§4); first GitHub Actions runs (§6).
+- **Final:** truncated project listing stated explicitly (§2); full regression (§4); first GitHub Actions runs, one Linux-only SDK test race found and fixed (§6).
+- **Commits:** closure commit A `db7f0bc` (report, selector fix; CI run 1 failed in the SDK tests) and closure commit B (SDK test race fix, CI evidence; the `phase-3` tag target if its run passes).
 
 ## 6. Task 6 — push and GitHub Actions
 
-The push is a normal fast-forward of `main` only (`git push origin main`; no force, no mirror, no tags, no other branch). Two runs are needed:
-- **Closure commit A** (this report and the selector fix) is pushed first. Its CI run cannot be recorded inside the commit itself.
-- **Commit B** then adds A's CI evidence (run id, URL, jobs, steps, log checks) to this section and closes R44. The `phase-3` tag goes on B, and only after B's own run has passed. B's run is reported in the final acceptance report to the user.
+Every push was a normal fast-forward of `main` only (`git push origin main`; no force, no mirror, no tags, no other branch). Before each push: `git fetch`, `origin/main` an ancestor of `HEAD`, and the history-wide secret scan (§3) at 0.
 
-_CI evidence for commit A: recorded by commit B below._
+### 6.1 Run 1: commit A `db7f0bc`, **failed** (one SDK test, Linux only)
+
+- Push `1554a93..db7f0bc`; `git ls-remote origin refs/heads/main` = `db7f0bc`.
+- Run [`40210403217`](https://github.com/MuratElberKayaa/LLM-Insight/actions/runs/40210403217): event `push`, workflow `ci`, `head_sha` `db7f0bc1e2e6f4dd0f8f7a33e062f5639e69d3cc`, runners `ubuntu-24.04` (GitHub-hosted, free for public repositories).
+- Job results:
+  - `docs`: success.
+  - `frontend`: success. All 11 steps ran (checkout, setup-node, throwaway env, `npm ci`, `npm audit`, typecheck, lint, unit tests, build, bundle scan).
+  - `python`: **failure**. Steps 1–13 succeeded, including the backend venv + `pip check`, Ruff, `alembic upgrade head` + `alembic check` and the **full backend suite against PostgreSQL**, plus the SDK venv, Ruff and strict mypy. Step 14 "SDK tests" failed; step 15 (stop PostgreSQL) ran.
+- Logs need an authenticated download (`403` anonymously; no `gh` CLI, and the stored Git credential was deliberately not extracted for it). The only check-run annotation is "Process completed with exit code 1."
+
+**Reproduction on Linux without GitHub credentials:**
+- `git archive HEAD` export, with throwaway secrets from `init_env.py` (the CI step).
+- A disposable `postgres:17` container on port 55432 with nothing published, and `python:3.12.6-slim-bookworm` in its network namespace, running the CI job's backend-env, SDK-env and SDK-test commands.
+- Result: **1 failed, 342 passed**. The failure was `tests/unit/test_demo_web.py::test_telemetry_outage_never_breaks_the_application`: `assert telemetry.force_flush(3000) is False` got `True`.
+- Both containers and their anonymous volume were removed afterwards; the dev container and its volume were untouched.
+
+**Root cause (measured, 3 runs per platform; `stats()` printed just before and after the flush in a throwaway copy):**
+
+| Platform | Before `force_flush` | `force_flush(3000)` | After the flush |
+|---|---|---|---|
+| Linux | 13 ended, 0 exported, **13 failed**, 2 batches failed | `True` | unchanged |
+| Windows | 13 ended, 0 exported, **0 failed** | `False` | 13 failed, 2 batches failed |
+
+The fixture's `schedule_delay_millis` is 50 ms, so the batch worker exports *during* the request loop. On Linux a refused loopback connect fails at once, so both batches failed before the explicit flush. That flush found an empty queue and, by the SDK's documented contract ("True only if that finished within the timeout and no export failed **meanwhile**"), returned `True`. On Windows a refused connect takes about 2 s (test duration 2.3 s vs 0.8 s), so the failures fell inside the flush window. The delivery outcome was identical on both platforms (0 of 13 delivered). The SDK behaved as documented; the test raced the background schedule against the explicit flush.
+
+**Fix (test only; no SDK, backend or workflow change, assertions unchanged):**
+- `test_demo_web.py::test_telemetry_outage_never_breaks_the_application` now uses `schedule_delay_millis=60_000`, as `test_telemetry.py` already does for the same purpose. No background export can run before the explicit flush, so the failed exports happen inside it on every platform.
+- `test_openai_adapter.py::test_backend_down_does_not_affect_the_call` has the same closed-port race. It passed only because its flush starts within 50 ms. It gets the same change.
+
+**Re-verification:**
+- Linux container: the two tests 5 × 5 passed, then the full SDK suite **343 passed**.
+- Windows: SDK Ruff and format clean, then the full SDK suite **343 passed, 0 skipped**.
+- The failing original was the control: it failed on Linux before the change, and the two changed lines are the only difference.
+
+### 6.2 Run 2: closure commit B (this commit)
+
+Commit B (the test fix and this documentation) is pushed as a fast-forward like commit A. The annotated `phase-3` tag is created **only if** B's own run passes every job. The tag annotation records that run's id and result, because a commit cannot contain the CI result of itself. If the run fails, there is no tag and the failure is reported.
 
 ## 7. Remaining limitations (recorded, not resolved)
 
@@ -112,6 +147,7 @@ _CI evidence for commit A: recorded by commit B below._
 - **Offline-only validation:** E2E and screenshots use run-owned SYNTHETIC projects; `real` provenance appears only as a count of 0. The dashboard was never exercised against real provider traffic.
 - **R36** ESLint 9.39.5 is end-of-support upstream (ESLint 10 blocked by `eslint-config-next` plugin peers); dev-only. **R37** Next.js 16.4.3, React 19.3.1, Node 22.23.4 and `zod` 4.6.6 are security-driven exceptions to the two-week rule. **R38** CSP keeps `style-src 'unsafe-inline'` for chart inline styles (scripts stay nonce + `strict-dynamic`). **R39** the dashboard has no login; any local process or user can read it on loopback.
 - **Docker ingest (R43):** the compose `app` profile publishes only the dashboard; the containerised backend's ingest `/v1/traces` is not reachable from the host, so host SDKs and demos still need `python -m app` on the host. The dashboard binds `0.0.0.0` inside the shared network namespace (published on host loopback only). The clean-clone compose demo (T47) is a Phase 5 item.
+- **Test timing (R48):** several SDK unit tests assert `force_flush(...) is False` against a stub that rejects exports, with the 50 ms schedule delay. They rely on the explicit flush starting within 50 ms of the span ending (it starts immediately). They passed on Windows and Linux, but they carry the same latent race as the fixed test (§6.1).
 - **CI coverage and exclusions (R44):** CI runs the documentation verifier; backend and SDK lint, format, strict types, `pip check`, migrations + `alembic check` and the full suites against real PostgreSQL (`LLMI_TEST_REQUIRE_DB=1`); and frontend `npm audit`, typecheck, lint, unit tests, build and bundle scan. **Excluded and run locally only:** the Playwright E2E suite (needs a seeded live backend and an installed Edge) and the compose image build. The Windows-specific R32/R34 behaviour is exercised only locally.
 - **Project listing cap (R45):** at most 200 projects by id are listed (single admin token, every project visible to it); beyond that the dashboard says the list is incomplete and projects open by `?project=<id>`. Per-project authorization is a prerequisite for any public deployment.
 - R27, R42, R46, R47 unchanged (`SOURCES_AND_RISKS.md`).

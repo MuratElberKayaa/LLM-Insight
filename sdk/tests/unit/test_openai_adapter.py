@@ -525,8 +525,13 @@ def test_provider_error_survives_broken_span_finishing(telemetry, stub, monkeypa
 
 
 def test_backend_down_does_not_affect_the_call(make_config):
+    # Long schedule delay: the failed export happens inside force_flush, not before it.
     t = lli.init(
-        make_config(f"http://127.0.0.1:{free_port()}/v1/traces", export_timeout_seconds=0.5)
+        make_config(
+            f"http://127.0.0.1:{free_port()}/v1/traces",
+            export_timeout_seconds=0.5,
+            schedule_delay_millis=60_000,
+        )
     )
     try:
         result = call(observed(t, FakeOpenAI([ok()])))

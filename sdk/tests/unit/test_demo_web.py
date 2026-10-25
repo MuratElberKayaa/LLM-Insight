@@ -200,8 +200,15 @@ def test_health_is_not_traced(demo, stub, telemetry):
 
 def test_telemetry_outage_never_breaks_the_application(make_config):
     """Backend unreachable: every route still answers, without waiting on export (ADR-09)."""
+    # Long schedule delay: the failed exports must happen inside the explicit force_flush
+    # below. With the 50 ms default a background export can fail before it (instantly on
+    # Linux, where a refused loopback connect does not wait), leaving nothing to flush.
     telemetry = lli.init(
-        make_config(f"http://127.0.0.1:{free_port()}/v1/traces", export_timeout_seconds=0.5)
+        make_config(
+            f"http://127.0.0.1:{free_port()}/v1/traces",
+            export_timeout_seconds=0.5,
+            schedule_delay_millis=60_000,
+        )
     )
     attempts: list[str] = []
     with block_network(attempts):
