@@ -337,6 +337,20 @@ describe("project selector", () => {
     assert.doesNotMatch(failed, /role="alert"/, "an outage is reported once, by the page");
     assert.match(failed, /configured default/);
   });
+  it("never presents a truncated listing as complete", () => {
+    const complete = html(<ProjectSelector context={ctx({ ok: true, data: listing })} action="/" hidden={[]} />);
+    assert.doesNotMatch(complete, /project-list-truncated|More projects exist|incomplete/);
+    const many: ProjectList = {
+      items: Array.from({ length: 200 }, (_, i) => ({ id: i + 1, name: `p${i + 1}`, created_at: "2026-10-24T10:00:00.000000Z" })),
+      truncated: true,
+      limit: 200,
+    };
+    const m = html(<ProjectSelector context={ctx({ ok: true, data: many }, "250")} action="/" hidden={[]} />);
+    assert.equal(m.match(/<option value="\d+"/g)?.length, 201, "200 listed + the unlisted current project");
+    assert.match(m, /<option disabled="" value="" data-testid="project-list-truncated-option">More projects exist: only the first 200 by id are listed<\/option><\/select>/);
+    assert.match(m, /data-testid="project-list-truncated">The project list is incomplete: only the first 200 projects by id are listed/);
+    assert.match(m, /#250 \(not in the listing\)/);
+  });
   it("renders nothing without a resolved project", () => {
     assert.equal(html(<ProjectSelector context={{ projectId: null, explicit: false, projects: null }} action="/" hidden={[]} />), "");
   });
