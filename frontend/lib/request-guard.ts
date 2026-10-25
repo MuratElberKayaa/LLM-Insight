@@ -16,6 +16,51 @@ export function isAllowedMethod(method: string): boolean {
 }
 
 /**
+ * Phase 4B: the only pages whose forms post Server Actions. Every other path stays GET/HEAD.
+ * Ids are checked by shape here and validated again by the action and the backend.
+ */
+const WRITE_PAGES: readonly RegExp[] = [/^\/traces\/[0-9a-f]{32}$/, /^\/traces\/[0-9a-f]{32}\/reviews\/[1-9][0-9]{0,18}\/test-case$/, /^\/datasets$/];
+
+export function isWritePage(pathname: string): boolean {
+  return WRITE_PAGES.some((re) => re.test(pathname));
+}
+
+const ACTION_ID_RE = /^[A-Za-z0-9_-]{8,256}$/;
+
+export interface ActionRequest {
+  host: string | null;
+  origin: string | null;
+  secFetchSite: string | null;
+  nextAction: string | null;
+}
+
+/**
+ * CSRF check for a Server Action POST (ARCHITECTURE.md §5.8). The dashboard has no session or
+ * cookie, so the defences are about where the request comes from:
+ * - `Origin` is required and must be this loopback host (Next.js alone lets a request without
+ *   an Origin through, with a warning);
+ * - `Sec-Fetch-Site`, when the browser sends it, must be `same-origin`;
+ * - the `Next-Action` header must be present: Next.js's client sends it, while a cross-site
+ *   HTML form cannot set a header, and a cross-site script would need a CORS preflight that
+ *   the dashboard never answers.
+ * Returns null when the request may proceed, else a fixed reason (never request data).
+ */
+export function actionRequestProblem(req: ActionRequest): string | null {
+  if (!isLoopbackHost(req.host)) return "host";
+  if (req.origin === null) return "origin missing";
+  let origin: URL;
+  try {
+    origin = new URL(req.origin);
+  } catch {
+    return "origin malformed";
+  }
+  if ((origin.protocol !== "http:" && origin.protocol !== "https:") || origin.host.toLowerCase() !== (req.host ?? "").trim().toLowerCase()) return "cross-origin";
+  if (req.secFetchSite !== null && req.secFetchSite !== "same-origin") return "cross-site";
+  if (req.nextAction === null || !ACTION_ID_RE.test(req.nextAction)) return "not a server action";
+  return null;
+}
+
+/**
  * Content-Security-Policy for the dashboard.
  * - Scripts: nonce + 'strict-dynamic' (Next.js tags its own scripts with the nonce).
  *   Development adds 'unsafe-eval' (React dev tooling) and the HMR websocket.

@@ -11,6 +11,7 @@
  */
 
 import type { LosslessInt } from "../json";
+import type { FailureReview, ReviewSummary } from "./review-types";
 import type { CostUnknownReason, TraceProvenance, UsageProvenance, UsageSource, Window } from "./types";
 
 export const TRACE_STATUSES = ["ok", "error"] as const;
@@ -74,8 +75,13 @@ export interface TraceSummary {
   usage: TraceUsageSummary;
 }
 
+/** A list item (Phase 4B): human review counts tell reviewed and unreviewed traces apart. */
+export interface TraceListItem extends TraceSummary {
+  reviews: ReviewSummary;
+}
+
 export interface TraceList {
-  items: TraceSummary[];
+  items: TraceListItem[];
   next_cursor: string | null;
   window: Window;
 }
@@ -136,4 +142,7 @@ export interface TraceDetail {
   spans_truncated: boolean;
   usage: UsageRecord[];
   usage_truncated: boolean;
+  /** Human failure reviews of this trace (Phase 4B), oldest first, at most 200. */
+  reviews: FailureReview[];
+  reviews_truncated: boolean;
 }

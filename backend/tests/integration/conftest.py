@@ -134,7 +134,10 @@ def settings_for(migrated_url) -> Callable[..., Settings]:
 # A separate disposable database whose tables are truncated before every ingest test, so
 # committed ingest rows never leak between tests (the constraint tests above roll back).
 
-INGEST_TABLES = "projects, project_api_keys, traces, spans, usage_records"
+INGEST_TABLES = (
+    "projects, project_api_keys, traces, spans, usage_records,"
+    " test_datasets, failure_reviews, test_cases"
+)
 
 
 @pytest.fixture(scope="session")

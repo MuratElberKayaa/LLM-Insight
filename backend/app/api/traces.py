@@ -38,6 +38,7 @@ from app.api.admin import (
     storage_unavailable,
 )
 from app.core.db import RETRYABLE_DB_ERRORS
+from app.repositories import reviews as review_repo
 from app.repositories import traces as repo
 
 logger = logging.getLogger("app.api")
@@ -50,6 +51,8 @@ MAX_LIMIT = 200
 DEFAULT_LIMIT = 50
 BIGINT_MAX = 2**63 - 1
 TRACE_ID_PATTERN = r"^[0-9a-f]{32}$"
+MAX_REVIEWS = 200  # human reviews returned per trace detail; `reviews_truncated` beyond
+MAX_CASE_LINKS = 2000  # test-case links across those reviews (one per dataset and review)
 _CURSOR_RE = re.compile(r"v1:([0-9]{1,19}):([0-9a-f]{32})")
 
 ProjectParam = Annotated[int, Query(ge=1, le=BIGINT_MAX, description="Project id (required)")]
@@ -159,6 +162,42 @@ def _no_models() -> dict[str, Any]:
     return {"items": [], "distinct": 0, "truncated": False}
 
 
+def review_summary(counts: tuple[int, int] | None) -> dict[str, int]:
+    """Phase 4B (additive): human reviews of a list item, so reviewed and unreviewed traces
+    can be told apart. `not_closed` counts reviews whose status is `open` or `in_review`."""
+    total, not_closed = counts or (0, 0)
+    return {"total": total, "not_closed": not_closed}
+
+
+def review_json(r: Any, cases: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """One human failure review (§4.9) as stored; its text is human-entered and redacted."""
+    out: dict[str, Any] = {
+        "id": r.id,
+        "trace_id": r.trace_id,
+        "span_id": r.span_id,
+        "issue_type": r.issue_type,
+        "evidence": r.evidence,
+        "hypothesis": r.hypothesis,
+        "review_status": r.review_status,
+        "reviewer_decision": r.reviewer_decision,
+        "created_by": r.created_by,
+        "created_at": iso_from_datetime(r.created_at),
+        "updated_at": iso_from_datetime(r.updated_at),
+    }
+    if cases is not None:
+        out["test_cases"] = cases
+    return out
+
+
+def _reviews(rows: list[Any], case_rows: list[Any]) -> list[dict[str, Any]]:
+    cases: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for c in case_rows:
+        cases[c.origin_review_id].append(
+            {"id": c.id, "dataset_id": c.dataset_id, "dataset_name": c.dataset_name}
+        )
+    return [review_json(r, cases.get(r.id, [])) for r in rows]
+
+
 def trace_summary(r: Any, models: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "trace_id": r.trace_id,
@@ -259,21 +298,33 @@ async def list_traces(
     position = decode_cursor(cursor) if cursor is not None else None
     f = repo.TraceFilter(project, start, end, status, provenance, model)
 
-    def read(session: Session) -> tuple[list[Any], dict[str, dict[str, Any]]]:
+    def read(
+        session: Session,
+    ) -> tuple[list[Any], dict[str, dict[str, Any]], dict[str, tuple[int, int]]]:
         if not repo.project_exists(session, project):
             raise not_found()
         found = repo.list_traces(session, f, position, limit)
         ids = [r.trace_id for r in found[:limit]]
-        return found, models_by_trace(repo.trace_models(session, project, ids))
+        return (
+            found,
+            models_by_trace(repo.trace_models(session, project, ids)),
+            review_repo.review_counts(session, project, ids),
+        )
 
-    rows, models = await run_in_threadpool(read_snapshot, request, read)
+    rows, models, review_counts = await run_in_threadpool(read_snapshot, request, read)
     page = rows[:limit]
     next_cursor = (
         encode_cursor(page[-1].started_at, page[-1].trace_id) if len(rows) > limit else None
     )
     return JSONResponse(
         {
-            "items": [trace_summary(r, models.get(r.trace_id)) for r in page],
+            "items": [
+                {
+                    **trace_summary(r, models.get(r.trace_id)),
+                    "reviews": review_summary(review_counts.get(r.trace_id)),
+                }
+                for r in page
+            ],
             "next_cursor": next_cursor,
             "window": {"from": iso_from_datetime(start), "to": iso_from_datetime(end)},
         },
@@ -287,21 +338,32 @@ async def get_trace(
     trace_id: Annotated[str, Path(pattern=TRACE_ID_PATTERN, max_length=32)],
     project: ProjectParam,
 ) -> JSONResponse:
-    """Span tree (flat, with roles and children), usage rows and linked reviews of one trace.
-    Failure reviews arrive in Phase 4; until then `reviews` is always empty."""
+    """Span tree (flat, with roles and children), usage rows and the linked human failure
+    reviews of one trace (Phase 4B), each with the test cases converted from it."""
 
-    def read(session: Session) -> tuple[Any, dict[str, Any] | None, list[Any], list[Any]]:
+    def read(
+        session: Session,
+    ) -> tuple[Any, dict[str, Any] | None, list[Any], list[Any], list[Any], list[Any]]:
         trace = repo.get_trace(session, project, trace_id)
         if trace is None:  # also an unknown project: one indistinguishable 404
             raise not_found()
+        reviews = list(review_repo.reviews_for_trace(session, project, trace_id, MAX_REVIEWS))
         return (
             trace,
             models_by_trace(repo.trace_models(session, project, [trace_id])).get(trace_id),
             repo.get_spans(session, project, trace_id),
             repo.get_usage(session, project, trace_id),
+            reviews,
+            list(
+                review_repo.cases_for_reviews(
+                    session, project, [r.id for r in reviews[:MAX_REVIEWS]], MAX_CASE_LINKS
+                )
+            ),
         )
 
-    trace, models, span_rows, usage_rows = await run_in_threadpool(read_snapshot, request, read)
+    trace, models, span_rows, usage_rows, review_rows, case_rows = await run_in_threadpool(
+        read_snapshot, request, read
+    )
     spans_truncated = len(span_rows) > repo.DETAIL_MAX_SPANS
     span_rows = span_rows[: repo.DETAIL_MAX_SPANS]
     children: dict[str, list[str]] = defaultdict(list)
@@ -316,7 +378,8 @@ async def get_trace(
             "spans_truncated": spans_truncated,
             "usage": [_usage(u) for u in usage_rows[: repo.DETAIL_MAX_SPANS]],
             "usage_truncated": usage_truncated,
-            "reviews": [],
+            "reviews": _reviews(review_rows[:MAX_REVIEWS], case_rows),
+            "reviews_truncated": len(review_rows) > MAX_REVIEWS,
         },
         headers=NO_STORE,
     )

@@ -3,7 +3,10 @@
 Local-only Next.js App Router dashboard for the LLM Insight backend. Phase 3A delivered the
 foundation (shell, design system, server-side API layer) and the **Overview** page; Phase 3B
 adds the **Trace Explorer** (`/traces`) and **Trace Detail** (`/traces/{trace_id}`) with the
-span tree and waterfall. The model comparison page, reviews and experiments are not built yet.
+span tree and waterfall; Phase 3C adds model comparison. Phase 4B adds the **human failure review**
+and the unverified machine-observation panel on Trace Detail, **Trace-to-Testset**
+(`/traces/{trace_id}/reviews/{review_id}/test-case`) and **Datasets** (`/datasets`). Experiments are
+not built yet (Phase 4C).
 
 ## Runtime and versions
 
@@ -59,7 +62,7 @@ No `NEXT_PUBLIC_*` variable exists or is allowed (ESLint rule + static test).
 ## Architecture
 
 ```
-browser ──GET──▶ proxy.ts (loopback Host only, GET/HEAD only, CSP nonce)
+browser ──GET──▶ proxy.ts (loopback Host only, GET/HEAD, CSP nonce; POST only for Server Actions on the form pages, ARCHITECTURE.md §5.8)
                    ├─▶ app/page.tsx (Overview) ─────────▶ lib/server/overview.ts ─┐
                    ├─▶ app/models/page.tsx (Phase 3C) ───▶ lib/server/models.ts ───┤
                    └─▶ app/traces/page.tsx, [traceId] ───▶ lib/server/traces.ts ───┤
@@ -73,6 +76,7 @@ browser ──GET──▶ proxy.ts (loopback Host only, GET/HEAD only, CSP nonc
 - `components/traces/` — `trace-filters`, `trace-list` (table ≥ md, cards below), `trace-values` (status, tokens, cost, ids), `trace-detail-sections` (provenance notice, facts, status breakdown, logical calls, attempts, span table) and `waterfall` (client: ARIA tree, keyboard, bounded rows, selected-span panel).
 - `lib/server/` — `server-only` modules: `config.ts` (env validation), `backend.ts` (the only backend client), `context.ts` (Phase 3C: the page's project scope, the project listing, the echoed-project check), `overview.ts`, `models.ts` and `traces.ts` (page loaders).
 - Phase 3C: `app/models/` (Model comparison), `components/models/model-comparison.tsx`, `components/charts/model-charts.tsx`, `components/project-selector.tsx`, `components/range-form.tsx` (custom UTC range), `components/auto-refresh.tsx`; `lib/project.ts`, `lib/model-query.ts`, `lib/model-groups.ts`, `lib/auto-refresh.ts`.
+- Phase 4B: `components/reviews/` (review section, review and decision forms, diagnostics panel), `components/datasets/` (dataset and test-case forms, case list), `app/datasets/`, `app/traces/[traceId]/reviews/[reviewId]/test-case/`; `lib/actions/{reviews,datasets}.ts` (the only `"use server"` modules: four Server Actions, each re-validating its form and calling one allowlisted write), `lib/server/{reviews,datasets,review-page}.ts`, `lib/review-forms.ts` (form parsing), `lib/action-state.ts`, `lib/api/{review-types,review-schema,diagnostics,ids}.ts`. Writes go through `sendJson` in `lib/server/backend.ts` (method + path allowlist).
 - `lib/api/` — response types mirroring `backend/app/services/metrics.py`, decoders, failure kinds and copy.
 - `lib/` — pure helpers: `validate.ts`, `decimal.ts` (BigInt money), `format.ts` (UTC, en-US), `time-range.ts`, `trend.ts`, `provenance.ts`, `request-guard.ts`; Phase 3B: `json.ts` (lossless JSON: integers above 2^53 keep their digits), `nanos.ts` (BigInt nanosecond math), `trace-query.ts` (trace-list URL state), `span-tree.ts` (span hierarchy, waterfall geometry, logical calls), `api/trace-types.ts` and `api/trace-schema.ts`.
 

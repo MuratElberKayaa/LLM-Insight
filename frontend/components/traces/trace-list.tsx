@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { TraceList as TraceListData, TraceModels, TraceSummary } from "../../lib/api/trace-types";
+import type { ReviewSummary } from "../../lib/api/review-types";
+import type { TraceList as TraceListData, TraceListItem, TraceModels, TraceSummary } from "../../lib/api/trace-types";
 import { formatInt } from "../../lib/format";
 import { formatDurationNs, formatIsoNs } from "../../lib/nanos";
 import { firstPageState, nextPageState, traceDetailHref, traceListHref, type ListState } from "../../lib/trace-query";
@@ -73,7 +74,18 @@ export function TraceModelsCell({ models, calls }: { models: TraceModels; calls:
   );
 }
 
-function columns(state: ListState): Column<TraceSummary>[] {
+/** Phase 4B: reviewed vs not reviewed, from the backend's per-trace review counts. */
+export function ReviewCell({ reviews }: { reviews: ReviewSummary }) {
+  if (reviews.total === 0) return <span className="text-ink-3" data-testid="review-cell" data-reviews="0">Not reviewed</span>;
+  return (
+    <span className="text-ink-2" data-testid="review-cell" data-reviews={reviews.total}>
+      {reviews.total} review{reviews.total === 1 ? "" : "s"}
+      {reviews.not_closed > 0 ? ` · ${reviews.not_closed} not closed` : " · all closed"}
+    </span>
+  );
+}
+
+function columns(state: ListState): Column<TraceListItem>[] {
   return [
     { key: "trace", header: "Service · trace ID", rowHeader: true, render: (t) => <TraceLink t={t} state={state} /> },
     { key: "started", header: "Started (UTC)", render: started },
@@ -86,11 +98,12 @@ function columns(state: ListState): Column<TraceSummary>[] {
     { key: "cost", header: "Known cost", align: "right", render: (t) => <TraceCost usage={t.usage} /> },
     { key: "pv", header: "Prompt version", render: (t) => (t.prompt_version === null ? <NullValue label="none or inconsistent" /> : <code className="font-mono text-xs">{t.prompt_version}</code>) },
     { key: "prov", header: "Provenance", render: (t) => <ProvenanceBadge provenance={t.provenance} emphasis={t.provenance === "synthetic"} /> },
+    { key: "review", header: "Human review", render: (t) => <ReviewCell reviews={t.reviews} /> },
   ];
 }
 
 /** Below `md`: one card per trace with the same values as the table row. */
-function TraceCards({ items, state }: { items: TraceSummary[]; state: ListState }) {
+function TraceCards({ items, state }: { items: TraceListItem[]; state: ListState }) {
   return (
     <ul className="space-y-3 md:hidden" aria-label="Traces" data-testid="trace-cards">
       {items.map((t) => (
@@ -138,6 +151,12 @@ function TraceCards({ items, state }: { items: TraceSummary[]; state: ListState 
               <dt className="text-xs text-ink-3">Tokens in / out</dt>
               <dd className="text-ink-2">
                 <TokenSummary usage={t.usage} />
+              </dd>
+            </div>
+            <div className="col-span-2">
+              <dt className="text-xs text-ink-3">Human review</dt>
+              <dd>
+                <ReviewCell reviews={t.reviews} />
               </dd>
             </div>
           </dl>

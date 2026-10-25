@@ -43,9 +43,9 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T30 | API/DB | DB outage / transaction rollback | Mid-batch failure → nothing persisted; DB down → `503` + Retry-After; `/health/ready` `503` | ★ | | 1→5 | I | PASS (phase-1c) |
 | T31 | API/DB | Migration clean recreate | `alembic upgrade head` / `downgrade base` / `upgrade head` on a disposable DB; schema matches `ARCHITECTURE.md` §4 | | | 1→5 | I | PASS (phase-2b) |
 | T32 | API/DB | Status counts and total distinct API calls | M02/M04 counts match fixture; trace vs inference counts separate | ★ | | 2→3 | I | PASS (phase-2c) |
-| T33 | Eval/workflow | Failure review create | Valid enum values → `201`; invalid `issue_type` → `422`; duplicate open → `409` | ★ | | 4 | I | NOT RUN |
-| T34 | Eval/workflow | No approval no test case | Missing or false `approved` → `422`, no row | ★ | ⛔ | 4→5 | I | NOT RUN |
-| T35 | Eval/workflow | Redaction before case save | Email / phone / key-like input is masked before insert; `redaction_applied=true` | ★ | ⛔ | 4→5 | U/I | NOT RUN |
+| T33 | Eval/workflow | Failure review create | Valid enum values → `201`; invalid `issue_type` → `422`; duplicate open → `409` | ★ | | 4 | I | PASS (phase-4b) |
+| T34 | Eval/workflow | No approval no test case | Missing or false `approved` → `422`, no row | ★ | ⛔ | 4→5 | I | PASS (phase-4b) |
+| T35 | Eval/workflow | Redaction before case save | Email / phone / key-like input is masked before insert; `redaction_applied=true` | ★ | ⛔ | 4→5 | U/I | PASS (phase-4b) |
 | T36 | Eval/workflow | Golden JSON pass | Valid output passes the JSON Schema + field rule | ★ | | 4 | U | NOT RUN |
 | T37 | Eval/workflow | Golden JSON fail | Schema violation fails with `evaluation_detail` | ★ | | 4 | U | NOT RUN |
 | T38 | Eval/workflow | Prompt A/B same dataset | Both versions run on identical case IDs | | | 4 | I | NOT RUN |
@@ -69,6 +69,8 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 **Phase 3 final re-verification (`reports/phase-3-final.md` §4, §8):** T41, T42, T45, T46 and T48 were re-run on the closure state (44/44 E2E, bundle scan 0); their statuses stay `PASS (phase-3c)`. Still open: T33–T40 (Phase 4, NOT RUN), T43 (PARTIAL, Phase 5) and T47 (Phase 5, NOT RUN).
 
 **Phase 4A (`reports/phase-4a.md`):** trace diagnostics are additive scope outside the 48 IDs. Their tests are recorded in the report as `D01`–`D20` (diagnostic test groups, not matrix IDs). **No matrix status changed:** T33–T40 test the human Failure Review, Trace-to-Testset, golden-set and A/B workflow, which Phase 4A does not implement, so they stay NOT RUN. The diagnostics endpoint re-applies the T18 (unknown never 0), T27 (orphans) and T28 (project isolation) rules to a new response; those statuses are unchanged.
+
+**Phase 4B (`reports/phase-4b.md` §6):** T33, T34 and T35 are implemented and **PASS (phase-4b)** on real PostgreSQL (integration) and through the browser (E2E: review, decision, dataset, approved test case, masked input), with mutation checks. T34 and T35 are blockers re-verified in Phase 5 (4→5). **T36–T40 stay NOT RUN:** they test the deterministic rule engine, A/B runs and evaluation results of Phase 4C; Phase 4B only stores well-formed rules and allows a case without `expected_output` (the precondition of T40), which is not evaluated. T31 was re-run with migration `0003` (upgrade → downgrade → upgrade, plus 0002→0003 with data and refused downgrade with human rows); its status stays `PASS (phase-2b)`. T41 (hostile review text, span names and test-case content render as text) and T42 (bundle scan 0, no token in any E2E response of the new pages) were re-verified on the Phase 4B pages; their statuses stay `PASS (phase-3c)`.
 
 ## Sub-cases (inherit the parent's criticality)
 

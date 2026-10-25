@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { ApiFailure, ApiResult } from "../api/result";
+import { CONFLICT_CODES, type ApiFailure, type ApiResult, type ConflictCode } from "../api/result";
 import type { BackendHealth } from "../api/types";
 import { parseJsonLossless } from "../json";
 import { isProjectId } from "../project";
@@ -19,22 +19,62 @@ import type { DashboardConfig } from "./config";
  * - every body is decoded against the documented schema before use.
  */
 
-export type BackendPath = "/api/v1/overview" | "/api/v1/models/compare" | "/api/v1/traces" | `/api/v1/traces/${string}` | "/api/v1/projects";
+export type BackendPath =
+  | "/api/v1/overview"
+  | "/api/v1/models/compare"
+  | "/api/v1/traces"
+  | `/api/v1/traces/${string}`
+  | "/api/v1/projects"
+  | "/api/v1/datasets"
+  | `/api/v1/datasets/${string}/cases`;
 
-/** Runtime allowlist behind the type: a trace id path segment must be 32 lowercase hex. */
-const PATH_RE = /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|projects)$/;
+/**
+ * Runtime allowlist behind the type: a trace id path segment must be 32 lowercase hex, a
+ * dataset id a positive integer. Phase 4B adds the diagnostics read and the dataset reads.
+ */
+const PATH_RE =
+  /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|traces\/[0-9a-f]{32}\/diagnostics|projects|datasets|datasets\/[1-9][0-9]{0,18}\/cases)$/;
 /** Endpoints without a `project` parameter. */
 const GLOBAL_PATHS: ReadonlySet<string> = new Set(["/api/v1/projects"]);
+
+/**
+ * Phase 4B write allowlist: each path accepts exactly one method (ARCHITECTURE.md §5.7). The
+ * dashboard writes only through these four endpoints, from explicit form submissions.
+ */
+export type WritePath = "/api/v1/failure-reviews" | `/api/v1/failure-reviews/${string}` | "/api/v1/datasets" | `/api/v1/datasets/${string}/cases`;
+export type WriteMethod = "POST" | "PATCH";
+const WRITE_ROUTES: readonly { method: WriteMethod; re: RegExp }[] = [
+  { method: "POST", re: /^\/api\/v1\/failure-reviews$/ },
+  { method: "PATCH", re: /^\/api\/v1\/failure-reviews\/[1-9][0-9]{0,18}$/ },
+  { method: "POST", re: /^\/api\/v1\/datasets$/ },
+  { method: "POST", re: /^\/api\/v1\/datasets\/[1-9][0-9]{0,18}\/cases$/ },
+];
 
 /** Which project a request reads: a validated id, or `null` for the project listing only. */
 export interface Scope {
   project: string | null;
 }
 const TRACE_ID_RE = /^[0-9a-f]{32}$/;
+const RECORD_ID_RE = /^[1-9][0-9]{0,18}$/;
 
 /** `/api/v1/traces/{id}` for a validated trace id, or null (never builds a path from other input). */
 export function traceDetailPath(traceId: string): BackendPath | null {
   return TRACE_ID_RE.test(traceId) ? `/api/v1/traces/${traceId}` : null;
+}
+
+/** `/api/v1/traces/{id}/diagnostics` for a validated trace id, or null. */
+export function diagnosticsPath(traceId: string): BackendPath | null {
+  return TRACE_ID_RE.test(traceId) ? `/api/v1/traces/${traceId}/diagnostics` : null;
+}
+
+/** `/api/v1/datasets/{id}/cases` for a validated dataset id, or null. */
+export function datasetCasesPath(datasetId: string): `/api/v1/datasets/${string}/cases` | null {
+  return RECORD_ID_RE.test(datasetId) && BigInt(datasetId) <= 2n ** 63n - 1n ? `/api/v1/datasets/${datasetId}/cases` : null;
+}
+
+/** `/api/v1/failure-reviews/{id}` for a validated review id, or null. */
+export function reviewPath(reviewId: string): WritePath | null {
+  return RECORD_ID_RE.test(reviewId) && BigInt(reviewId) <= 2n ** 63n - 1n ? `/api/v1/failure-reviews/${reviewId}` : null;
 }
 
 export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -99,11 +139,27 @@ function errorFields(body: string | null): string[] | undefined {
   }
 }
 
+/** A 409's `error.code`, only when it is a documented conflict code (never free text). */
+function conflictCode(body: string | null): ConflictCode | undefined {
+  if (body === null) return undefined;
+  try {
+    const code = (JSON.parse(body) as { error?: { code?: unknown } })?.error?.code;
+    return (CONFLICT_CODES as readonly unknown[]).includes(code) ? (code as ConflictCode) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function failureForStatus(status: number, headers: Headers, body: string | null): ApiFailure {
   const ra = retryAfter(headers);
   const withRetry = (f: ApiFailure): ApiFailure => (ra === undefined ? f : { ...f, retryAfterSeconds: ra });
   if (status === 401) return { kind: "unauthorized", status };
   if (status === 404) return { kind: "not_found", status };
+  if (status === 409) {
+    const code = conflictCode(body);
+    return code === undefined ? { kind: "conflict", status } : { kind: "conflict", status, code };
+  }
+  if (status === 413) return { kind: "payload_too_large", status };
   if (status === 422) {
     const fields = errorFields(body);
     return fields === undefined ? { kind: "invalid_request", status } : { kind: "invalid_request", status, fields };
@@ -121,8 +177,11 @@ function networkFailure(err: unknown): ApiFailure {
 
 function log(path: string, failure: ApiFailure): void {
   // Kind, status and schema path only: never the token, the query or a response body.
-  // A trace id is logged as its endpoint shape only.
-  const endpoint = path.replace(/^\/api\/v1\/traces\/[0-9a-f]{32}$/, "/api/v1/traces/{trace_id}");
+  // Trace, review and dataset ids are logged as their endpoint shape only.
+  const endpoint = path
+    .replace(/^\/api\/v1\/traces\/[0-9a-f]{32}/, "/api/v1/traces/{trace_id}")
+    .replace(/^\/api\/v1\/failure-reviews\/\d+$/, "/api/v1/failure-reviews/{id}")
+    .replace(/^\/api\/v1\/datasets\/\d+\/cases$/, "/api/v1/datasets/{id}/cases");
   const parts = [failure.kind, failure.status, failure.detail].filter((p) => p !== undefined);
   console.warn(`[llm-insight] backend ${endpoint} failed: ${parts.join(" ")}`);
 }
@@ -183,6 +242,70 @@ export async function getJson<T>(
   let parsed: unknown;
   try {
     parsed = parseJsonLossless(body);
+  } catch {
+    return fail({ kind: "malformed", detail: "invalid JSON" });
+  }
+  const decoded = decode(decoder, parsed);
+  if (!decoded.ok) return fail({ kind: "malformed", detail: `schema mismatch at ${decoded.path}` });
+  return { ok: true, data: decoded.value };
+}
+
+/**
+ * Phase 4B: send one JSON write to an allowlisted `/api/v1` endpoint for one explicit project
+ * and decode the response. Called only from Server Actions (an explicit form submission);
+ * never from a render. Same transport rules as reads: bearer header to the loopback backend
+ * only, no redirects, a deadline, a response cap, schema-decoded bodies, no body in logs.
+ */
+export async function sendJson<T>(
+  config: DashboardConfig,
+  method: WriteMethod,
+  path: WritePath,
+  project: string,
+  body: unknown,
+  decoder: Decoder<T>,
+  deps: BackendDeps = {},
+): Promise<ApiResult<T>> {
+  const doFetch = deps.fetch ?? fetch;
+  if (!WRITE_ROUTES.some((r) => r.method === method && r.re.test(path))) {
+    const failure: ApiFailure = { kind: "config", detail: "refused a write outside the allowlist" };
+    log("(refused write)", failure);
+    return { ok: false, error: failure };
+  }
+  if (!isProjectId(project)) {
+    const failure: ApiFailure = { kind: "config", detail: "refused a write without a valid project scope" };
+    log(path, failure);
+    return { ok: false, error: failure };
+  }
+  const url = new URL(path, config.baseUrl);
+  url.searchParams.set("project", project);
+  const fail = (failure: ApiFailure): ApiResult<T> => {
+    log(path, failure);
+    return { ok: false, error: failure };
+  };
+
+  let response: Response;
+  let text: string | null;
+  try {
+    response = await doFetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(config.timeoutMs),
+    });
+    text = await readCapped(response, MAX_RESPONSE_BYTES);
+  } catch (err) {
+    // A timeout after sending leaves the outcome unknown: the caller says so instead of
+    // claiming nothing was written (the backend commits atomically, one way or the other).
+    return fail(networkFailure(err));
+  }
+  if (!response.ok) return fail(failureForStatus(response.status, response.headers, text));
+  if (text === null) return fail({ kind: "malformed", detail: "response too large" });
+  if (!/^application\/json\b/i.test(response.headers.get("content-type") ?? "")) return fail({ kind: "malformed", detail: "not JSON" });
+  let parsed: unknown;
+  try {
+    parsed = parseJsonLossless(text);
   } catch {
     return fail({ kind: "malformed", detail: "invalid JSON" });
   }

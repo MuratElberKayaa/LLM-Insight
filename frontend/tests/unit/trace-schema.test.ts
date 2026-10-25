@@ -88,10 +88,15 @@ describe("trace decoders reject what they cannot show faithfully", () => {
 
   it("accepts nulls for unknown values and ignores extra fields (forward compatible)", () => {
     const d = detail() as unknown as Record<string, unknown>;
-    d.reviews = [{ anything: true }];
     d.future_field = 1;
     const r = decode(traceDetailDecoder, d);
     assert.equal(r.ok, true, r.ok ? "" : r.path);
+  });
+
+  it("decodes reviews strictly since Phase 4B (a malformed review is refused, not ignored)", () => {
+    const d = detail() as unknown as Record<string, unknown>;
+    d.reviews = [{ anything: true }];
+    assert.deepEqual(decode(traceDetailDecoder, d), { ok: false, path: "$.reviews[0].id" });
   });
 
   it("keeps a hostile attribute key such as __proto__ as an ordinary property", () => {
