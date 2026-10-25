@@ -18,6 +18,7 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 - **Truncation.** Free-text labels (span name, scope name, service name/namespace, environment) are capped at 256 chars (scope version 64) after the checks; arrays keep 16 items. Identifiers are dropped instead of truncated when over their bound.
 - **Test-case content.** Test-case input is the only free text stored. It is entered by a human, must be synthetic or explicitly redacted, and passes server-side redaction before insert (Phase 4, T35). Redaction targets at minimum email addresses, phone numbers, IBAN/card-like digit runs and API-key-like tokens. Redaction is best effort and not a guarantee, so content must still be synthetic.
 - **Review text.** Failure Review `evidence` and `hypothesis` are also human-written free text, and pass the same redaction before insert. Reviewers are told not to paste raw prompts.
+- **Trace diagnostics (Phase 4A, `ARCHITECTURE.md` §5.6).** Derived on request from stored metadata only and never persisted. A result echoes a fixed set of allowlisted, already-validated fields (IDs, status, `error.type`, models, provider, usage counts, validation rule); it never returns span names, raw attribute objects, response-ID values or anything outside that set, so even a malformed row could not leak content through it. All prose is constant catalogue text: no stored value is interpolated into a sentence. No model is called and no prompt is reconstructed.
 
 ## 2. Credentials
 
@@ -52,7 +53,7 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 - `/api/v1/*`:
   - `limit` ≤ 200
   - date window ≤ 31 days (default: the last 31 days)
-  - at most 2000 spans and 2000 usage rows per trace detail
+  - at most 2000 spans and 2000 usage rows per trace detail, and the same bound for trace diagnostics (Phase 4A: four statements per request, at most 100 findings with 25 evidence spans each)
   - read-only `REPEATABLE READ` transactions
   - ORM-parameterized SQL only, with no string-built SQL
 

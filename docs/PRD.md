@@ -21,6 +21,7 @@ Generic APM tools don't model tokens, cost provenance, or prompt versions. Hoste
 
 1. **Observe:** real OTel traces with latency, model, tokens, cost and status, plus the provenance of each number.
 2. **Diagnose:** in Failure Review, a human records evidence and a *hypothesis*. The tool never claims a root cause.
+   - *Phase 4A addition (user instruction, 2026-10-25):* per-trace deterministic diagnostics surface observed facts from stored metadata, with evidence spans, explicitly unverified possible explanations and their limitations (`ARCHITECTURE.md` §5.6). They are input for the human review, not a replacement for it, and they make no root-cause, semantic-quality or provider-outage claim.
 3. **Evaluate:** a human-approved, sanitized test case is added to a dataset. Checks are deterministic, using JSON Schema and golden rules.
 4. **Improve:** prompt versions A and B are compared on the same dataset, with N, pass rate, latency and cost shown, and real or synthetic results labeled.
 
