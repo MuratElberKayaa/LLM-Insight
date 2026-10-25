@@ -1,6 +1,7 @@
 """T31: upgrade -> downgrade -> upgrade on a disposable DB, and the migrated schema matches
-ARCHITECTURE.md §4.2–4.7 column for column. Phase 2B adds migration 0002 (`model_prices`,
-the deferred `usage_records.model_price_id` FK, append-only triggers) and its data cases."""
+ARCHITECTURE.md §4.2–4.10 column for column. Phase 2B adds migration 0002 (`model_prices`,
+the deferred `usage_records.model_price_id` FK, append-only triggers) and its data cases;
+Phase 4B adds 0003 (`test_datasets`, `failure_reviews`, `test_cases`) and its data cases."""
 
 import re
 from datetime import UTC, datetime
@@ -20,7 +21,9 @@ from tests.helpers import REPO_ROOT, alembic_config
 pytestmark = pytest.mark.integration
 
 PHASE1_TABLES = ["projects", "project_api_keys", "traces", "spans", "usage_records"]
-TABLES = [*PHASE1_TABLES, "model_prices"]
+PHASE2_TABLES = [*PHASE1_TABLES, "model_prices"]
+PHASE4B_TABLES = ["test_datasets", "failure_reviews", "test_cases"]
+TABLES = [*PHASE2_TABLES, *PHASE4B_TABLES]
 
 DOC_TYPES = {
     "BIGSERIAL": ("bigint", None, None),
@@ -81,6 +84,9 @@ def test_upgrade_downgrade_upgrade_cycle(disposable_db):
     command.upgrade(cfg, "head")
     assert _tables(url) == {*TABLES, "alembic_version"}
     first = _schema(url)
+
+    command.downgrade(cfg, "0002")
+    assert _tables(url) == {*PHASE2_TABLES, "alembic_version"}
 
     command.downgrade(cfg, "0001")
     assert _tables(url) == {*PHASE1_TABLES, "alembic_version"}
@@ -152,8 +158,17 @@ def test_foreign_keys(conn):
         " REFERENCES spans(project_id, trace_id, span_id) ON DELETE CASCADE",
         "fk_usage_records_model_prices": "FOREIGN KEY (model_price_id)"
         " REFERENCES model_prices(id) ON DELETE RESTRICT",
+        "fk_test_datasets_projects": "FOREIGN KEY (project_id)"
+        " REFERENCES projects(id) ON DELETE CASCADE",
+        "fk_failure_reviews_projects": "FOREIGN KEY (project_id)"
+        " REFERENCES projects(id) ON DELETE CASCADE",
+        "fk_test_cases_test_datasets": "FOREIGN KEY (dataset_id)"
+        " REFERENCES test_datasets(id) ON DELETE CASCADE",
+        "fk_test_cases_failure_reviews": "FOREIGN KEY (origin_review_id)"
+        " REFERENCES failure_reviews(id) ON DELETE SET NULL",
     }
-    # No FK on spans.parent_span_id: orphans are allowed (T27).
+    # No FK on spans.parent_span_id: orphans are allowed (T27). No FK from failure_reviews or
+    # test_cases to traces: human work references telemetry softly (§4.1, survives retention).
 
 
 def test_unique_constraints(conn):
@@ -168,6 +183,7 @@ def test_unique_constraints(conn):
         "uq_model_prices_provider_model_effective_from": (
             "UNIQUE (provider, model, effective_from)"
         ),
+        "uq_test_datasets_project_id_name": "UNIQUE (project_id, name)",
     }
 
 
@@ -188,7 +204,23 @@ def test_indexes(conn):
         ),
         "ix_usage_records_project_id_started_at": "(project_id, started_at)",
         "ix_usage_records_project_id_call_id": "(project_id, call_id) WHERE (call_id IS NOT NULL)",
+        "ix_failure_reviews_project_id_trace_id": "(project_id, trace_id)",
+        "ix_test_cases_dataset_id": "(dataset_id)",
     }
+
+
+def test_open_review_partial_unique_index(conn):
+    """§4.9: at most one not-closed review per (project, trace, issue_type)."""
+    row = conn.execute(
+        text(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+            " AND indexname = 'uq_failure_reviews_project_id_trace_id_issue_type'"
+        )
+    ).scalar_one()
+    assert row.startswith("CREATE UNIQUE INDEX")
+    assert row.split(" USING btree ", 1)[1] == (
+        "(project_id, trace_id, issue_type) WHERE (review_status <> 'closed'::text)"
+    )
 
 
 def test_check_constraints_match_models(conn):
@@ -200,7 +232,9 @@ def test_check_constraints_match_models(conn):
         if c.__class__.__name__ == "CheckConstraint"
     }
     assert db_checks == model_checks
-    assert len(db_checks) == 64  # 1 + 3 + 7 + 18 + 24 + 11 (model_prices)
+    # 1 + 3 + 7 + 18 + 24 + 11 (model_prices) + 1 (test_datasets) + 9 (failure_reviews)
+    # + 4 (test_cases)
+    assert len(db_checks) == 78
 
 
 def test_model_prices_append_only_triggers_installed(conn):
@@ -325,13 +359,13 @@ def test_downgrade_refused_while_a_usage_row_references_a_price(disposable_db):
     cfg = alembic_config(url)
     command.upgrade(cfg, "0001")
     _exec(url, _phase1_rows)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "0002")
     _exec(url, _price_and_computed_usage)
     before = _dump(url)
 
     with pytest.raises(RuntimeError, match="refusing to downgrade: 1 usage_records rows"):
         command.downgrade(cfg, "0001")
-    assert _tables(url) == {*TABLES, "alembic_version"}  # nothing was dropped
+    assert _tables(url) == {*PHASE2_TABLES, "alembic_version"}  # nothing was dropped
     assert _dump(url) == before
     assert _scalar(url, "SELECT version_num FROM alembic_version")[0] == "0002"
     assert _scalar(url, "SELECT count(*) FROM model_prices")[0] == 1
@@ -342,3 +376,170 @@ def test_fk_rejects_a_dangling_model_price_id(conn):
     _phase1_rows(conn)
     with pytest.raises(IntegrityError, match="fk_usage_records_model_prices"):
         conn.execute(text("UPDATE usage_records SET model_price_id = 999999"))
+
+
+# ---------------------------------------------------------------- 0002 -> 0003 with data
+_REVIEW = (
+    "INSERT INTO failure_reviews (project_id, trace_id, issue_type, evidence, hypothesis,"
+    " created_by) VALUES (1, :t, 'schema_violation', 'SYNTHETIC evidence',"
+    " 'SYNTHETIC hypothesis', 'migration-test') RETURNING id"
+)
+_EXACT_RULE = '{"type": "exact"}'
+
+
+def _dump_priced(url: str) -> dict[str, list[tuple]]:
+    eng = create_engine(url, poolclass=NullPool)
+    try:
+        with eng.connect() as c:
+            return {
+                t: [tuple(r) for r in c.execute(text(f"SELECT * FROM {t} ORDER BY id"))]  # noqa: S608 - constant names
+                for t in PHASE2_TABLES
+            }
+    finally:
+        eng.dispose()
+
+
+def test_upgrade_from_0002_preserves_telemetry_usage_and_prices(disposable_db):
+    url = disposable_db("llminsight_migration_4b_test")
+    cfg = alembic_config(url)
+    command.upgrade(cfg, "0002")
+    _exec(url, _phase1_rows)
+    _exec(url, _price_and_computed_usage)
+    before = _dump_priced(url)
+
+    command.upgrade(cfg, "head")
+    assert _scalar(url, "SELECT version_num FROM alembic_version")[0] == "0003"
+    assert _dump_priced(url) == before  # telemetry, usage, costs and prices unchanged
+    for table in PHASE4B_TABLES:
+        assert _scalar(url, f"SELECT count(*) FROM {table}")[0] == 0  # noqa: S608 - constant names
+
+    command.downgrade(cfg, "0002")  # no human rows: allowed, and nothing else is touched
+    assert _tables(url) == {*PHASE2_TABLES, "alembic_version"}
+    assert _dump_priced(url) == before
+
+
+@pytest.mark.parametrize("table", PHASE4B_TABLES)
+def test_downgrade_refused_while_human_rows_exist(disposable_db, table):
+    url = disposable_db(f"llminsight_migration_4b_{table}_test")
+    cfg = alembic_config(url)
+    command.upgrade(cfg, "0002")
+    _exec(url, _phase1_rows)
+    command.upgrade(cfg, "head")
+
+    def add(c) -> None:
+        if table == "failure_reviews":
+            c.execute(text(_REVIEW), {"t": _TRACE})
+            return
+        ds = c.execute(
+            text("INSERT INTO test_datasets (project_id, name) VALUES (1, 'mig') RETURNING id")
+        ).scalar_one()
+        if table == "test_cases":
+            c.execute(
+                text(
+                    "INSERT INTO test_cases (dataset_id, sanitized_input, rule,"
+                    " redaction_applied, approved_by, approved_at) VALUES"
+                    " (:d, 'SYNTHETIC input', CAST(:r AS jsonb), true, 'mig', now())"
+                ),
+                {"d": ds, "r": _EXACT_RULE},
+            )
+
+    _exec(url, add)
+    before = _dump_priced(url)
+    with pytest.raises(RuntimeError, match="refusing to downgrade"):
+        command.downgrade(cfg, "0002")
+    assert _tables(url) == {*TABLES, "alembic_version"}  # nothing was dropped
+    assert _scalar(url, "SELECT version_num FROM alembic_version")[0] == "0003"
+    assert _scalar(url, f"SELECT count(*) FROM {table}")[0] == 1  # noqa: S608 - constant names
+    assert _dump_priced(url) == before
+
+
+def test_review_constraints_enforced_by_the_database(conn):
+    """§4.9 checks hold in the database, not only in the API."""
+    _phase1_rows(conn)
+    base = {
+        "trace_id": _TRACE,
+        "span_id": None,
+        "issue_type": "unknown",
+        "evidence": "e",
+        "hypothesis": "h",
+        "review_status": "open",
+        "reviewer_decision": "pending",
+        "created_by": "c",
+    }
+    bad = {
+        "ck_failure_reviews_issue_type_enum": {"issue_type": "root_cause"},
+        "ck_failure_reviews_review_status_enum": {"review_status": "approved"},
+        "ck_failure_reviews_reviewer_decision_enum": {"reviewer_decision": "proven"},
+        "ck_failure_reviews_closed_needs_decision": {"review_status": "closed"},
+        "ck_failure_reviews_span_id_hex16": {"span_id": "0" * 16},
+        "ck_failure_reviews_trace_id_hex32": {"trace_id": "A" * 32},
+        "ck_failure_reviews_evidence_len": {"evidence": "x" * 4001},
+        "ck_failure_reviews_hypothesis_len": {"hypothesis": ""},
+        "ck_failure_reviews_created_by_len": {"created_by": "x" * 101},
+    }
+    for constraint, override in bad.items():
+        nested = conn.begin_nested()
+        with pytest.raises(IntegrityError, match=constraint):
+            conn.execute(
+                text(
+                    "INSERT INTO failure_reviews (project_id, trace_id, span_id, issue_type,"
+                    " evidence, hypothesis, review_status, reviewer_decision, created_by)"
+                    " VALUES (1, :trace_id, :span_id, :issue_type, :evidence, :hypothesis,"
+                    " :review_status, :reviewer_decision, :created_by)"
+                ),
+                {**base, **override},
+            )
+        nested.rollback()
+
+
+@pytest.mark.parametrize("rule", ['{"type": "llm_judge"}', '{"schema": {}}', "[]", '"exact"'])
+def test_case_rule_type_enforced_by_the_database(conn, rule):
+    """§4.10 `rule->>'type' IN (...)`, including a missing type (NULL would pass a bare IN)."""
+    _phase1_rows(conn)
+    ds = conn.execute(
+        text("INSERT INTO test_datasets (project_id, name) VALUES (1, 'c') RETURNING id")
+    ).scalar_one()
+    with pytest.raises(IntegrityError, match="ck_test_cases_rule_type_enum"):
+        conn.execute(
+            text(
+                "INSERT INTO test_cases (dataset_id, sanitized_input, rule,"
+                " redaction_applied, approved_by, approved_at)"
+                " VALUES (:d, 'i', CAST(:r AS jsonb), true, 'a', now())"
+            ),
+            {"d": ds, "r": rule},
+        )
+
+
+def test_open_review_uniqueness_and_review_fk_set_null(conn):
+    _phase1_rows(conn)
+    first = conn.execute(text(_REVIEW), {"t": _TRACE}).scalar_one()
+    nested = conn.begin_nested()
+    with pytest.raises(IntegrityError, match="uq_failure_reviews_project_id_trace_id_issue_type"):
+        conn.execute(text(_REVIEW), {"t": _TRACE})
+    nested.rollback()
+    # Once the first one is closed (with a decision), a new open review of that type is allowed.
+    conn.execute(
+        text(
+            "UPDATE failure_reviews SET review_status = 'closed',"
+            " reviewer_decision = 'inconclusive' WHERE id = :i"
+        ),
+        {"i": first},
+    )
+    second = conn.execute(text(_REVIEW), {"t": _TRACE}).scalar_one()
+    ds = conn.execute(
+        text("INSERT INTO test_datasets (project_id, name) VALUES (1, 'fk') RETURNING id")
+    ).scalar_one()
+    case = conn.execute(
+        text(
+            "INSERT INTO test_cases (dataset_id, origin_trace_id, origin_review_id,"
+            " sanitized_input, rule, redaction_applied, approved_by, approved_at) VALUES"
+            " (:d, :t, :r, 'i', CAST(:rule AS jsonb), true, 'a', now()) RETURNING id"
+        ),
+        {"d": ds, "t": _TRACE, "r": second, "rule": _EXACT_RULE},
+    ).scalar_one()
+    conn.execute(text("DELETE FROM failure_reviews WHERE id = :i"), {"i": second})
+    row = conn.execute(
+        text("SELECT origin_review_id, origin_trace_id FROM test_cases WHERE id = :i"),
+        {"i": case},
+    ).one()
+    assert tuple(row) == (None, _TRACE)  # lineage to the trace survives the review's removal

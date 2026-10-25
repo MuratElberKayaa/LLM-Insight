@@ -4,7 +4,7 @@
  * code never imports this file (tests/unit/security-static.test.ts).
  */
 
-import type { SpanRecord, TraceDetail, TraceList, TraceSummary, UsageRecord } from "../../lib/api/trace-types";
+import type { SpanRecord, TraceDetail, TraceList, TraceListItem, TraceSummary, UsageRecord } from "../../lib/api/trace-types";
 
 /** An epoch-nanosecond base above 2^53 with sub-microsecond digits (T26). */
 export const BASE_NS = 1792913387428346901n;
@@ -122,6 +122,8 @@ export function makeDetail(spans: SpanRecord[], usage: UsageRecord[] = [], trace
     spans_truncated: false,
     usage,
     usage_truncated: false,
+    reviews: [],
+    reviews_truncated: false,
   };
 }
 
@@ -148,8 +150,13 @@ export function retryDetail(): TraceDetail {
     }, 31_853_300n);
 }
 
-export function makeList(items: TraceSummary[], next_cursor: string | null = null): TraceList {
-  return { items, next_cursor, window: { from: "2026-10-24T09:00:00.000000Z", to: "2026-10-25T09:00:00.000000Z" } };
+/** List items get no reviews unless an item already carries its own `reviews` (Phase 4B). */
+export function makeList(items: (TraceSummary | TraceListItem)[], next_cursor: string | null = null): TraceList {
+  return {
+    items: items.map((t) => ("reviews" in t ? t : { ...t, reviews: { total: 0, not_closed: 0 } })),
+    next_cursor,
+    window: { from: "2026-10-24T09:00:00.000000Z", to: "2026-10-25T09:00:00.000000Z" },
+  };
 }
 
 const TOKEN_FIELDS = ["input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens"] as const;

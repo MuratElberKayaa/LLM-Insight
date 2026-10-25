@@ -4,10 +4,21 @@ from sqlalchemy.schema import CreateTable
 
 from app.models import Base
 
-TABLES = {"projects", "project_api_keys", "traces", "spans", "usage_records", "model_prices"}
+TABLES = {
+    "projects",
+    "project_api_keys",
+    "traces",
+    "spans",
+    "usage_records",
+    "model_prices",
+    # Phase 4B (§4.8–4.10); experiments (§4.11–4.12) belong to Phase 4C
+    "test_datasets",
+    "failure_reviews",
+    "test_cases",
+}
 
 
-def test_only_phase1_and_phase2_tables_defined():
+def test_only_phase1_to_phase4b_tables_defined():
     assert set(Base.metadata.tables) == TABLES
 
 

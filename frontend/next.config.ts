@@ -21,6 +21,14 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: { root },
   outputFileTracingRoot: root,
+  experimental: {
+    serverActions: {
+      // Phase 4B forms carry at most ~30 KB of text (8000-character input, two 16 KiB JSON
+      // fields); the backend caps its own bodies at 64 KiB. Default is 1 MB.
+      bodySizeLimit: "128kb",
+      // No extra allowed origins: only the dashboard's own host may invoke actions (default).
+    },
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

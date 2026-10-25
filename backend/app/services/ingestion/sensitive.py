@@ -74,3 +74,14 @@ _UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Co", "Cs", "Zl", "Zp"})
 
 def has_unsafe_characters(value: str) -> bool:
     return any(unicodedata.category(c) in _UNSAFE_CATEGORIES for c in value)
+
+
+# Shared with the Phase 4B free-text redaction (`app/services/redaction.py`), which *masks*
+# what this module detects, so both layers recognise the same credential and personal-data
+# formats. Detection behaviour here is unchanged.
+CREDENTIAL_PATTERNS = _CREDENTIAL_PATTERNS
+EMAIL_PATTERN = _EMAIL
+INTL_PHONE_PATTERN = _INTL_PHONE
+GROUPED_DIGITS_PATTERN = _GROUPED_DIGITS
+SPACED_IBAN_PATTERN = _SPACED_IBAN
+UNSAFE_CATEGORIES = _UNSAFE_CATEGORIES

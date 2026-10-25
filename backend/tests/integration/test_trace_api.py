@@ -316,6 +316,7 @@ def test_list_item_shape_with_unknown_cost_and_provenance(api_client, make_key):
                 "truncated": False,
             },
         },
+        "reviews": {"total": 0, "not_closed": 0},  # Phase 4B: human reviews of the trace
     }
 
 
@@ -500,9 +501,18 @@ def test_detail_of_the_fixture(api_client, make_key):
     r = api_get(api_client, f"/api/v1/traces/{FIXTURE_TRACE_ID}", project=k.project_id)
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     d = r.json()
-    assert set(d) == {"trace", "spans", "spans_truncated", "usage", "usage_truncated", "reviews"}
+    assert set(d) == {
+        "trace",
+        "spans",
+        "spans_truncated",
+        "usage",
+        "usage_truncated",
+        "reviews",
+        "reviews_truncated",  # Phase 4B
+    }
     assert d["trace"]["trace_id"] == FIXTURE_TRACE_ID and d["trace"]["span_count"] == 3
     assert (d["spans_truncated"], d["usage_truncated"], d["reviews"]) == (False, False, [])
+    assert d["reviews_truncated"] is False
     spans = {s["span_id"]: s for s in d["spans"]}
     assert [s["span_id"] for s in d["spans"]] == [FIXTURE_ROOT, FIXTURE_LLM, FIXTURE_VALIDATE]
     assert spans[FIXTURE_ROOT]["role"] == "root"

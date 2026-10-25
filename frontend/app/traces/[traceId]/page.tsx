@@ -5,6 +5,8 @@ import { connection } from "next/server";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../../../components/navigation-transition";
 import { PageHeader, SectionHeading } from "../../../components/page-header";
 import { ProjectSelector } from "../../../components/project-selector";
+import { DiagnosticsPanel } from "../../../components/reviews/diagnostics-panel";
+import { ReviewSection } from "../../../components/reviews/review-section";
 import { ErrorState } from "../../../components/states";
 import {
   AttemptsTable,
@@ -19,9 +21,11 @@ import { Ident } from "../../../components/traces/trace-values";
 import { Waterfall } from "../../../components/traces/waterfall";
 import { formatUtcTime } from "../../../lib/format";
 import { parseProjectParam, projectLinkValue } from "../../../lib/project";
+import type { FailureReview } from "../../../lib/api/review-types";
+import { loadTraceDiagnostics } from "../../../lib/server/review-page";
 import { loadTraceDetail } from "../../../lib/server/traces";
 import { buildTraceView } from "../../../lib/span-tree";
-import { listStateFromBackParam, restartFields, traceListHref } from "../../../lib/trace-query";
+import { listStateFromBackParam, restartFields, traceDetailHref, traceListHref } from "../../../lib/trace-query";
 
 export const metadata: Metadata = { title: "Trace" };
 
@@ -38,6 +42,20 @@ function BackLink({ href }: { href: string }) {
     <Link href={href} className="mb-4 inline-flex items-center gap-1 text-sm text-ink-2 hover:text-ink" data-testid="back-to-traces">
       <span aria-hidden="true">←</span> Back to traces
     </Link>
+  );
+}
+
+/** Reviewed or not, near the top; the review itself is at the end of the page. */
+function ReviewStateLine({ reviews }: { reviews: FailureReview[] }) {
+  const open = reviews.filter((r) => r.review_status !== "closed").length;
+  return (
+    <p className="-mt-3 mb-6 text-sm text-ink-2" data-testid="review-state" data-reviews={reviews.length}>
+      <span className="font-medium text-ink">Human review:</span>{" "}
+      {reviews.length === 0 ? "not reviewed yet." : `${reviews.length} review${reviews.length === 1 ? "" : "s"} (${open} not closed).`}{" "}
+      <a href="#reviews-heading" className="underline underline-offset-2">
+        Go to the review
+      </a>
+    </p>
   );
 }
 
@@ -73,9 +91,12 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
     );
   }
 
-  const ctx = await loadTraceDetail(traceId, project);
+  // The diagnostics read runs in parallel and degrades only its own panel when it fails.
+  const [ctx, diagnostics] = await Promise.all([loadTraceDetail(traceId, project), loadTraceDiagnostics(traceId, project)]);
   const { projectId, fetchedAt, detail } = ctx;
   const rawSpan = typeof sp.span === "string" && SPAN_ID_RE.test(sp.span) ? sp.span : null;
+  const selfHref = traceDetailHref(traceId, backState);
+  const spanHref = (spanId: string) => `${selfHref}${selfHref.includes("?") ? "&" : "?"}span=${spanId}#waterfall-heading`;
 
   return (
     <NavigationTransition>
@@ -114,6 +135,7 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
                 <ProvenanceNotice provenance={data.trace.provenance} />
                 <TruncationNotice detail={data} />
                 <TraceFacts trace={data.trace} returnedSpans={data.spans.length} spansTruncated={data.spans_truncated} />
+                <ReviewStateLine reviews={data.reviews} />
                 <StatusBreakdown trace={data.trace} view={view} />
                 <section aria-labelledby="waterfall-heading" className="min-w-0">
                   <SectionHeading
@@ -121,11 +143,24 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
                     title="Span tree and timeline"
                     description="Parent-child hierarchy in start order with a relative-time waterfall. Each inference row is one physical attempt; retries are separate rows."
                   />
-                  <Waterfall view={view} initialSelected={rawSpan} />
+                  {/* Keyed by the selected span so an evidence link re-selects in the waterfall. */}
+                  <Waterfall key={rawSpan ?? "none"} view={view} initialSelected={rawSpan} />
                 </section>
                 <LogicalCalls view={view} />
                 <AttemptsTable view={view} usageTruncated={data.usage_truncated} />
                 <SpanTable view={view} />
+                <DiagnosticsPanel result={diagnostics} spanHref={spanHref} />
+                {projectId !== null && (
+                  <ReviewSection
+                    project={projectId}
+                    traceId={traceId}
+                    reviews={data.reviews}
+                    truncated={data.reviews_truncated}
+                    spans={data.spans}
+                    spanHref={spanHref}
+                    convertHref={(id) => `/traces/${traceId}/reviews/${id}/test-case?project=${projectId}`}
+                  />
+                )}
               </>
             );
           })()

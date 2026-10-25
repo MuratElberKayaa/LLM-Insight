@@ -27,6 +27,7 @@ import {
   type SpanRecord,
   type TraceDetail,
   type TraceList,
+  type TraceListItem,
   type TraceSummary,
   type TraceModel,
   type TraceModels,
@@ -34,6 +35,8 @@ import {
   type UsageRecord,
 } from "./trace-types";
 import { COST_UNKNOWN_REASONS, TRACE_PROVENANCES, USAGE_PROVENANCES, USAGE_SOURCES, type Window } from "./types";
+import { pattern, spanId, traceId } from "./ids";
+import { MAX_REVIEWS, reviewDecoder, reviewSummaryDecoder } from "./review-schema";
 
 // Backend bounds: list `limit` ≤ 200; detail ≤ 2000 spans and ≤ 2000 usage rows.
 export const MAX_LIST_ITEMS = 200;
@@ -44,20 +47,10 @@ const MAX_ATTRIBUTES = 256;
 const MAX_ATTR_DEPTH = 3;
 const MAX_ATTR_STRING = 4096;
 
-const TRACE_ID_RE = /^[0-9a-f]{32}$/;
-const SPAN_ID_RE = /^[0-9a-f]{16}$/;
 const CURSOR_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const DIGITS_RE = /^\d{1,20}$/;
 
-function pattern(re: RegExp, expected: string): Decoder<string> {
-  return (v, path) => {
-    if (typeof v !== "string" || !re.test(v)) throw new DecodeError(path, expected);
-    return v;
-  };
-}
-
-export const traceId = pattern(TRACE_ID_RE, "a 32-character lowercase hex trace id");
-export const spanId = pattern(SPAN_ID_RE, "a 16-character lowercase hex span id");
+export { spanId, traceId };
 
 /** int64 nanoseconds as a decimal string (the backend never sends them as JSON numbers). */
 const nanos: Decoder<string> = (v, path) => {
@@ -159,8 +152,14 @@ export const traceSummaryDecoder: Decoder<TraceSummary> = (v, path) => {
   return t;
 };
 
+/** A list item: the summary plus its human review counts (Phase 4B, additive). */
+const traceListItemDecoder: Decoder<TraceListItem> = (v, path) => ({
+  ...traceSummaryDecoder(v, path),
+  reviews: reviewSummaryDecoder((v as { reviews?: unknown }).reviews, `${path}.reviews`),
+});
+
 export const traceListDecoder: Decoder<TraceList> = object<TraceList>({
-  items: array(traceSummaryDecoder, MAX_LIST_ITEMS),
+  items: array(traceListItemDecoder, MAX_LIST_ITEMS),
   next_cursor: nullable(pattern(CURSOR_RE, "an opaque cursor")),
   window,
 });
@@ -232,4 +231,6 @@ export const traceDetailDecoder: Decoder<TraceDetail> = object<TraceDetail>({
   spans_truncated: boolean,
   usage: array(usageDecoder, MAX_DETAIL_USAGE),
   usage_truncated: boolean,
+  reviews: array(reviewDecoder, MAX_REVIEWS),
+  reviews_truncated: boolean,
 });

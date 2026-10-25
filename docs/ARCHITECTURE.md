@@ -271,6 +271,12 @@ Tests: T33, T41.
 No row exists without approval. The API rejects `approved != true` with `422` (T34).
 Tests: T34, T35, T40.
 
+**Phase 4B implementation of §4.8–4.10 (migration `0003`, no column change).** The three tables are created column for column (`tests/integration/test_migrations.py` parses this section). §4.11–4.12 are left to Phase 4C. Notes, none of which adds a column, enum value or relationship:
+- `ck_test_cases_rule_type_enum` is written `COALESCE(rule->>'type', '') IN (…)`: the bare `rule->>'type' IN (…)` is NULL for a rule without a type (or a non-object rule), and a CHECK accepts NULL. This is the contract's evident meaning, not a new rule.
+- The `rule` payload per type (decision D1, `reports/phase-4b.md` §2.4) is enforced by the API only: `{"type":"json_schema","schema":<object|boolean>}` (local `$ref` only), `{"type":"field_match","fields":[dotted paths]}` (compared with `expected_output`), `{"type":"exact"}`, `{"type":"regex","pattern":<1–1000 chars, compiles>}`; unknown keys are refused. JSON Schema meta-validation is a Phase 4C item.
+- At most one test case per (dataset, review) (decision D5) is enforced in the insert transaction under `pg_advisory_xact_lock`, not by a new unique index.
+- Downgrade of `0003` refuses to run while any review, dataset or test case exists (human work that nothing else could restore). Upgrade leaves every Phase 1–3 row unchanged (tested with data, and on the dev database by row counts and content checksums).
+
 ### 4.11 `experiments`
 | Column | Type | Null | Default | Check / rule | Origin |
 |---|---|---|---|---|---|
@@ -345,8 +351,10 @@ The backend binds to `127.0.0.1`.
 | `/api/v1/overview` | GET | KPIs and trends (`METRICS_CATALOG.md`), each with `n` and a provenance split | 2 (backend, done in 2C, §5.2) / 3 (UI) |
 | `/api/v1/models/compare` | GET | Per provider/model/prompt_version totals, `cost_status` counts, sample N | 2C (backend, §5.2; M15) / 3 (UI) |
 | `/api/v1/projects` | GET | Bounded project listing for the dashboard selector: `{items[{id, name, created_at}], truncated, limit}`, `limit` 1–200 (default 100); no `project` parameter | 3C (§5.5) |
-| `/api/v1/failure-reviews` | POST | Body `{trace_id, span_id?, issue_type, evidence, hypothesis, created_by}` → `201`; duplicate open review → `409`; `PATCH /{id}` for status/decision | 4 |
-| `/api/v1/datasets/{dataset_id}/cases` | POST | Requires `approved: true`, `approved_by` and sanitized input, otherwise `422` with nothing stored | 4 |
+| `/api/v1/failure-reviews` | POST | Body `{trace_id, span_id?, issue_type, evidence, hypothesis, created_by}` → `201`; duplicate open review → `409`; `PATCH /{id}` for status/decision | 4 (done in 4B, §5.7) |
+| `/api/v1/datasets/{dataset_id}/cases` | POST | Requires `approved: true`, `approved_by` and sanitized input, otherwise `422` with nothing stored | 4 (done in 4B, §5.7) |
+| `/api/v1/datasets` | GET, POST | Additive (decision D2): list a project's datasets with case counts (`limit` 1–200) / create one `{name}` → `201`, duplicate name → `409` | 4B (§5.7) |
+| `/api/v1/datasets/{dataset_id}/cases` | GET | Additive (D2): the dataset and its cases by id, keyset `after`, `limit` 1–200 | 4B (§5.7) |
 | `/api/v1/experiments` | POST | `{dataset_id, prompt_version_a, prompt_version_b, model, mode, budget_usd?}`. `mode=real` requires `budget_usd` and `LLMI_ALLOW_REAL_LLM=true` | 4 |
 | `/api/v1/experiments/{id}` | GET | Per-version pass/fail, N, p50/p95 duration, cost with unknown count, provenance label per result | 4 |
 
@@ -377,7 +385,8 @@ The backend binds to `127.0.0.1`.
 - `spans` is a flat list ordered by `start_ns, span_id`. Each span has a `role` (`root`: no parent; `child`: its parent is stored; `orphan`: its parent is not stored, T27) and its `children` span IDs, plus the stored span fields **except** `status_message` and internal ids.
 - At most 2000 spans and 2000 usage rows are returned (`*_truncated: true` beyond that). Roles are computed against all stored spans, so truncation never mislabels an orphan.
 - `usage` holds the usage rows: tokens stay `null` when unknown; `cost_usd` is a decimal string or `null`, with `cost_status`/`cost_unknown_reason`.
-- `reviews` is always `[]` until the Phase 4 table exists.
+- `reviews` was always `[]` until the Phase 4 table existed. **Since Phase 4B** it holds the trace's human failure reviews (oldest first, at most 200, plus `reviews_truncated`), each with its `test_cases` links `{id, dataset_id, dataset_name}` (§5.7).
+- **Phase 4B (additive):** every list item carries `reviews: {total, not_closed}` from one grouped statement over the page's trace ids (`ix_failure_reviews_project_id_trace_id`), so reviewed and unreviewed traces can be told apart. The list statement, cursor and window are unchanged.
 
 **Timestamps (T26):** every `*_at` value is ISO-8601 UTC with `Z`. Trace and span values are rendered from the stored nanoseconds with all 9 fraction digits. The raw nanoseconds are decimal strings (`*_unix_nano`, `duration_ns`, as in OTLP/JSON), because JSON numbers lose precision above 2^53.
 
@@ -411,11 +420,11 @@ No new index was needed. Responses carry `Cache-Control: no-store` and no CORS h
 ### 5.3 Phase 3A dashboard access to the read API (`frontend/lib/server/`)
 
 The dashboard is the only consumer of `/api/v1` and adds no endpoint; the backend contract is unchanged.
-- **Server-side only.** Next.js server components call `lib/server/backend.ts`, the one module that sends `Authorization: Bearer <LLMI_API_TOKEN>`. Every `lib/server/*` module imports `server-only`; there are no route handlers and no Server Functions, so the browser cannot reach the backend through the dashboard (no generic proxy). The token is never in a `NEXT_PUBLIC_*` variable, HTML, RSC payload, client bundle, cookie or browser storage (T42).
+- **Server-side only.** Next.js server components call `lib/server/backend.ts`, the one module that sends `Authorization: Bearer <LLMI_API_TOKEN>`. Every `lib/server/*` module imports `server-only`; there are no route handlers and no Server Functions, so the browser cannot reach the backend through the dashboard (no generic proxy). **Phase 4B amendment (§5.8):** four narrow Server Actions now write through four allowlisted endpoints; there are still no route handlers and no generic proxy. The token is never in a `NEXT_PUBLIC_*` variable, HTML, RSC payload, client bundle, cookie or browser storage (T42).
 - **Requests.** Fixed paths (`/api/v1/overview`, `/api/v1/models/compare?limit=10`), the configured `project`, and `from`/`to` from a validated preset (6 h, 24 h, 7 d, 31 d; UTC; aligned to the trend bucket so every bucket is full width), plus an optional validated `provenance`. Unsupported URL values fall back to defaults with a notice and are never forwarded. `cache: "no-store"`, `redirect: "error"`, a deadline (`LLMI_API_TIMEOUT_MS`, default 5 s), a 2 MiB response cap, and a loopback-only base URL.
 - **Responses.** Each body is decoded against the §5.2 schema field by field (`frontend/lib/api/schema.ts`); a mismatch rejects the whole response (`malformed`) instead of rendering a guess. Failures map to fixed kinds (`config`, `unreachable`, `timeout`, `unauthorized`, `not_found`, `invalid_request`, `rate_limited`, `storage_unavailable`, `server_error`, `unexpected_status`, `malformed`) with fixed copy; no backend body, URL or credential is shown or logged. The compare request degrades its own section only. `GET /health/ready` (no token) feeds the header status.
 - **Presentation.** Values are the backend's: no metric is recomputed (the only arithmetic is `attempts − failed` for a stacked bar, the backend's own `succeeded` definition). Money stays a decimal string formatted with BigInt arithmetic; `null` is shown as unknown / not reported / no data, never 0. Provenance uses the backend buckets with text labels; synthetic data gets a banner; "real" is shown as an instrumentation claim.
-- **Request guard (`frontend/proxy.ts`).** Bound to `127.0.0.1:3001`; requests whose `Host` is not a loopback name get `421` (DNS-rebinding defence); methods other than GET/HEAD get `405`; each response carries a per-request nonce CSP plus `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, COOP/CORP.
+- **Request guard (`frontend/proxy.ts`).** Bound to `127.0.0.1:3001`; requests whose `Host` is not a loopback name get `421` (DNS-rebinding defence); methods other than GET/HEAD get `405` (Phase 4B: `POST` is accepted only for Server Actions on the form pages, with the origin checks of §5.8); each response carries a per-request nonce CSP plus `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, COOP/CORP.
 
 ### 5.4 Phase 3B trace explorer access (`frontend/lib/server/traces.ts`)
 
@@ -490,7 +499,32 @@ Uses the §5.1 endpoints exactly as implemented; no backend change, no new field
 
 **Not assessed** (listed in every response with the reason): elevated latency (no approved comparison basis), semantic quality, prompt quality, provider outage, root cause.
 
-**Frontend:** none in Phase 4A. The dashboard's backend path allowlist (§5.4) does not include this path; a Trace Detail integration is a later subphase (`reports/phase-4a.md` §9).
+**Frontend:** none in Phase 4A. **Phase 4B** added the read to the dashboard's path allowlist and shows the findings on the Trace Detail page as a separate, labelled "Machine observations (automatic, unverified, not a human review)" panel with evidence-span links; the panel has no form and never fills in or decides a review (§5.8).
+
+### 5.7 Phase 4B: failure reviews, datasets and test cases (`backend/app/api/{reviews,datasets,human_input,json_body}.py`)
+
+**Status:** implements the §5 contract rows for `POST /api/v1/failure-reviews`, `PATCH /api/v1/failure-reviews/{id}` and `POST /api/v1/datasets/{id}/cases`, plus the additive dataset endpoints (decision D2). Schema: §4.8–4.10 (migration `0003`). Decisions D1–D9 are recorded in `reports/phase-4b.md` §2.4.
+
+**Access:** as §5.1: `require_admin` before anything else, mandatory `project`, one indistinguishable `404` for an unknown project, trace, review or dataset or one of another project, no `403`, the `/api/v1` rate limit, `Cache-Control: no-store`.
+
+**Bodies (D7):** `Content-Type: application/json` only (`415 unsupported_media_type`), at most 64 KiB (`413 payload_too_large`), strict UTF-8 JSON without NaN/Infinity or duplicate keys, strict types, unknown fields refused; `422 invalid_request` names the fields and never echoes values.
+
+**Writes:** one read-write transaction per request that commits only when everything succeeded; storage errors map to `503`/`500` as for reads. Error codes added: `409 duplicate_open_review`, `409 duplicate_dataset`, `409 duplicate_test_case`, `409 review_not_decided`.
+
+- `POST /failure-reviews`: the trace must exist in the project (`404` otherwise); a `span_id` must be a span of that trace (`422`); `issue_type` is one of the six CR-03 values (`422`); `evidence`/`hypothesis` are masked by the server (`services/redaction.py`) and length-checked after masking; `created_by` is a single-line label without contact data or secrets. Stored `open`/`pending`. Response: the review plus `redaction: {applied: true, masked: {evidence, hypothesis}}` (counts per category).
+- `PATCH /failure-reviews/{id}` (D3): `review_status` and/or `reviewer_decision`; the result must satisfy the §4.9 table check (`422`); reopening into a duplicate open review is `409`; text is immutable; an unchanged request writes nothing. Who changed it is not recorded (no column, D8).
+- `POST /datasets/{id}/cases`: `approved` must be the JSON boolean `true` (T34); `approved_by` label; `sanitized_input` masked before insert and `redaction_applied = true` (T35); `expected_output` and `rule` are bounded JSON (16 KiB, depth 32) whose strings carrying credentials, personal data or invisible characters are **refused** rather than masked (D9); `rule` per D1. A trace-origin case needs both `origin_trace_id` and `origin_review_id` (D4): the trace and review must be in the project and match, and the review's decision must not be `pending` (`409 review_not_decided`). At most one case per (dataset, review) (D5, `409 duplicate_test_case`). `approved_at` is the server time.
+- `GET /datasets`, `POST /datasets`, `GET /datasets/{id}/cases`: as in the §5 table; cases are returned exactly as stored, ordered by id (byte-identical repeated reads).
+
+Nothing derives a review or a case from telemetry or diagnostics: these handlers are the only writers of `failure_reviews` and `test_cases` (static test `tests/unit/test_phase4b_boundaries.py`). Nothing evaluates a case (Phase 4C).
+
+### 5.8 Phase 4B: dashboard writes (`frontend/lib/actions/`, `frontend/proxy.ts`)
+
+This amends §5.3 ("no route handlers and no Server Functions") for the Phase 4B instruction, which requires a genuine human review workflow in the dashboard.
+- **Server Actions, narrowly.** Exactly two `"use server"` modules (`lib/actions/reviews.ts`, `lib/actions/datasets.ts`) with four exported actions (`submitReview`, `submitDecision`, `submitDataset`, `submitTestCase`). Each re-validates its untrusted `FormData` (`lib/review-forms.ts`), then calls one `lib/server` function that sends one allowlisted write (`sendJson` in `lib/server/backend.ts`: `POST /api/v1/failure-reviews`, `PATCH /api/v1/failure-reviews/<id>`, `POST /api/v1/datasets`, `POST /api/v1/datasets/<id>/cases`, each with exactly one method). The token stays server-side (CR-06). There are still no route handlers and no generic proxy; static tests pin all of this.
+- **CSRF.** The dashboard has no cookie or session, so the checks concern where a request comes from. `proxy.ts` allows `POST` only on the three pages that host forms (`/traces/<id>`, `/traces/<id>/reviews/<id>/test-case`, `/datasets`) and only when `Origin` is present and equals the loopback host, `Sec-Fetch-Site` (when sent) is `same-origin`, and the `Next-Action` header is present. A cross-site HTML form cannot send a header, and a cross-site script would need a CORS preflight that is never answered. Everything else is `403` (or `405` for other paths/methods). Next.js additionally compares `Origin` with `Host` for every Server Action; `serverActions.bodySizeLimit` is 128 KB; no extra allowed origins. Forms therefore need JavaScript.
+- **Explicit actions only.** No write runs on render or page load; submit buttons are disabled while a submission is pending; a refused submission keeps the typed values, and the form is cleared only after a stored success. A timeout after sending is reported as "outcome unknown", never as "nothing stored".
+- **Presentation.** Review text, test-case content and diagnostics are rendered as React text only (T41 rules). The human review section and the machine-observation panel are visually distinct and labelled; the review form starts empty, with no preselected issue type, and the test-case form starts empty with the approval box unticked.
 
 ## 6. Version pins (candidates; CR-09)
 
@@ -530,7 +564,7 @@ This follows master plan §G. Folders are created only by the phase that fills t
 | 1 | `backend/` (`pyproject.toml`, `alembic/`, `app/{main,api/otel,core,models,repositories,services/ingestion}`, `tests/`), `docker-compose.yml`, `scripts/dev` |
 | 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come). Phase 2B added `backend/app/services/{pricing,pricing_catalog}.py`, `backend/app/repositories/pricing.py`, `backend/app/models/pricing.py`, migration `0002` and `sdk/src/llm_insight_sdk/openai_adapter.py`; the seed is a CLI command (`app.cli seed-prices`), so no `scripts/seed` was needed. Phase 2C added `backend/app/{repositories,services}/metrics.py`, `backend/app/api/overview.py` (the backend half of the Phase 3 row below), `backend/app/core/eventloop.py` and `demo_app/web.py` (the FastAPI demo root span); no `scripts/smoke` (the real smoke run is not authorized) |
 | 3 | `frontend/`, `backend/app/api/{overview,traces}.py` (full). Phase 3A created `frontend/` (`app/`, `components/`, `lib/{api,server}/`, `tests/{unit,e2e,fixtures,setup}/`, `scripts/`; see `frontend/README.md`) plus `scripts/dev/{install_node,init_frontend_env}.py`; no backend change. Phase 3B added `frontend/app/traces/`, `frontend/components/traces/`, the trace modules in `frontend/lib/` and `scripts/dev/seed_trace_fixtures.py`; no backend change. Phase 3C added `backend/app/{api,repositories}/projects.py` (additive endpoint), `frontend/app/models/`, `frontend/components/models/`, `scripts/dev/e2e_fixtures.py`, `backend/Dockerfile`, `frontend/Dockerfile`, `.dockerignore` files, the compose `app` profile and `.github/workflows/ci.yml` |
-| 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py` |
+| 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py`. Phase 4A added `backend/app/{api,services}/diagnostics`. Phase 4B added `backend/app/api/{reviews,datasets,human_input,json_body}.py`, `backend/app/repositories/{reviews,datasets}.py`, `backend/app/services/{redaction,case_rules}.py`, `backend/app/models/{review,dataset}.py`, migration `0003`; `frontend/app/datasets/`, `frontend/app/traces/[traceId]/reviews/`, `frontend/components/{reviews,datasets}/`, `frontend/lib/actions/`, `frontend/lib/server/{reviews,datasets,review-page}.ts`, `frontend/lib/api/{review-types,review-schema,diagnostics,ids}.ts`, `frontend/lib/{review-forms,action-state}.ts`. `experiments.py` and `services/evaluation.py` remain Phase 4C |
 | 5 | `README.md`, `docs/FINAL_DELIVERY_REPORT.md` (the CI workflow `.github/workflows/ci.yml` was added early, in Phase 3C) |
 
 ## 8. Deployment posture

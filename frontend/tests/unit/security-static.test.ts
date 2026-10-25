@@ -59,16 +59,55 @@ describe("server/client boundary", () => {
     }
   });
 
-  it("has no route handlers or server actions (the UI cannot proxy the backend)", () => {
+  it("has no route handlers (the UI cannot proxy the backend)", () => {
     const appFiles = walk(path.join(ROOT, "app")).map(rel);
     assert.deepEqual(appFiles.filter((f) => /\/route\.(ts|tsx)$/.test(f)), []);
-    for (const f of files) assert.doesNotMatch(read(f), /^\s*["']use server["']/m, rel(f));
   });
 
-  it("only lib/server modules call the backend client, and the client keeps a path allowlist", () => {
-    const callers = files.filter((f) => /\bgetJson\(/.test(read(f))).map(rel).sort();
-    assert.deepEqual(callers, ["lib/server/context.ts", "lib/server/models.ts", "lib/server/overview.ts", "lib/server/traces.ts"]);
-    assert.match(read(path.join(ROOT, "lib/server/backend.ts")), /const PATH_RE = /);
+  it("Server Actions exist only in the two Phase 4B action modules, each a fixed write", () => {
+    // ARCHITECTURE.md §5.8: every "use server" module is listed here; every export of one is
+    // a public POST endpoint, so each must be an async function that validates its input and
+    // calls one lib/server write. Nothing else may declare a Server Function, inline or not.
+    const actionFiles = files.filter((f) => /["']use server["']/.test(read(f))).map(rel).sort();
+    assert.deepEqual(actionFiles, ["lib/actions/datasets.ts", "lib/actions/reviews.ts"]);
+    for (const f of actionFiles) {
+      const src = read(path.join(ROOT, f));
+      assert.match(src, /^"use server";\n/, `${f}: the directive must be the first statement`);
+      assert.match(src, /^import "server-only";$/m, f);
+      const exports = src.match(/^export .*$/gm) ?? [];
+      assert.ok(exports.length >= 2, f);
+      for (const e of exports) assert.match(e, /^export async function submit\w+\(_prev: ActionState, formData: FormData\): Promise<ActionState> \{$/, `${f}: ${e}`);
+      assert.match(src, /parse\w+Form\(formData\)/, `${f}: every action re-validates its form`);
+      assert.doesNotMatch(src, /\b(getJson|sendJson|fetch)\(/, `${f}: actions call lib/server, never the transport`);
+    }
+  });
+
+  it("only lib/server modules call the backend client, and the client keeps path allowlists", () => {
+    const readers = files.filter((f) => /\bgetJson\(/.test(read(f))).map(rel).sort();
+    assert.deepEqual(readers, ["lib/server/context.ts", "lib/server/datasets.ts", "lib/server/models.ts", "lib/server/overview.ts", "lib/server/reviews.ts", "lib/server/traces.ts"]);
+    const writers = files.filter((f) => /\bsendJson\(/.test(read(f))).map(rel).sort();
+    assert.deepEqual(writers, ["lib/server/datasets.ts", "lib/server/reviews.ts"]);
+    const backend = read(path.join(ROOT, "lib/server/backend.ts"));
+    assert.match(backend, /const PATH_RE =/);
+    assert.match(backend, /const WRITE_ROUTES: /);
+    // Writes happen only through sendJson: no other module sets a mutating fetch method.
+    for (const f of files) {
+      if (rel(f) === "lib/server/backend.ts") continue;
+      assert.doesNotMatch(read(f), /method:\s*["'`](POST|PUT|PATCH|DELETE)/, rel(f));
+    }
+  });
+
+  it("the request guard limits POST to the form pages and checks the origin", () => {
+    const proxy = read(path.join(ROOT, "proxy.ts"));
+    assert.match(proxy, /isWritePage\(request\.nextUrl\.pathname\)/);
+    assert.match(proxy, /actionRequestProblem\(/);
+    assert.doesNotMatch(read(path.join(ROOT, "next.config.ts")), /allowedOrigins:/, "no extra origins may invoke actions");
+  });
+
+  it("source files contain no invisible or bidirectional control characters (Trojan Source)", () => {
+    for (const f of [...files, ...walk(path.join(ROOT, "tests"))]) {
+      assert.doesNotMatch(read(f), /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ue000-\uf8ff]/, rel(f));
+    }
   });
 
   it("production code never imports test fixtures", () => {

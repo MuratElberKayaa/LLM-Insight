@@ -11,6 +11,8 @@ export type ApiFailureKind =
   | "unauthorized" // 401: the server-side token was rejected
   | "not_found" // 404: unknown project (indistinguishable by design, T28)
   | "invalid_request" // 422: a parameter the backend refused
+  | "conflict" // 409 (Phase 4B writes): duplicate or state conflict, with a known code
+  | "payload_too_large" // 413 (Phase 4B writes)
   | "rate_limited" // 429
   | "storage_unavailable" // 503: the backend's database is unavailable
   | "server_error" // 500 and other 5xx
@@ -26,7 +28,13 @@ export interface ApiFailure {
   retryAfterSeconds?: number;
   /** malformed: JSON path of the first mismatch, or a fixed reason. */
   detail?: string;
+  /** 409: the backend's error code, only when it is one of the documented conflict codes. */
+  code?: ConflictCode;
 }
+
+/** The 409 codes of the Phase 4B write endpoints (ARCHITECTURE.md §5.7). */
+export const CONFLICT_CODES = ["duplicate_open_review", "duplicate_dataset", "duplicate_test_case", "review_not_decided"] as const;
+export type ConflictCode = (typeof CONFLICT_CODES)[number];
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiFailure };
 
@@ -79,6 +87,16 @@ export function describeFailure(error: ApiFailure, resource: string): FailureCop
       return {
         title: "The backend refused the query",
         description: `Rejected parameter${(error.fields?.length ?? 0) === 1 ? "" : "s"}: ${(error.fields ?? []).join(", ") || "unspecified"} (422).`,
+      };
+    case "conflict":
+      return {
+        title: "Not saved: conflicts with stored data",
+        description: `The backend refused the change (409${error.code ? `: ${error.code}` : ""}). Nothing was written.`,
+      };
+    case "payload_too_large":
+      return {
+        title: "Not saved: request too large",
+        description: "The submitted content exceeds the backend's request size limit (413). Nothing was written.",
       };
     case "rate_limited":
       return {

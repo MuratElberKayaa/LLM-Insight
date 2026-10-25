@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { buildCsp, isAllowedMethod, isLoopbackHost } from "./lib/request-guard";
+import { actionRequestProblem, buildCsp, isAllowedMethod, isLoopbackHost, isWritePage } from "./lib/request-guard";
+
+const TEXT = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
 
 /**
  * Local-only request guard (SECURITY.md §5, ADR-08).
@@ -7,22 +9,31 @@ import { buildCsp, isAllowedMethod, isLoopbackHost } from "./lib/request-guard";
  * - The server binds to 127.0.0.1, and this rejects any request whose Host header is not a
  *   loopback name, so a DNS-rebinding page cannot read the dashboard through a foreign
  *   hostname that resolves to 127.0.0.1.
- * - Only GET and HEAD are served: the dashboard has no Server Functions and no route
- *   handlers, so it cannot be used as a proxy to the backend.
+ * - GET and HEAD everywhere. POST only for the Phase 4B Server Actions, only on the pages
+ *   that host their forms, and only from this origin (`actionRequestProblem`). There are no
+ *   route handlers, and each action calls one fixed backend write, so the dashboard is not a
+ *   generic proxy to the backend (ARCHITECTURE.md §5.8).
  * - A fresh CSP nonce per request lets Next.js tag its own scripts (dynamic rendering).
  */
 export function proxy(request: NextRequest) {
   if (!isLoopbackHost(request.headers.get("host"))) {
-    return new NextResponse("Misdirected request: the dashboard is served on loopback only.", {
-      status: 421,
-      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
-    });
+    return new NextResponse("Misdirected request: the dashboard is served on loopback only.", { status: 421, headers: TEXT });
   }
-  if (!isAllowedMethod(request.method)) {
-    return new NextResponse("Method not allowed.", {
-      status: 405,
-      headers: { Allow: "GET, HEAD", "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+  const write = request.method === "POST" && isWritePage(request.nextUrl.pathname);
+  if (!isAllowedMethod(request.method) && !write) {
+    return new NextResponse("Method not allowed.", { status: 405, headers: { ...TEXT, Allow: "GET, HEAD" } });
+  }
+  if (write) {
+    const problem = actionRequestProblem({
+      host: request.headers.get("host"),
+      origin: request.headers.get("origin"),
+      secFetchSite: request.headers.get("sec-fetch-site"),
+      nextAction: request.headers.get("next-action"),
     });
+    if (problem !== null) {
+      // Fixed text: the reason names the failed check, never a request value.
+      return new NextResponse(`Forbidden: ${problem}.`, { status: 403, headers: TEXT });
+    }
   }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");

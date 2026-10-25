@@ -15,7 +15,8 @@ const ITEMS: NavItem[] = [
   { label: "Overview", href: "/" },
   { label: "Models", href: "/models" },
   { label: "Traces", href: "/traces" },
-  { label: "Failure reviews", note: "Not built yet" },
+  // Phase 4B: failure reviews live on each trace page; approved test cases in datasets.
+  { label: "Datasets", href: "/datasets" },
   { label: "Experiments", note: "Not built yet" },
 ];
 
