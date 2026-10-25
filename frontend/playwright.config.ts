@@ -6,6 +6,8 @@ import { defineConfig } from "@playwright/test";
  * - the dashboard on 127.0.0.1:3001, started here from the current build (port must be free);
  * - a second dashboard instance on 127.0.0.1:3002 whose backend URL points to a closed
  *   loopback port, for the backend-outage state.
+ * - a third instance on 127.0.0.1:3003 with a wrong (well-formed) server-side token, for the
+ *   unauthorized state (Phase 3B). Process env overrides frontend/.env.local in Next.js.
  * Uses the installed Microsoft Edge (`channel: "msedge"`), so no browser download is needed.
  * One worker: the backend's /api/v1 rate limit is per client address.
  */
@@ -38,6 +40,13 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
       env: { LLMI_API_BASE_URL: "http://127.0.0.1:59999" },
+    },
+    {
+      command: "node scripts/next.mjs start --hostname 127.0.0.1 --port 3003",
+      url: "http://127.0.0.1:3003/icon.svg", // static: readiness polls never reach the backend
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { LLMI_API_TOKEN: "e2e-deliberately-wrong-token-0000000000000000" },
     },
   ],
 });

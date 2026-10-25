@@ -5,7 +5,7 @@ import { SideNav } from "./side-nav";
  * Application shell: skip link, left navigation (a horizontal strip below `lg`), header
  * and the main landmark. Server component; the header's status slot is passed in.
  */
-export function AppShell({ current, status, children }: { current: string; status: ReactNode; children: ReactNode }) {
+export function AppShell({ status, children }: { status: ReactNode; children: ReactNode }) {
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
       <a
@@ -19,7 +19,7 @@ export function AppShell({ current, status, children }: { current: string; statu
           <span aria-hidden="true" className="inline-block h-3 w-3 rounded-sm bg-series-1" />
           <span className="text-sm font-semibold tracking-tight text-ink">LLM Insight</span>
         </div>
-        <SideNav current={current} />
+        <SideNav />
       </aside>
       <div className="min-w-0">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6 lg:px-8">
