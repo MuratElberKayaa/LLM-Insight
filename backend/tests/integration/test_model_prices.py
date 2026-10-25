@@ -242,18 +242,11 @@ def test_applied_price_is_protected_by_fk_restrict_even_without_the_trigger(conn
 
 
 # ---------------------------------------------------------------- seed CLI
-class _Url(str):
-    """A database URL whose repr (e.g. in a pytest failure report) hides the credentials."""
-
-    def __repr__(self) -> str:
-        return "<disposable database url>"
-
-
 @pytest.fixture
 def fresh_url(disposable_db) -> str:
     url = disposable_db("llminsight_prices_test")  # recreated empty for every test
     command.upgrade(alembic_config(url), "head")
-    return _Url(url)
+    return url
 
 
 def _cli(url, *argv) -> tuple[int, str]:

@@ -35,6 +35,10 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 - Error responses use generic messages, and missing, unknown and revoked keys get the same `401`. `/api/v1` errors carry a fixed code and message; a `422` names the invalid parameters but never echoes their values (FastAPI's default body would).
 - The uvicorn access log records the request line, including query strings (`project`, `model`, `cursor`). The query string never carries credentials; the token travels only in the `Authorization` header, which is not logged.
 
+**Test output (Phase 2C, R33):** a failing test must never print a local credential. Fixtures hand out credential-bearing database URLs as `RedactedUrl` (repr hidden), and report hooks in both suites (`backend/tests/redaction.py`, an identical copy in `sdk/tests/`) replace every local secret (from `.env` and the environment) and the password of any `scheme://user:password@` URL in failure text, skip reasons and captured stdout/stderr/log. This does not cover `pytest -s` or live logging. Never run `docker compose config` without `--quiet`: it prints the resolved `POSTGRES_PASSWORD`.
+
+**Rotating the local PostgreSQL password** (done in Phase 2C after the R33 exposure): generate a new value, stage the new `.env` (git-ignored), set the role password with `ALTER ROLE … PASSWORD '<SCRAM-SHA-256 verifier>'` (computed client-side, so the plaintext never reaches the server or its logs), check that the new login works and the old one fails, then replace `.env` atomically and recreate the container with `docker compose up -d --wait postgres` (same named volume, so no data is lost). `POSTGRES_PASSWORD` itself only matters when the volume is first initialised. Never print the value.
+
 Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env` and `.env.*`. Phase 5 adds a secret scan.
 
 ## 3. Request limits

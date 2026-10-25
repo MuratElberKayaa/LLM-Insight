@@ -341,8 +341,8 @@ The backend binds to `127.0.0.1`.
 | `/v1/traces` | POST | See `TELEMETRY_CONTRACT.md` | 1 |
 | `/api/v1/traces` | GET | Params `project`, `from`, `to` (ISO-8601 UTC, max 31-day window), `model`, `status`, `provenance`, `limit` (default 50, max 200), `cursor`. Returns `{items, next_cursor}`, newest first | 1 (stub) / 3 |
 | `/api/v1/traces/{trace_id}` | GET | Span tree (parent-child + orphans), usage rows, linked reviews | 1 (stub) / 3 |
-| `/api/v1/overview` | GET | KPIs and trends (`METRICS_CATALOG.md`), each with `n` and a provenance split | 2 (service) / 3 |
-| `/api/v1/models/compare` | GET | Per provider/model/prompt_version totals, `cost_status` counts, sample N | 3 |
+| `/api/v1/overview` | GET | KPIs and trends (`METRICS_CATALOG.md`), each with `n` and a provenance split | 2 (backend, done in 2C, §5.2) / 3 (UI) |
+| `/api/v1/models/compare` | GET | Per provider/model/prompt_version totals, `cost_status` counts, sample N | 2C (backend, §5.2; M15) / 3 (UI) |
 | `/api/v1/failure-reviews` | POST | Body `{trace_id, span_id?, issue_type, evidence, hypothesis, created_by}` → `201`; duplicate open review → `409`; `PATCH /{id}` for status/decision | 4 |
 | `/api/v1/datasets/{dataset_id}/cases` | POST | Requires `approved: true`, `approved_by` and sanitized input, otherwise `422` with nothing stored | 4 |
 | `/api/v1/experiments` | POST | `{dataset_id, prompt_version_a, prompt_version_b, model, mode, budget_usd?}`. `mode=real` requires `budget_usd` and `LLMI_ALLOW_REAL_LLM=true` | 4 |
@@ -386,6 +386,24 @@ The backend binds to `127.0.0.1`.
 
 No new index was needed. Responses carry `Cache-Control: no-store` and no CORS headers, so browser JavaScript on another origin cannot read them.
 
+### 5.2 Phase 2C implementation of the aggregate endpoints (`backend/app/api/overview.py`)
+
+**Access and storage** are those of §5.1: `require_admin` (auth-failure bucket, bearer token, `/api/v1` bucket) runs before any parameter is validated or any query runs; the mandatory `project` id scopes every query; an unknown project is the §5.1 `404`, byte-identical across the three read endpoints; one `REPEATABLE READ, READ ONLY` transaction per request; SQL from SQLAlchemy expressions with bound parameters; `Cache-Control: no-store`.
+
+**Parameters (both):** `project`; `from` / `to` exactly as for `GET /api/v1/traces` (UTC only, `[from, to)` on **event time**, non-empty, ≤ 31 days, default the last 31 days, echoed as `window`); `model` (exact `response_model` or `requested_model`, ≤ 256); `status` (`ok` | `error`); `prompt_version` (≤ 64); `provenance` (`real` | `synthetic` | `mixed` | `unknown`). Each filter applies at the metric's own level: trace-level metrics use `traces.status`, `traces.prompt_version`, `traces.provenance` and "any usage row with that model"; usage-level metrics use the inference span's status (`error` = `ERROR`), its `gen_ai.prompt.version`, `usage_records.provenance` and the row's models. No usage row is `mixed`, so `provenance=mixed` leaves the usage-level population empty (`n = 0`). The filters are echoed as `filters`. `models/compare` adds `limit` (1–200, default 50 groups). Invalid values are `422 invalid_request` naming the parameter, never echoing it.
+
+**`GET /api/v1/overview`** → `{project, window, filters, provenance_label, provenance_verified: false, traces, inference, trend}`:
+- `traces.count` (M01), `traces.error_rate` (M05), `traces.latency` (M07, root spans; `traces_without_root` counts the excluded traces);
+- `inference.attempts` (M02), `logical_calls` (M03; `value` is `null` when no attempt has a `call_id`), `errors` (M04, with `by_error_type`, at most 50), `latency` (M06), `tokens` (M08 with the M09 `subsets`), `cost` (M10–M12), `price_versions` (M13, at most 200), `usage_source` (M14), `time_to_first_chunk` (`available: false`, not recorded);
+- every metric object is `{total, by_provenance}` with the buckets `real` / `synthetic` / `unknown` (plus `mixed` for trace-level metrics), all present; `total` is computed by PostgreSQL over all rows (`GROUP BY ROLLUP(provenance)`), never summed from buckets;
+- `trend`: hourly buckets for windows ≤ 2 days, otherwise daily, aligned to UTC (`date_bin` from the epoch): traces, error traces, attempts, failed attempts, known cost, unknown-cost calls. Buckets with no data have zero counts and a `null` known cost.
+
+**`GET /api/v1/models/compare`** (M15) → `{project, window, filters, provenance_label, provenance_verified, groups, groups_truncated, limit}`. One group per (`provider`, `requested_model`, `response_model`, `prompt_version`) with attempts, errors, latency, cost and the provenance counts, ordered by attempts (descending) then the keys; at most `limit` groups, `groups_truncated` when more exist. This is a bounded top-N, not a paginated list.
+
+**Values:** counts are true counts; unknown values are `null` (rates without a denominator, percentiles without a sample, token sums with no reported value, known cost without a computed row, `cost_complete` with no row). Money is a decimal string (exact `Decimal` sums of `NUMERIC(20,10)`; M12 rounded once, half-even, to 10 places). Rates are JSON numbers rounded to 6 places and always come with numerator and denominator. Latency is in milliseconds (6 decimals) from `percentile_cont` over `duration_ns`, with `n` and `low_sample` (p95: n < 20, p99: n < 100). No response contains a trace, span, call or response ID, a key or any telemetry content.
+
+**Index use** (EXPLAIN on 36,000 generated usage rows, one-day window; `tests/integration/test_metrics_plan.py`): usage-level queries range-scan `ix_usage_records_project_id_started_at` and reach each span through a spans index on `(project_id, trace_id, …)`; trace-level queries use `ix_traces_project_id_started_at`; no sequential scan. No new index was needed.
+
 ## 6. Version pins (candidates; CR-09)
 
 Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is the newest stable release published **on or before 2026-10-10**, so it is at least two weeks old. Lockfiles are produced when a component is first implemented, with versions re-checked then. Nothing is installed in Phase 0.
@@ -410,6 +428,8 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 
 **Phase 2B install (2026-10-24, UTC):** `sdk/.venv` only. `openai` 3.28.0 (uploaded 2026-10-09) as the optional SDK extra `openai` and a dev dependency, with its new transitives `httpx2` / `httpcore2` 2.13.1 (2026-09-23), `jiter` 0.17.0 (2026-09-12), `sniffio` 1.3.1 and `truststore` 0.10.4 (held: 0.10.5 is newer than the two-week rule allows); `pydantic` 2.14.0, `anyio` 4.15.1, `h11` 0.16.0 and the rest come from `backend/requirements.lock` as the constraint file. Note: `openai` 3.x uses `httpx2`, not `httpx`. Frozen in `sdk/requirements-dev.lock`; `pip check` is clean. The backend gets no new dependency, and its lock is unchanged.
 
+**Phase 2C install (2026-10-24, UTC):** `sdk/.venv` only, for the FastAPI demo (`demo_app/web.py`): `fastapi` 0.143.0, `uvicorn` 0.54.0 and their transitives `starlette` 1.7.0, `click` 8.5.0, `annotated-doc` 0.0.5, all **identical** to `backend/requirements.lock` (installed with it as the constraint file), so no new version enters the project. Added to the SDK `dev` extra and `sdk/requirements-dev.lock` (48 pins); `pip check` is clean. The backend gained no dependency.
+
 ## 7. Repository layout (target)
 
 This follows master plan §G. Folders are created only by the phase that fills them, with no empty layers.
@@ -418,7 +438,7 @@ This follows master plan §G. Folders are created only by the phase that fills t
 |---|---|
 | 0 | `docs/` (incl. `fixtures/`, `reports/`), `scripts/verify_phase0.py`, `.gitignore`, `.env.example` |
 | 1 | `backend/` (`pyproject.toml`, `alembic/`, `app/{main,api/otel,core,models,repositories,services/ingestion}`, `tests/`), `docker-compose.yml`, `scripts/dev` |
-| 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come). Phase 2B added `backend/app/services/{pricing,pricing_catalog}.py`, `backend/app/repositories/pricing.py`, `backend/app/models/pricing.py`, migration `0002` and `sdk/src/llm_insight_sdk/openai_adapter.py`; the seed is a CLI command (`app.cli seed-prices`), so no `scripts/seed` was needed. `metrics.py` (aggregates) is still to come |
+| 2 | `sdk/`, `demo_app/`, `backend/app/services/{pricing,metrics}.py`, `scripts/seed`, `scripts/smoke`. Phase 2A created `sdk/` (src layout: `sdk/src/llm_insight_sdk/`, so tests import the installed package, not the source tree) and `demo_app/` (a CLI demo; the FastAPI root span is still to come). Phase 2B added `backend/app/services/{pricing,pricing_catalog}.py`, `backend/app/repositories/pricing.py`, `backend/app/models/pricing.py`, migration `0002` and `sdk/src/llm_insight_sdk/openai_adapter.py`; the seed is a CLI command (`app.cli seed-prices`), so no `scripts/seed` was needed. Phase 2C added `backend/app/{repositories,services}/metrics.py`, `backend/app/api/overview.py` (the backend half of the Phase 3 row below), `backend/app/core/eventloop.py` and `demo_app/web.py` (the FastAPI demo root span); no `scripts/smoke` (the real smoke run is not authorized) |
 | 3 | `frontend/`, `backend/app/api/{overview,traces}.py` (full) |
 | 4 | `backend/app/api/{reviews,datasets,experiments}.py`, `services/evaluation.py` |
 | 5 | CI workflow, `README.md`, `docs/FINAL_DELIVERY_REPORT.md` |
@@ -426,3 +446,5 @@ This follows master plan §G. Folders are created only by the phase that fills t
 ## 8. Deployment posture
 
 Local-only. Compose publishes the backend as `127.0.0.1:8000` and the frontend as `127.0.0.1:3000`; PostgreSQL is not published, or only on `127.0.0.1` in dev (Phase 1A: `127.0.0.1:55432`, `POSTGRES_HOST_PORT`, because a native PostgreSQL already listens on 5432 on the dev machine; R19). Any public deployment requires a separate auth and threat review (`SECURITY.md` §7). There is no claim of production or billing-grade reliability.
+
+**Event loop (Phase 2C, R32):** the backend always runs on asyncio's selector loop (`app/core/eventloop.py`, passed to uvicorn by `python -m app`). On Windows uvicorn's default Proactor loop closes its listening socket after a client resets a connection before it is accepted (CPython 3.12). The selector loop's `select()` limits a Windows process to 512 sockets (R34), which suits the local single-user MVP only.

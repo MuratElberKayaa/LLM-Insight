@@ -32,6 +32,8 @@ from typing import Any
 import psycopg
 import pytest
 
+from tests.redaction import RedactedUrl
+
 REPO = Path(__file__).resolve().parents[3]
 BACKEND = REPO / "backend"
 TEST_DB = "llminsight_sdk_it_test"
@@ -52,7 +54,7 @@ def _backend_python() -> Path:
     return BACKEND / ".venv" / sub
 
 
-def _server_url() -> str:
+def _server_url() -> RedactedUrl:
     url = os.environ.get("LLMI_DATABASE_URL")
     env_file = REPO / ".env"
     if not url and env_file.exists():
@@ -61,16 +63,18 @@ def _server_url() -> str:
                 url = line.split("=", 1)[1].strip()
     if not url or not url.startswith("postgresql+psycopg://"):
         _unavailable("LLMI_DATABASE_URL not set (repository .env missing)")
-    return url  # type: ignore[return-value]
+    return RedactedUrl(url)  # type: ignore[arg-type]
 
 
-def _with_database(url: str, name: str) -> str:
+# Every URL and conninfo below carries the local database password. They are `RedactedUrl`s,
+# because pytest prints helper arguments and dataclass reprs when a test fails.
+def _with_database(url: str, name: str) -> RedactedUrl:
     base, _, _ = url.rpartition("/")
-    return f"{base}/{name}"
+    return RedactedUrl(f"{base}/{name}")
 
 
-def _libpq(url: str) -> str:
-    return url.replace("postgresql+psycopg://", "postgresql://", 1)
+def _libpq(url: str) -> RedactedUrl:
+    return RedactedUrl(url.replace("postgresql+psycopg://", "postgresql://", 1))
 
 
 def _free_port() -> int:
@@ -86,7 +90,7 @@ class LiveBackend:
     project_id: int
     key: str = field(repr=False)  # test secrets never appear in pytest output
     admin_token: str = field(repr=False)
-    conninfo: str
+    conninfo: str = field(repr=False)  # carries the local database password
     log_path: Path
     python: Path
     env: dict[str, str] = field(repr=False)
@@ -201,18 +205,19 @@ def live_backend(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LiveBacke
             pytest.fail("backend did not become ready: " + log_path.read_text()[-2000:])
         time.sleep(0.2)
 
+    backend = LiveBackend(
+        base_url=base_url,
+        ingest_endpoint=f"{base_url}/v1/traces",
+        project_id=project_id,
+        key=key,
+        admin_token=env["LLMI_ADMIN_TOKEN"],
+        conninfo=conninfo,
+        log_path=log_path,
+        python=python,
+        env=env,
+    )
     try:
-        yield LiveBackend(
-            base_url=base_url,
-            ingest_endpoint=f"{base_url}/v1/traces",
-            project_id=project_id,
-            key=key,
-            admin_token=env["LLMI_ADMIN_TOKEN"],
-            conninfo=conninfo,
-            log_path=log_path,
-            python=python,
-            env=env,
-        )
+        yield backend
     finally:
         proc.terminate()
         try:
@@ -222,3 +227,9 @@ def live_backend(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LiveBacke
         log.close()
         with psycopg.connect(admin_conninfo, autocommit=True, connect_timeout=2) as conn:
             conn.execute(f'DROP DATABASE IF EXISTS "{TEST_DB}" WITH (FORCE)')
+    # R32 diagnostics: the backend log of the whole session, not only of the leak tests, must
+    # be free of tracebacks. A failure here prints each block (scrubbed, tests/redaction.py)
+    # while the log still exists; pytest's temporary directories rotate.
+    blocks = backend.log_tracebacks()
+    if blocks:
+        pytest.fail(f"backend log has {len(blocks)} traceback(s):\n" + "\n---\n".join(blocks))

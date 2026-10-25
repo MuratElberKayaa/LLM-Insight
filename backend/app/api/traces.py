@@ -118,7 +118,7 @@ def decode_cursor(raw: str) -> repo.Cursor:
 
 
 # ---------------------------------------------------------------- DB access
-def _read[T](request: Request, fn: Callable[[Session], T]) -> T:
+def read_snapshot[T](request: Request, fn: Callable[[Session], T]) -> T:
     """Run `fn` in one read-only snapshot transaction (always rolled back)."""
     factory = request.app.state.session_factory
     try:
@@ -238,7 +238,7 @@ async def list_traces(
             raise not_found()
         return repo.list_traces(session, f, position, limit)
 
-    rows = await run_in_threadpool(_read, request, read)
+    rows = await run_in_threadpool(read_snapshot, request, read)
     page = rows[:limit]
     next_cursor = (
         encode_cursor(page[-1].started_at, page[-1].trace_id) if len(rows) > limit else None
@@ -272,7 +272,7 @@ async def get_trace(
             repo.get_usage(session, project, trace_id),
         )
 
-    trace, span_rows, usage_rows = await run_in_threadpool(_read, request, read)
+    trace, span_rows, usage_rows = await run_in_threadpool(read_snapshot, request, read)
     spans_truncated = len(span_rows) > repo.DETAIL_MAX_SPANS
     span_rows = span_rows[: repo.DETAIL_MAX_SPANS]
     children: dict[str, list[str]] = defaultdict(list)

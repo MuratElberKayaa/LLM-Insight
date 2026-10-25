@@ -11,6 +11,9 @@ import llm_insight_sdk as lli
 from llm_insight_sdk.mock import MockLLMProvider, ObservedMockClient
 from tests.otlp_stub import OTLPStub, start_stub
 
+# Report hooks that keep local credentials out of every failure report (tests/redaction.py).
+from tests.redaction import pytest_make_collect_report, pytest_runtest_makereport  # noqa: F401
+
 # Well-formed dummy key (format lli_<8>_<43+>); never a real credential.
 DUMMY_KEY = "lli_AbCd1234_" + "k" * 43
 # Strings that must never leave the process (content and credentials).

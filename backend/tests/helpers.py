@@ -1,5 +1,7 @@
 """Shared test helpers (no DB access at import time)."""
 
+import secrets
+import string
 from pathlib import Path
 
 from alembic.config import Config
@@ -13,6 +15,13 @@ REPO_ROOT = BACKEND_DIR.parent
 DUMMY_PEPPER = "p" * 40
 DUMMY_TOKEN = "t" * 40
 UNREACHABLE_DB_URL = "postgresql+psycopg://user:pw@127.0.0.1:1/none"
+
+
+def letters(n: int = 12) -> str:
+    """A random lowercase suffix for test identifiers (provider names, versions). Letters
+    only: random hex can contain an 11-digit run, which the R08 rule drops as a phone- or
+    ID-like value (TELEMETRY_CONTRACT.md §3.1), so the identifier would vanish at random."""
+    return "".join(secrets.choice(string.ascii_lowercase) for _ in range(n))
 
 
 def make_settings(database_url: str = UNREACHABLE_DB_URL, **overrides) -> Settings:

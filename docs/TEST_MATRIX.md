@@ -20,7 +20,7 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T07 | Ingestion | gzip valid | `Content-Encoding: gzip` decoded; corrupt gzip → `400` `INVALID_GZIP` | | | 1 | I | PASS (phase-1c) |
 | T08 | Ingestion | Oversized payload | Wire > 4 MiB, decompressed > 16 MiB, spans > 2048 → `413` each (count-based 413 is our policy) | ★ | | 1 | I | PASS (phase-1c) |
 | T09 | SDK | Real/mock client span attributes | CLIENT span `chat {model}` with required `gen_ai.*` + provenance | ★ | | 2 | U/I | PASS (phase-2b) |
-| T10 | SDK | Nested context | LLM span is a child of the demo FastAPI root span (same trace) | ★ | | 2→3 | I | PARTIAL (phase-2b) |
+| T10 | SDK | Nested context | LLM span is a child of the demo FastAPI root span (same trace) | ★ | | 2→3 | I | PASS (phase-2c) |
 | T11 | SDK | Provider success usage | Provider-reported usage mapped to `gen_ai.usage.*`, `usage_source=provider_reported` | ★ | | 2 | U | PASS (phase-2b) |
 | T12 | SDK | 429 / timeout status | Span `ERROR`, `error.type` set, attempt recorded; app gets a handled error | ★ | | 2 | U | PASS (phase-2b) |
 | T13 | SDK | Export-down fail-open | Backend down: app request succeeds, no exception, latency bounded by design | ★ | | 2→5 | I | PASS (phase-2a) |
@@ -34,15 +34,15 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T21 | Cost/metrics | Reasoning subset no double count | Reasoning tokens not added to output | ★ | | 2 | U | PASS (phase-2b) |
 | T22 | Cost/metrics | Price version persisted | `price_version` + `model_price_id` stored per usage row; price change doesn't rewrite history | ★ | | 2 | I | PASS (phase-2b) |
 | T23 | Cost/metrics | Duplicate usage ignored | Re-export → one usage row, cost unchanged | ★ | ⛔ | 2→5 | I | PASS (phase-2b) |
-| T24 | Cost/metrics | p95 sample + percentiles math | SQL `percentile_cont` = NumPy `linear` on fixture; `n` returned | ★ | | 2→3 | U/I | NOT RUN |
+| T24 | Cost/metrics | p95 sample + percentiles math | SQL `percentile_cont` = NumPy `linear` on fixture; `n` returned | ★ | | 2→3 | U/I | PASS (phase-2c) |
 | T25 | API/DB | Pagination | Cursor pagination stable; `limit` max enforced | ★ | | 1→3 | I | PASS (phase-1c) |
 | T26 | API/DB | Timestamp timezone | ns epoch → UTC `TIMESTAMPTZ`; API returns ISO-8601 with `Z`; ns preserved | ★ | | 1→3 | U/I | PASS (phase-1c) |
 | T27 | API/DB | Orphan span | Missing parent stored and returned as orphan | ★ | | 1→3 | I | PASS (phase-1c) |
 | T28 | API/DB | Project filter auth | Other project's trace → `404`; list never mixes projects | ★ | | 1→3 | I | PASS (phase-1c) |
-| T29 | API/DB | Empty aggregation | No data → `n=0`, null values (not 0), `200` | ★ | | 2→3 | I | NOT RUN |
+| T29 | API/DB | Empty aggregation | No data → `n=0`, null values (not 0), `200` | ★ | | 2→3 | I | PASS (phase-2c) |
 | T30 | API/DB | DB outage / transaction rollback | Mid-batch failure → nothing persisted; DB down → `503` + Retry-After; `/health/ready` `503` | ★ | | 1→5 | I | PASS (phase-1c) |
 | T31 | API/DB | Migration clean recreate | `alembic upgrade head` / `downgrade base` / `upgrade head` on a disposable DB; schema matches `ARCHITECTURE.md` §4 | | | 1→5 | I | PASS (phase-2b) |
-| T32 | API/DB | Status counts and total distinct API calls | M02/M04 counts match fixture; trace vs inference counts separate | ★ | | 2→3 | I | NOT RUN |
+| T32 | API/DB | Status counts and total distinct API calls | M02/M04 counts match fixture; trace vs inference counts separate | ★ | | 2→3 | I | PASS (phase-2c) |
 | T33 | Eval/workflow | Failure review create | Valid enum values → `201`; invalid `issue_type` → `422`; duplicate open → `409` | ★ | | 4 | I | NOT RUN |
 | T34 | Eval/workflow | No approval no test case | Missing or false `approved` → `422`, no row | ★ | ⛔ | 4→5 | I | NOT RUN |
 | T35 | Eval/workflow | Redaction before case save | Email / phone / key-like input is masked before insert; `redaction_applied=true` | ★ | ⛔ | 4→5 | U/I | NOT RUN |
@@ -58,7 +58,7 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T45 | Security/UI | Trace list UI screenshot assertion | Seeded DB data visible in the list; screenshot saved | ★ | | 3 | E | NOT RUN |
 | T46 | Security/UI | Drilldown tree E2E | Trace list → detail shows root → child tree | ★ | ⛔ | 3→5 | E | NOT RUN |
 | T47 | Security/UI | Reproducible compose smoke | Clean clone → `docker compose up --build` → init → demo works | | | 5 | E | NOT RUN |
-| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | PARTIAL (phase-1c) |
+| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | PARTIAL (phase-2c) |
 
 **Counts:**
 - 48 tests in total.
@@ -68,7 +68,7 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 
 ## Sub-cases (inherit the parent's criticality)
 
-These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3; Phase 2A SDK evidence: `reports/phase-2a.md` §4; Phase 2B pricing and OpenAI adapter evidence, including T23-S1/S2 with costs: `reports/phase-2b.md` §4).
+These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3; Phase 2A SDK evidence: `reports/phase-2a.md` §4; Phase 2B pricing and OpenAI adapter evidence, including T23-S1/S2 with costs: `reports/phase-2b.md` §4; Phase 2C metrics, FastAPI demo and T48-S1 at the aggregate API: `reports/phase-2c.md` §6).
 
 | Sub-case | Parent | Scenario | Expected outcome |
 |---|---|---|---|
