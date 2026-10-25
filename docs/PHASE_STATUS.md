@@ -1,6 +1,6 @@
 # LLM Insight — Phase Status
 
-Last updated: 2026-10-25 UTC (Phase 2C delivered: security gate and credential rotation, R32 fix, pricing re-verification, aggregate metrics M01–M15 and their API, FastAPI root-span demo; awaiting review. Phase 2 is not accepted; no `phase-2` tag). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
+Last updated: 2026-10-25 UTC (Phase 2 **accepted and closed for the offline MVP scope**: final regression passed, verified prices seeded into the local dev DB, real OpenAI smoke NOT RUN, `phase-2` tag on the closure commit; evidence `reports/phase-2-final.md`. Phase 3 not started). Update this file at the end of every phase. A box is checked only with evidence: a command output, a file, or user approval.
 
 | Phase | Window (target) | State |
 |---|---|---|
@@ -11,12 +11,13 @@ Last updated: 2026-10-25 UTC (Phase 2C delivered: security gate and credential r
 | 1 Final security hardening and closure | 24 Oct | **Closed** (`reports/phase-1-final.md`): R08 mitigated, protocol decisions recorded, all Phase 1 gates pass, `phase-1` tag on the closure commit. Awaiting architectural review before Phase 2 |
 | 2A SDK + mock integration | 24 Oct | Delivered (`reports/phase-2a.md`); reviewed by the user (Phase 2B instruction) |
 | 2B OpenAI adapter, pricing & cost engine | 24 Oct | Delivered (`reports/phase-2b.md`); reviewed by the user (Phase 2C instruction) |
-| 2C Metrics, demo integration & security gate | 24–25 Oct | Delivered (`reports/phase-2c.md`); awaiting user review. Phase 2 acceptance and the `phase-2` tag follow that review |
+| 2C Metrics, demo integration & security gate | 24–25 Oct | Delivered (`reports/phase-2c.md`); technically accepted by the user (Phase 2 final instruction) |
+| 2 Final acceptance and closure | 25 Oct | **Closed** (`reports/phase-2-final.md`) for the offline MVP scope: baseline verified, prices re-verified and seeded (dev DB only), backend 1082 / SDK 343 passed, 0 failed, 0 skipped; real OpenAI smoke NOT RUN; `phase-2` tag on the closure commit |
 | 3 Dashboard | 31 Oct–2 Nov | Not started |
 | 4 Review / dataset / experiments | 3–4 Nov | Not started |
 | 5 QA & delivery | 5–7 Nov | Not started |
 
-**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. Phase 2A added `sdk/` (the installable `llm-insight-sdk` 0.1.0: config contract, OTLP/HTTP protobuf export through a bounded BatchSpanProcessor, GenAI CLIENT inference spans, deterministic mock provider, sync and async) and `demo_app/` (CLI demo, scenarios A–E). Phase 2B added migration `0002` (`model_prices`, append-only, plus the `usage_records.model_price_id` FK), the verified OpenAI catalogue `openai-2026-10-24` with `python -m app.cli seed-prices`, the Decimal cost engine applied once at ingest, and the offline-tested OpenAI Chat Completions adapter (`llm-insight-sdk` 0.2.0, extra `openai`). The dev database is at `0002 (head)` with **no** price rows seeded. Phase 2C added the test-output redaction layers in both suites and rotated the local PostgreSQL password (R33), runs the backend on the selector event loop (R32 fix, `app/core/eventloop.py`), re-verified the price catalogue (unchanged), added the aggregate metrics M01–M15 (`app/{repositories,services}/metrics.py`) with `GET /api/v1/overview` and `GET /api/v1/models/compare`, and the FastAPI demo `demo_app/web.py` (SERVER request span → CLIENT inference spans, mock and offline fake OpenAI). The dev database is at `0002 (head)`, still with **no** price rows seeded and no telemetry. There is no real OpenAI call and no frontend yet.
+**Actual code state:** `backend/` holds a FastAPI app with typed config, `/health/live` and `/health/ready`, the SQLAlchemy models and Alembic migration `0001` for `ARCHITECTURE.md` §4.2–4.6, the OTLP/HTTP binary-protobuf receiver `POST /v1/traces` (auth, limits, validation, `llminsight.attrmap.v1`, idempotent trace/span/usage writes), the key CLI `python -m app.cli`, the local admin read API `GET /api/v1/traces` and `GET /api/v1/traces/{trace_id}` (Phase 1C), and unit plus PostgreSQL integration tests. `docker-compose.yml` runs PostgreSQL 17. Phase 2A added `sdk/` (the installable `llm-insight-sdk` 0.1.0: config contract, OTLP/HTTP protobuf export through a bounded BatchSpanProcessor, GenAI CLIENT inference spans, deterministic mock provider, sync and async) and `demo_app/` (CLI demo, scenarios A–E). Phase 2B added migration `0002` (`model_prices`, append-only, plus the `usage_records.model_price_id` FK), the verified OpenAI catalogue `openai-2026-10-24` with `python -m app.cli seed-prices`, the Decimal cost engine applied once at ingest, and the offline-tested OpenAI Chat Completions adapter (`llm-insight-sdk` 0.2.0, extra `openai`). The dev database is at `0002 (head)` with **no** price rows seeded. Phase 2C added the test-output redaction layers in both suites and rotated the local PostgreSQL password (R33), runs the backend on the selector event loop (R32 fix, `app/core/eventloop.py`), re-verified the price catalogue (unchanged), added the aggregate metrics M01–M15 (`app/{repositories,services}/metrics.py`) with `GET /api/v1/overview` and `GET /api/v1/models/compare`, and the FastAPI demo `demo_app/web.py` (SERVER request span → CLIENT inference spans, mock and offline fake OpenAI). At the Phase 2 closure (no code change) the six verified price rows `openai-2026-10-24` were seeded into the dev database, which is at `0002 (head)` with no telemetry. There is no real OpenAI call and no frontend yet.
 
 ## Phase 0 — Definition
 - [x] Independent repo initialized; `git rev-parse --show-toplevel` = project folder; no remotes
@@ -106,16 +107,20 @@ Last updated: 2026-10-25 UTC (Phase 2C delivered: security gate and credential r
 - [x] Task E FastAPI demo: SERVER root span → CLIENT inference spans (success, multi, failure, recovered retry, offline OpenAI), `traceparent` continuation, synthetic only, no content or keys, fail-open, live round trip to DB, trace API and metrics API
 - [x] Task F: backend **1082 passed** (688 unit + 394 integration), SDK **343 passed** (314 unit + 29 live backend), 0 failed, 0 skipped; Ruff; strict mypy; `pip check`; `alembic check` + cycle; compose; doc check; `git diff --check` (report §5)
 - [x] Test matrix: T10, T24, T29, T32 `PASS (phase-2c)`; T48 `PARTIAL (phase-2c)` (API half of T48-S1)
-- [ ] User review of Phase 2C
+- [x] User review of Phase 2C (Phase 2 final instruction, 2026-10-25: technically accepted)
 
-## Phase 2 — acceptance (after the Phase 2C review)
-- [ ] User review and acceptance of Phases 2A–2C (including the T24 cross-check method, report §6)
-- [ ] Real smoke run only with explicit approval, an `OPENAI_API_KEY` and a budget; otherwise it stays NOT RUN (Phase 2 accepts the SYNTHETIC fake-adapter path, master plan §H)
-- [ ] Decide whether to seed the dev database (`python -m app.cli seed-prices`)
-- [ ] `phase-2` tag on the accepted commit
+## Phase 2 — final acceptance and closure (evidence: `reports/phase-2-final.md`)
+- [x] User acceptance of Phases 2A–2C for the OFFLINE MVP scope (Phase 2 final instruction, 2026-10-25)
+- [x] Baseline: project Git root, `main`, clean tree at `7b3fa28`, tags `phase-0`/`phase-1`, no `phase-2`; PostgreSQL healthy; dev DB `0002 (head)`
+- [x] Six catalogue prices re-verified against the official pages (summarizer and raw HTML, 2026-10-25T06:38Z): unchanged
+- [x] Dev DB seeded with user approval limited to the local development database: target identity confirmed, dry run (would insert 6), seed (inserted 6), second run (inserted 0, unchanged 6); exact Decimal and UTC values, no duplicates, usage ledger untouched, no backfill
+- [x] Final regression: backend **1082 passed**, SDK **343 passed**, 0 failed, 0 skipped (real PostgreSQL); Ruff; strict mypy; `pip check`; `alembic check`; compose; doc check; `git diff --check`; secret scan 0
+- [ ] Real OpenAI smoke run: **NOT RUN** (no approval, no key, no budget). Phase 2 is accepted on the SYNTHETIC fake-adapter path (master plan §H); live provider behaviour stays unverified (report §7)
+- [x] Limitations recorded (report §5): R32 attribution caveat, R34, pricing and privacy limits, T48 dashboard half, open critical tests
+- [x] Closure commit and annotated `phase-2` tag (`phase-0`, `phase-1` unchanged; not pushed)
 
 ## Phase 3 — Dashboard
-- [ ] Prerequisites: TypeScript version decided; Node 22 patch updated
+- [ ] Prerequisites: explicit user instruction to start; TypeScript version decided (R07); Node 22 patch updated (R12); free loopback frontend port (R19); see `reports/phase-2-final.md` §8
 - [ ] Overview, models/compare, full traces API with filters (including provenance), null handling and `n`
 - [ ] Next.js server-side fetching only; KPIs, trends, model compare, trace list, span tree, provenance badges (real / synthetic / mixed / unknown)
 - [ ] Empty, loading and error states; no constant mock KPIs

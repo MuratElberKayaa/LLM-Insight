@@ -42,7 +42,9 @@ Every row has `version = openai-2026-10-24`, `currency = USD`, `verified_at = 20
 
 **Verification time is not historical validity.** `verified_at` (2026-10-24T21:40:00Z) is when the evidence was read; `effective_from` claims validity only from that instant (OpenAI publishes no start dates), and the re-check proves the same rates were still published at 23:01Z. No price before 21:40Z is claimed or guessed; earlier events stay `price_missing`.
 
-**Seeding:** `python -m app.cli seed-prices --dry-run`, then `python -m app.cli seed-prices` (backend). It inserts missing rows, reports identical rows as unchanged, and exits 1 writing nothing if a stored row with the same identity differs. It never reprices usage rows.
+**Re-verification (Phase 2 closure, 2026-10-25T06:38Z, UTC).** Checked again before seeding: the pricing page, the three model pages and the deprecations page through the page summarizer, and the pricing and model pages downloaded raw (2026-10-25T06:38:13Z–06:38:16Z, HTTP 200). The raw pricing page's first row per model is 0.75 / 0.075 / 4.5, 0.25 / 0.025 / 2 and 0.4 / 0.1 / 1.6; each model page lists only the catalogued default snapshot with the same three prices; no long-context row or cache-write price; shutdown dates and replacements unchanged; `gpt-5.4-mini` has no deprecation notice. **Nothing was changed.**
+
+**Seeding:** `python -m app.cli seed-prices --dry-run`, then `python -m app.cli seed-prices` (backend). It inserts missing rows, reports identical rows as unchanged, and exits 1 writing nothing if a stored row with the same identity differs. It never reprices usage rows. **The local development database was seeded on 2026-10-25** with user approval limited to that database (`reports/phase-2-final.md` §3): 6 rows inserted, a second run inserted 0 and left 6 unchanged, the usage ledger was empty and untouched, and no backfill exists.
 
 ## 3. Applicability: what the stored price covers
 
