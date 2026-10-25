@@ -51,14 +51,14 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T38 | Eval/workflow | Prompt A/B same dataset | Both versions run on identical case IDs | | | 4 | I | NOT RUN |
 | T39 | Eval/workflow | Evaluation provenance labels | Each result carries `real`/`synthetic`; mock → synthetic | ★ | | 4 | I | NOT RUN |
 | T40 | Eval/workflow | Missing expected output handling | `passed=NULL` ("not evaluated"), excluded from the pass-rate denominator | | | 4 | U | NOT RUN |
-| T41 | Security/UI | XSS escape on labels | `<script>` in a model/service name renders as text | ★ | | 3→5 | E | PASS (phase-3b) |
-| T42 | Security/UI | Server-only API secret | Build output / client bundle / HTML contain no admin token | ★ | ⛔ | 3→5 | E | PASS (phase-3a) |
+| T41 | Security/UI | XSS escape on labels | `<script>` in a model/service name renders as text | ★ | | 3→5 | E | PASS (phase-3c) |
+| T42 | Security/UI | Server-only API secret | Build output / client bundle / HTML contain no admin token | ★ | ⛔ | 3→5 | E | PASS (phase-3c) |
 | T43 | Security/UI | Request rate limit | Burst over limit → `429` + Retry-After (ingest, auth-failure and API buckets) | ★ | | 3→5 | I | PARTIAL (phase-1c) |
 | T44 | Security/UI | Malformed header/auth log sanitization | Logs contain no key/header value after bad-auth requests | ★ | | 1→5 | I | PASS (phase-1c) |
-| T45 | Security/UI | Trace list UI screenshot assertion | Seeded DB data visible in the list; screenshot saved | ★ | | 3 | E | PASS (phase-3b) |
-| T46 | Security/UI | Drilldown tree E2E | Trace list → detail shows root → child tree | ★ | ⛔ | 3→5 | E | PASS (phase-3b) |
+| T45 | Security/UI | Trace list UI screenshot assertion | Seeded DB data visible in the list; screenshot saved | ★ | | 3 | E | PASS (phase-3c) |
+| T46 | Security/UI | Drilldown tree E2E | Trace list → detail shows root → child tree | ★ | ⛔ | 3→5 | E | PASS (phase-3c) |
 | T47 | Security/UI | Reproducible compose smoke | Clean clone → `docker compose up --build` → init → demo works | | | 5 | E | NOT RUN |
-| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | PASS (phase-3b) |
+| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | PASS (phase-3c) |
 
 **Counts:**
 - 48 tests in total.
@@ -68,7 +68,7 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 
 ## Sub-cases (inherit the parent's criticality)
 
-These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3; Phase 2A SDK evidence: `reports/phase-2a.md` §4; Phase 2B pricing and OpenAI adapter evidence, including T23-S1/S2 with costs: `reports/phase-2b.md` §4; Phase 2C metrics, FastAPI demo and T48-S1 at the aggregate API: `reports/phase-2c.md` §6; Phase 3A dashboard foundation and Overview, T41/T42/T48: `reports/phase-3a.md` §5; Phase 3B trace explorer, T41/T45/T46/T48 and the UI re-verification of T02/T18/T25–T28: `reports/phase-3b.md` §6.5).
+These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3; Phase 2A SDK evidence: `reports/phase-2a.md` §4; Phase 2B pricing and OpenAI adapter evidence, including T23-S1/S2 with costs: `reports/phase-2b.md` §4; Phase 2C metrics, FastAPI demo and T48-S1 at the aggregate API: `reports/phase-2c.md` §6; Phase 3A dashboard foundation and Overview, T41/T42/T48: `reports/phase-3a.md` §5; Phase 3B trace explorer, T41/T45/T46/T48 and the UI re-verification of T02/T18/T25–T28: `reports/phase-3b.md` §6.5; Phase 3C model comparison, project selector, R40/R41 and the re-verification of T41/T42/T45/T46/T48 with run-owned fixtures: `reports/phase-3c.md` §7).
 
 | Sub-case | Parent | Scenario | Expected outcome |
 |---|---|---|---|

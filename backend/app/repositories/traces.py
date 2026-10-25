@@ -7,10 +7,13 @@ parameters (SECURITY.md §3: no string-built SQL). Index use:
   unique per project (and, unlike the surrogate `id`, says nothing about other projects)
 - per-trace usage summary and the `model` filter: `uq_usage_records_project_id_trace_id_span_id`
 - detail spans: `ix_spans_project_id_trace_id_start_ns`; parent lookup: the spans unique key
+- model/provider summary of a page of traces (Phase 3C, R40): one grouped statement over
+  the usage rows of the page's trace ids, through the same usage unique key
 
 `spans.status_message` is never selected (R21).
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -21,6 +24,7 @@ from sqlalchemy.orm import Session, aliased
 from app.models import Project, Span, Trace, UsageRecord
 
 DETAIL_MAX_SPANS = 2000  # one trace can grow across batches; the detail response is bounded
+MAX_MODELS_PER_TRACE = 10  # model/provider combinations listed per trace; the rest are counted
 
 
 @dataclass(frozen=True)
@@ -202,3 +206,65 @@ def get_usage(session: Session, project_id: int, trace_id: str) -> list[Row[Any]
         .limit(DETAIL_MAX_SPANS + 1)
     )
     return list(session.execute(stmt))
+
+
+def trace_models_stmt(project_id: int, trace_ids: Sequence[str]) -> Select[Any]:
+    """Distinct (provider, requested_model, response_model) of each trace's usage rows, with
+    the number of rows per combination, the largest first, at most MAX_MODELS_PER_TRACE per
+    trace, plus the trace's total number of distinct combinations (`distinct_count`).
+
+    A trace can call several providers and models, so this is a set, never one value picked
+    for the whole trace. NULL models (not reported) stay NULL and form their own combination.
+    """
+    u = UsageRecord
+    grouped = (
+        select(
+            u.trace_id,
+            u.provider,
+            u.requested_model,
+            u.response_model,
+            func.count().label("calls"),
+        )
+        .where(u.project_id == project_id, u.trace_id.in_(list(trace_ids)))
+        .group_by(u.trace_id, u.provider, u.requested_model, u.response_model)
+        .subquery("grouped")
+    )
+    g = grouped.c
+    ranked = select(
+        g.trace_id,
+        g.provider,
+        g.requested_model,
+        g.response_model,
+        g.calls,
+        func.row_number()
+        .over(
+            partition_by=g.trace_id,
+            order_by=(
+                g.calls.desc(),
+                g.provider.asc(),
+                g.requested_model.asc().nulls_first(),
+                g.response_model.asc().nulls_first(),
+            ),
+        )
+        .label("rank"),
+        func.count().over(partition_by=g.trace_id).label("distinct_count"),
+    ).subquery("ranked")
+    r = ranked.c
+    return (
+        select(
+            r.trace_id,
+            r.provider,
+            r.requested_model,
+            r.response_model,
+            r.calls,
+            r.distinct_count,
+        )
+        .where(r.rank <= MAX_MODELS_PER_TRACE)
+        .order_by(r.trace_id, r.rank)
+    )
+
+
+def trace_models(session: Session, project_id: int, trace_ids: Sequence[str]) -> list[Row[Any]]:
+    if not trace_ids:
+        return []
+    return list(session.execute(trace_models_stmt(project_id, trace_ids)))

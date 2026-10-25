@@ -58,7 +58,7 @@ Implemented in `backend/app/repositories/metrics.py` (SQL) and `backend/app/serv
 - **M08/M09** sums skip `NULL`; a sum is `null` when no row reports the value. Subsets carry `calls_reporting`, because an absent subset may mean 0 or not reported.
 - **M10/M11/M12**: `cost_complete` is true only when no row of the population has an unknown cost (`null` for an empty population). M12 is the exact quotient rounded once, half-even, to 10 places.
 - **M13** lists `(provider, model, price_version)` of computed rows through their exact `model_price_id`.
-- **M15** groups by `provider`, `requested_model`, `response_model` and the span's prompt version, and reports M02, M04, M06, M10, M11 plus the provenance counts per group.
+- **M15** groups by `provider`, `requested_model`, `response_model` and the span's prompt version, and reports M02, M04, M06, M10, M11 plus the provenance counts per group. **Phase 3C (additive, no formula changed):** each group also carries `tokens` (M08/M09, the overview's block: sums skip `NULL`, `null` when nothing is reported, unknown counts, subsets with `calls_reporting`) and `usage_source` (M14 counts), so the comparison page shows token statistics without recomputing anything. Groups partition the usage rows, so their token sums add up to the overview total (integration-tested).
 - **Filters** apply at each metric's own level (trace columns for trace-level metrics, the usage row and its span for usage-level metrics). `provenance=mixed` selects mixed traces; no usage row is mixed, so usage-level metrics are then empty.
 - **Rates** are JSON numbers rounded to 6 places next to their numerator and denominator; money is never a float.
 - **Trend** = the same counts and sums per UTC hour (windows ≤ 2 days) or day.

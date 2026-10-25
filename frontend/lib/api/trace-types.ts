@@ -37,6 +37,25 @@ export interface TraceUsageSummary {
   calls_with_unknown_tokens: number;
   known_cost_usd: string | null;
   unknown_cost_calls: number;
+  /**
+   * Phase 3C (R40): every distinct provider/model combination of the trace's inference calls,
+   * largest first, at most 10; `distinct` counts all of them. A trace can use several
+   * providers and models, so no single value represents it. Null models were not reported.
+   */
+  models: TraceModels;
+}
+
+export interface TraceModel {
+  provider: string;
+  requested_model: string | null;
+  response_model: string | null;
+  calls: number;
+}
+
+export interface TraceModels {
+  items: TraceModel[];
+  distinct: number;
+  truncated: boolean;
 }
 
 export interface TraceSummary {

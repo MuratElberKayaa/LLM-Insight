@@ -285,8 +285,9 @@ def overview(session: Session, f: MetricsFilter) -> dict[str, Any]:
 
 
 def compare(session: Session, f: MetricsFilter, limit: int) -> dict[str, Any]:
-    """M15: M02, M04, M06, M10, M11 per provider / requested model / response model /
-    prompt version, largest groups first."""
+    """M15: M02, M04, M06, M08–M11 and M14 per provider / requested model / response model /
+    prompt version, largest groups first. `tokens` and `usage_source` (Phase 3C) use the
+    same blocks as the overview, so unknown token counts stay `null` and are counted."""
     rows = repo.model_groups(session, f, limit)
     groups = []
     for r in rows[:limit]:
@@ -302,6 +303,8 @@ def compare(session: Session, f: MetricsFilter, limit: int) -> dict[str, Any]:
                 "attempts": n,
                 "errors": {"failed": failed, "succeeded": n - failed, "rate": rate(failed, n)},
                 "latency": latency(r, n),
+                "tokens": _tokens(r),
+                "usage_source": _usage_sources(r),
                 "cost": {
                     "currency": "USD",
                     "known_cost_usd": money(r.known_cost_usd),

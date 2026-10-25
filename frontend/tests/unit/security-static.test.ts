@@ -67,7 +67,7 @@ describe("server/client boundary", () => {
 
   it("only lib/server modules call the backend client, and the client keeps a path allowlist", () => {
     const callers = files.filter((f) => /\bgetJson\(/.test(read(f))).map(rel).sort();
-    assert.deepEqual(callers, ["lib/server/overview.ts", "lib/server/traces.ts"]);
+    assert.deepEqual(callers, ["lib/server/context.ts", "lib/server/models.ts", "lib/server/overview.ts", "lib/server/traces.ts"]);
     assert.match(read(path.join(ROOT, "lib/server/backend.ts")), /const PATH_RE = /);
   });
 

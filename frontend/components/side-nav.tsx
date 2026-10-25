@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { parseProjectParam, projectHref, projectLinkValue } from "../lib/project";
 
 interface NavItem {
   label: string;
@@ -12,8 +13,8 @@ interface NavItem {
 // Only built pages are links. Planned pages are listed, clearly marked, and not navigable.
 const ITEMS: NavItem[] = [
   { label: "Overview", href: "/" },
+  { label: "Models", href: "/models" },
   { label: "Traces", href: "/traces" },
-  { label: "Models", note: "Not built yet" },
   { label: "Failure reviews", note: "Not built yet" },
   { label: "Experiments", note: "Not built yet" },
 ];
@@ -23,7 +24,7 @@ function isCurrent(href: string, pathname: string): boolean {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function SideNav() {
+function NavLinks({ project }: { project: string | null }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Primary" className="flex gap-1 overflow-x-auto px-3 py-2 lg:flex-col lg:overflow-visible lg:px-3 lg:py-4">
@@ -31,7 +32,8 @@ export function SideNav() {
         item.href ? (
           <Link
             key={item.label}
-            href={item.href}
+            // Only a validated project id is carried over; filters, cursors and spans are not.
+            href={projectHref(item.href, project)}
             aria-current={isCurrent(item.href, pathname) ? "page" : undefined}
             className="flex shrink-0 items-center rounded-md px-3 py-2 text-sm font-medium text-ink-2 hover:bg-raised hover:text-ink aria-[current=page]:bg-raised aria-[current=page]:text-ink aria-[current=page]:shadow-[inset_2px_0_0_var(--color-series-1)]"
           >
@@ -51,4 +53,17 @@ export function SideNav() {
       )}
     </nav>
   );
+}
+
+/** Navigation that keeps the page's explicit `?project=` (Phase 3C). */
+export function SideNav() {
+  const params = useSearchParams();
+  const all = params.getAll("project");
+  const project = projectLinkValue(parseProjectParam(all.length > 1 ? all : (all[0] ?? undefined)));
+  return <NavLinks project={project} />;
+}
+
+/** Suspense fallback (static renders without search parameters): the plain links. */
+export function SideNavFallback() {
+  return <NavLinks project={null} />;
 }

@@ -32,7 +32,15 @@ export function makeTrace(over: Partial<TraceSummary> = {}, durationNs = 31_853_
     provenance: "synthetic",
     provenance_verified: false,
     span_count: 1,
-    usage: { inference_calls: 1, input_tokens: "120", output_tokens: "48", calls_with_unknown_tokens: 0, known_cost_usd: "0.0001875000", unknown_cost_calls: 0 },
+    usage: {
+      inference_calls: 1,
+      input_tokens: "120",
+      output_tokens: "48",
+      calls_with_unknown_tokens: 0,
+      known_cost_usd: "0.0001875000",
+      unknown_cost_calls: 0,
+      models: { items: [{ provider: "openai", requested_model: "gpt-5.4-mini", response_model: "gpt-5.4-mini-2026-03-17", calls: 1 }], distinct: 1, truncated: false },
+    },
     ...over,
   };
 }
@@ -128,7 +136,16 @@ export function retryDetail(): TraceDetail {
     makeUsage(2, { attempt_id: 1, input_tokens: null, output_tokens: null, cached_input_tokens: null, cache_write_input_tokens: null, reasoning_output_tokens: null, usage_source: "unknown", cost_unknown_reason: "usage_missing" }),
     makeUsage(3, { attempt_id: 2, provider_response_id: "mockresp_1" }),
   ];
-  return makeDetail(spans, usage, { status: "error", usage: { inference_calls: 2, input_tokens: "120", output_tokens: "48", calls_with_unknown_tokens: 1, known_cost_usd: null, unknown_cost_calls: 2 } }, 31_853_300n);
+  return makeDetail(spans, usage, { status: "error", usage: {
+        inference_calls: 2,
+        input_tokens: "120",
+        output_tokens: "48",
+        calls_with_unknown_tokens: 1,
+        known_cost_usd: null,
+        unknown_cost_calls: 2,
+        models: { items: [{ provider: "openai", requested_model: "gpt-5.4-mini", response_model: null, calls: 2 }], distinct: 1, truncated: false },
+      },
+    }, 31_853_300n);
 }
 
 export function makeList(items: TraceSummary[], next_cursor: string | null = null): TraceList {

@@ -17,6 +17,10 @@ Edge cases (`--set edge`, service names `phase3b.*`): nested spans with a known 
 >2^53 attribute, equal start times, an orphan, a parent cycle, mixed and unknown provenance,
 an application-span error, hostile labels (XSS probes), and a large trace (700+ spans).
 `--set isolation`: one trace, to be sent with a key of a second project (T28 via the UI).
+`--set phase3c` (Phase 3C, service names `phase3c.*`): a retried call (attempt 1 fails with
+`429`, attempt 2 succeeds, one `llminsight.call_id`) and a trace that calls several providers
+and models (priced, unpriced, and a failed attempt without a response model), so the E2E
+suite needs no demo-app traffic (R41).
 """
 
 from __future__ import annotations
@@ -434,6 +438,104 @@ def edge_set(b: Builder) -> None:
             )
 
 
+def letters_from(b: Builder, name: str, n: int = 16) -> str:
+    """Deterministic lowercase letters: a digit run in an id could be dropped by the R08 rule."""
+    return "".join(chr(97 + x % 26) for x in b._id("letters", name, n=n))
+
+
+def phase3c_set(b: Builder) -> None:
+    # A retried logical call: attempt 1 fails (429, no usage), attempt 2 succeeds.
+    t = b.trace("phase3c.retry")
+    t.add(
+        "root", "POST /v1/chat", "SERVER", 0, 60 * MS, attrs={"http.route": "/v1/chat"}
+    )
+    call = uuid_from(b, "retry")
+    t.add(
+        "a1",
+        "chat mock-chat-small",
+        "CLIENT",
+        1 * MS,
+        11 * MS,
+        parent="root",
+        attrs=inference("mock-chat-small", call_id=call, attempt=1, usage=None),
+        error="429",
+    )
+    t.add(
+        "a2",
+        "chat mock-chat-small",
+        "CLIENT",
+        15 * MS,
+        45 * MS,
+        parent="root",
+        attrs=inference(
+            "mock-chat-small",
+            call_id=call,
+            attempt=2,
+            usage=(100, 20),
+            **{"gen_ai.response.id": "resp-" + letters_from(b, "a2")},
+        ),
+    )
+
+    # Several providers and models in one trace (R40): two priced openai calls, one unpriced
+    # mock call and a failed call of a third provider that reported no response model.
+    t = b.trace("phase3c.multi-model")
+    t.add(
+        "root",
+        "POST /v1/compare",
+        "SERVER",
+        0,
+        120 * MS,
+        attrs={"http.route": "/v1/compare"},
+    )
+    for key, start in (("o1", 2), ("o2", 30)):
+        t.add(
+            key,
+            "chat gpt-5.4-mini",
+            "CLIENT",
+            start * MS,
+            (start + 20) * MS,
+            parent="root",
+            attrs=inference(
+                "gpt-5.4-mini",
+                call_id=uuid_from(b, key),
+                usage=(400, 100),
+                **{
+                    "gen_ai.provider.name": "openai",
+                    "gen_ai.response.model": "gpt-5.4-mini-2026-03-17",
+                    "gen_ai.response.id": "chatcmpl-" + letters_from(b, key),
+                },
+            ),
+        )
+    t.add(
+        "m1",
+        "chat mock-chat-small",
+        "CLIENT",
+        60 * MS,
+        70 * MS,
+        parent="root",
+        attrs=inference(
+            "mock-chat-small",
+            call_id=uuid_from(b, "m1"),
+            **{"gen_ai.response.id": "resp-" + letters_from(b, "m1")},
+        ),
+    )
+    t.add(
+        "x1",
+        "chat alt-model-x",
+        "CLIENT",
+        80 * MS,
+        95 * MS,
+        parent="root",
+        attrs=inference(
+            "alt-model-x",
+            call_id=uuid_from(b, "x1"),
+            usage=None,
+            **{"gen_ai.provider.name": "synthetic.alt"},
+        ),
+        error="500",
+    )
+
+
 def isolation_set(b: Builder) -> None:
     t = b.trace("phase3b.isolation")
     t.add("root", "POST /v1/other-project", "SERVER", 0, 20 * MS)
@@ -453,7 +555,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--seed", default=None, help="derive ids from this string (default: random)"
     )
-    parser.add_argument("--set", choices=("edge", "isolation"), default="edge")
+    parser.add_argument(
+        "--set", choices=("edge", "isolation", "phase3c"), default="edge"
+    )
     args = parser.parse_args(argv)
 
     key = os.environ.get("LLMI_SEED_PROJECT_KEY", "")
@@ -473,7 +577,7 @@ def main(argv: list[str]) -> int:
         (time.time_ns() - 10 * 60 * 1_000_000_000) // 1_000_000_000 * 1_000_000_000
     )  # whole second, 10 min ago
     b = Builder(seed, anchor)
-    (edge_set if args.set == "edge" else isolation_set)(b)
+    {"edge": edge_set, "isolation": isolation_set, "phase3c": phase3c_set}[args.set](b)
 
     request = b.request()
     spans = sum(len(ss.spans) for rs in request.resource_spans for ss in rs.scope_spans)

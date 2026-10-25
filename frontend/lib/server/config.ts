@@ -11,14 +11,15 @@ import "server-only";
  *   or [::1]), no credentials, path, query or fragment, so the token can only ever be sent
  *   to the local backend.
  * - LLMI_API_TOKEN: the backend's LLMI_ADMIN_TOKEN. Never logged, never rendered.
- * - LLMI_DASHBOARD_PROJECT_ID: the project shown (the API requires one; no listing exists).
+ * - LLMI_DASHBOARD_PROJECT_ID: the default project, shown when the URL has no `?project=`
+ *   (Phase 3C: other projects are selected per page through the URL, lib/project.ts).
  * - LLMI_API_TIMEOUT_MS: per-request deadline, 100–30000 (default 5000).
  */
 
 export interface DashboardConfig {
   baseUrl: URL;
   token: string;
-  projectId: string;
+  defaultProjectId: string;
   timeoutMs: number;
 }
 
@@ -73,5 +74,5 @@ export function readConfig(env: Env = process.env): ConfigResult {
     timeoutMs = parsed;
   }
 
-  return { ok: true, config: { baseUrl, token, projectId, timeoutMs } };
+  return { ok: true, config: { baseUrl, token, defaultProjectId: projectId, timeoutMs } };
 }

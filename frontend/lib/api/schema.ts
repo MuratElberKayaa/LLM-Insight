@@ -1,6 +1,7 @@
 /** Decoders for the backend responses in ./types.ts. */
 
 import {
+  DecodeError,
   array,
   boolean,
   count,
@@ -29,6 +30,7 @@ import {
   type ModelGroup,
   type ModelsCompare,
   type Overview,
+  type ProjectList,
   type Split,
   type TokenSubset,
   type Tokens,
@@ -169,6 +171,8 @@ const modelGroup: Decoder<ModelGroup> = object<ModelGroup>({
   attempts: count,
   errors: object({ failed: count, succeeded: count, rate: nullable(rate) }),
   latency,
+  tokens,
+  usage_source: keyed(USAGE_SOURCES, count),
   cost: object({
     currency: literal("USD"),
     known_cost_usd: nullable(decimalString),
@@ -180,13 +184,33 @@ const modelGroup: Decoder<ModelGroup> = object<ModelGroup>({
   by_provenance: keyed(USAGE_PROVENANCES, count),
 });
 
+/** Group-level consistency: what the backend counts per group must add up per group. */
+const checkedModelGroup: Decoder<ModelGroup> = (v, path) => {
+  const g = modelGroup(v, path);
+  if (g.errors.failed + g.errors.succeeded !== g.attempts) throw new DecodeError(`${path}.errors`, "failed + succeeded = attempts");
+  if (g.cost.computed_cost_calls + g.cost.unknown_cost_calls !== g.attempts) throw new DecodeError(`${path}.cost`, "computed + unknown cost calls = attempts");
+  if (g.cost.cost_complete !== (g.cost.unknown_cost_calls === 0)) throw new DecodeError(`${path}.cost.cost_complete`, "complete exactly when no cost is unknown");
+  if ((g.cost.known_cost_usd === null) !== (g.cost.computed_cost_calls === 0)) throw new DecodeError(`${path}.cost.known_cost_usd`, "a known cost exactly when a call was priced");
+  if (g.tokens.n !== g.attempts || g.latency.n > g.attempts) throw new DecodeError(`${path}.tokens.n`, "sample sizes within the group");
+  return g;
+};
+
 export const modelsCompareDecoder: Decoder<ModelsCompare> = object<ModelsCompare>({
   project: positiveInt,
   window,
   filters,
   provenance_label: label,
   provenance_verified: literal(false),
-  groups: array(modelGroup, MAX_GROUPS),
+  groups: array(checkedModelGroup, MAX_GROUPS),
   groups_truncated: boolean,
+  limit: positiveInt,
+});
+
+// Project names are 1–100 characters (database contract); in UTF-16 at most 200 code units.
+const MAX_PROJECTS = 200;
+
+export const projectListDecoder: Decoder<ProjectList> = object<ProjectList>({
+  items: array(object({ id: positiveInt, name: string(200), created_at: isoUtc }), MAX_PROJECTS),
+  truncated: boolean,
   limit: positiveInt,
 });

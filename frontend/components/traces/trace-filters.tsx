@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { formatUtcMinute } from "../../lib/format";
+import { hiddenFields } from "../../lib/project";
 import { PROVENANCE_LABEL } from "../../lib/provenance";
 import { PROVENANCE_FILTERS, RANGE_KEYS, RANGE_PRESETS } from "../../lib/time-range";
-import { PAGE_SIZES, STATUS_FILTERS, traceListHref, withFilter, type ListState } from "../../lib/trace-query";
+import { PAGE_SIZES, STATUS_FILTERS, traceListHref, traceListSearch, withFilter, type ListState } from "../../lib/trace-query";
 import { FilterLink } from "../navigation-transition";
 
 const STATUS_LABEL = { all: "All", ok: "OK", error: "Error" } as const;
@@ -63,17 +64,9 @@ export function TraceFilters({ state }: { state: ListState }) {
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         {/* Plain GET form: works without JavaScript; the server validates the value. */}
         <form method="get" action="/traces" className="flex flex-wrap items-end gap-2" role="search" aria-label="Filter by model">
-          {custom ? (
-            <>
-              <input type="hidden" name="from" value={custom.from} />
-              <input type="hidden" name="to" value={custom.to} />
-            </>
-          ) : state.window.kind === "preset" ? (
-            <input type="hidden" name="range" value={state.window.range} />
-          ) : null}
-          {state.status !== "all" && <input type="hidden" name="status" value={state.status} />}
-          {state.provenance !== "all" && <input type="hidden" name="provenance" value={state.provenance} />}
-          <input type="hidden" name="limit" value={String(state.limit)} />
+          {hiddenFields(traceListSearch(withFilter(state, { model: null })), ["model"]).map(([name, value]) => (
+            <input key={name} type="hidden" name={name} value={value} />
+          ))}
           <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-ink-3">
             Model (exact)
             <input

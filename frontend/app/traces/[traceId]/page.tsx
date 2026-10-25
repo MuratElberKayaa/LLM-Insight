@@ -4,6 +4,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../../../components/navigation-transition";
 import { PageHeader, SectionHeading } from "../../../components/page-header";
+import { ProjectSelector } from "../../../components/project-selector";
 import { ErrorState } from "../../../components/states";
 import {
   AttemptsTable,
@@ -17,9 +18,10 @@ import {
 import { Ident } from "../../../components/traces/trace-values";
 import { Waterfall } from "../../../components/traces/waterfall";
 import { formatUtcTime } from "../../../lib/format";
+import { parseProjectParam, projectLinkValue } from "../../../lib/project";
 import { loadTraceDetail } from "../../../lib/server/traces";
 import { buildTraceView } from "../../../lib/span-tree";
-import { backToListHref } from "../../../lib/trace-query";
+import { listStateFromBackParam, restartFields, traceListHref } from "../../../lib/trace-query";
 
 export const metadata: Metadata = { title: "Trace" };
 
@@ -52,7 +54,10 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
   await connection();
   const { traceId } = await params;
   const sp = await searchParams;
-  const back = backToListHref(sp.list);
+  const project = parseProjectParam(sp.project);
+  // The back link keeps this page's project; `list` only restores filters and paging.
+  const backState = listStateFromBackParam(sp.list, projectLinkValue(project));
+  const back = traceListHref(backState);
   // The trace id is opaque; it is only checked against the API's format before any request.
   const validId = TRACE_ID_RE.test(traceId);
 
@@ -68,7 +73,8 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
     );
   }
 
-  const { projectId, fetchedAt, detail } = await loadTraceDetail(traceId);
+  const ctx = await loadTraceDetail(traceId, project);
+  const { projectId, fetchedAt, detail } = ctx;
   const rawSpan = typeof sp.span === "string" && SPAN_ID_RE.test(sp.span) ? sp.span : null;
 
   return (
@@ -79,13 +85,14 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
         description={<Ident value={traceId} className="text-sm text-ink-2" />}
         meta={
           <>
-            {projectId !== null && <span>Project {projectId}</span>}
             <span>Fetched {formatUtcTime(fetchedAt)} · not live; refresh to update</span>
             <span>Metadata only: no prompt or completion content is stored</span>
           </>
         }
         actions={<RefreshButton />}
       />
+      {/* A trace belongs to one project: switching opens the chosen project's list, first page. */}
+      <ProjectSelector context={ctx} action="/traces" hidden={restartFields(backState, ["project"])} />
       <PendingRegion>
         {!detail.ok ? (
           detail.error.kind === "not_found" ? (

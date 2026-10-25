@@ -5,6 +5,7 @@
 
 export type ApiFailureKind =
   | "config" // the dashboard's own server-side configuration is missing or invalid
+  | "invalid_project" // `?project=` is not a project id; nothing was sent to the backend
   | "unreachable" // connection refused / DNS / network error
   | "timeout" // no response within the configured deadline
   | "unauthorized" // 401: the server-side token was rejected
@@ -62,11 +63,17 @@ export function describeFailure(error: ApiFailure, resource: string): FailureCop
         description: "The server-side read token was refused (401). The token itself is never shown here.",
         hint: "LLMI_API_TOKEN in frontend/.env.local must equal the backend's LLMI_ADMIN_TOKEN; restart the dashboard after changing it.",
       };
+    case "invalid_project":
+      return {
+        title: "Not a valid project ID",
+        description: "The project in the URL is not a positive integer id. It is not shown here and was not sent to the backend; no other project was substituted.",
+        hint: "Choose a project in the project selector, or remove the project parameter to use the configured default.",
+      };
     case "not_found":
       return {
         title: "Project not found",
-        description: "The configured project id does not exist in the backend (404).",
-        hint: "Create a project with `python -m app.cli create-key --project <name>` and set LLMI_DASHBOARD_PROJECT_ID.",
+        description: "The selected project does not exist in the backend (404). No data of another project is shown instead.",
+        hint: "Choose a listed project in the selector, or create one with `python -m app.cli create-key --project <name>`.",
       };
     case "invalid_request":
       return {

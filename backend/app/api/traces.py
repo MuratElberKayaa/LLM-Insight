@@ -134,7 +134,32 @@ def read_snapshot[T](request: Request, fn: Callable[[Session], T]) -> T:
 
 
 # ---------------------------------------------------------------- serialization
-def trace_summary(r: Any) -> dict[str, Any]:
+def models_by_trace(rows: list[Any]) -> dict[str, dict[str, Any]]:
+    """`usage.models` per trace id (R40, Phase 3C): every distinct provider/model combination
+    up to `MAX_MODELS_PER_TRACE`, with its call count; `distinct` counts all of them."""
+    out: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        entry = out.setdefault(
+            r.trace_id, {"items": [], "distinct": int(r.distinct_count), "truncated": False}
+        )
+        entry["items"].append(
+            {
+                "provider": r.provider,
+                "requested_model": r.requested_model,
+                "response_model": r.response_model,
+                "calls": int(r.calls),
+            }
+        )
+    for entry in out.values():
+        entry["truncated"] = entry["distinct"] > len(entry["items"])
+    return out
+
+
+def _no_models() -> dict[str, Any]:
+    return {"items": [], "distinct": 0, "truncated": False}
+
+
+def trace_summary(r: Any, models: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "trace_id": r.trace_id,
         "service_name": r.service_name,
@@ -155,6 +180,7 @@ def trace_summary(r: Any) -> dict[str, Any]:
             "calls_with_unknown_tokens": r.calls_with_unknown_tokens,
             "known_cost_usd": _money(r.known_cost_usd),
             "unknown_cost_calls": r.unknown_cost_calls,
+            "models": models if models is not None else _no_models(),
         },
     }
 
@@ -233,19 +259,21 @@ async def list_traces(
     position = decode_cursor(cursor) if cursor is not None else None
     f = repo.TraceFilter(project, start, end, status, provenance, model)
 
-    def read(session: Session) -> list[Any]:
+    def read(session: Session) -> tuple[list[Any], dict[str, dict[str, Any]]]:
         if not repo.project_exists(session, project):
             raise not_found()
-        return repo.list_traces(session, f, position, limit)
+        found = repo.list_traces(session, f, position, limit)
+        ids = [r.trace_id for r in found[:limit]]
+        return found, models_by_trace(repo.trace_models(session, project, ids))
 
-    rows = await run_in_threadpool(read_snapshot, request, read)
+    rows, models = await run_in_threadpool(read_snapshot, request, read)
     page = rows[:limit]
     next_cursor = (
         encode_cursor(page[-1].started_at, page[-1].trace_id) if len(rows) > limit else None
     )
     return JSONResponse(
         {
-            "items": [trace_summary(r) for r in page],
+            "items": [trace_summary(r, models.get(r.trace_id)) for r in page],
             "next_cursor": next_cursor,
             "window": {"from": iso_from_datetime(start), "to": iso_from_datetime(end)},
         },
@@ -262,17 +290,18 @@ async def get_trace(
     """Span tree (flat, with roles and children), usage rows and linked reviews of one trace.
     Failure reviews arrive in Phase 4; until then `reviews` is always empty."""
 
-    def read(session: Session) -> tuple[Any, list[Any], list[Any]]:
+    def read(session: Session) -> tuple[Any, dict[str, Any] | None, list[Any], list[Any]]:
         trace = repo.get_trace(session, project, trace_id)
         if trace is None:  # also an unknown project: one indistinguishable 404
             raise not_found()
         return (
             trace,
+            models_by_trace(repo.trace_models(session, project, [trace_id])).get(trace_id),
             repo.get_spans(session, project, trace_id),
             repo.get_usage(session, project, trace_id),
         )
 
-    trace, span_rows, usage_rows = await run_in_threadpool(read_snapshot, request, read)
+    trace, models, span_rows, usage_rows = await run_in_threadpool(read_snapshot, request, read)
     spans_truncated = len(span_rows) > repo.DETAIL_MAX_SPANS
     span_rows = span_rows[: repo.DETAIL_MAX_SPANS]
     children: dict[str, list[str]] = defaultdict(list)
@@ -282,7 +311,7 @@ async def get_trace(
     usage_truncated = len(usage_rows) > repo.DETAIL_MAX_SPANS
     return JSONResponse(
         {
-            "trace": trace_summary(trace),
+            "trace": trace_summary(trace, models),
             "spans": [_span(s, children.get(s.span_id, [])) for s in span_rows],
             "spans_truncated": spans_truncated,
             "usage": [_usage(u) for u in usage_rows[: repo.DETAIL_MAX_SPANS]],

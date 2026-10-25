@@ -3,12 +3,15 @@ import "server-only";
 import type { ApiFailure, ApiResult } from "../api/result";
 import type { BackendHealth } from "../api/types";
 import { parseJsonLossless } from "../json";
+import { isProjectId } from "../project";
 import { decode, type Decoder } from "../validate";
 import type { DashboardConfig } from "./config";
 
 /**
  * The only way the dashboard talks to the backend. Server-side only:
  * - fixed endpoint paths (a closed union, never caller-provided), validated query values;
+ * - an explicit project scope per call (Phase 3C): project endpoints need one validated id,
+ *   the project listing takes none, and no other parameter may set `project`;
  * - the bearer token goes in the Authorization header of a loopback request and nowhere
  *   else (not logged, not returned, not in error objects);
  * - `cache: "no-store"` (the backend also sends `Cache-Control: no-store`), redirects
@@ -16,10 +19,17 @@ import type { DashboardConfig } from "./config";
  * - every body is decoded against the documented schema before use.
  */
 
-export type BackendPath = "/api/v1/overview" | "/api/v1/models/compare" | "/api/v1/traces" | `/api/v1/traces/${string}`;
+export type BackendPath = "/api/v1/overview" | "/api/v1/models/compare" | "/api/v1/traces" | `/api/v1/traces/${string}` | "/api/v1/projects";
 
 /** Runtime allowlist behind the type: a trace id path segment must be 32 lowercase hex. */
-const PATH_RE = /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32})$/;
+const PATH_RE = /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|projects)$/;
+/** Endpoints without a `project` parameter. */
+const GLOBAL_PATHS: ReadonlySet<string> = new Set(["/api/v1/projects"]);
+
+/** Which project a request reads: a validated id, or `null` for the project listing only. */
+export interface Scope {
+  project: string | null;
+}
 const TRACE_ID_RE = /^[0-9a-f]{32}$/;
 
 /** `/api/v1/traces/{id}` for a validated trace id, or null (never builds a path from other input). */
@@ -117,10 +127,11 @@ function log(path: string, failure: ApiFailure): void {
   console.warn(`[llm-insight] backend ${endpoint} failed: ${parts.join(" ")}`);
 }
 
-/** GET a fixed `/api/v1` endpoint for the configured project and decode the JSON body. */
+/** GET a fixed `/api/v1` endpoint for one explicit project and decode the JSON body. */
 export async function getJson<T>(
   config: DashboardConfig,
   path: BackendPath,
+  scope: Scope,
   params: Readonly<Record<string, string>>,
   decoder: Decoder<T>,
   deps: BackendDeps = {},
@@ -133,8 +144,15 @@ export async function getJson<T>(
     log("(refused path)", failure);
     return { ok: false, error: failure };
   }
+  const global = GLOBAL_PATHS.has(path);
+  const scopeOk = global ? scope.project === null : scope.project !== null && isProjectId(scope.project);
+  if (!scopeOk || Object.hasOwn(params, "project")) {
+    const failure: ApiFailure = { kind: "config", detail: "refused a request without a valid project scope" };
+    log(path, failure);
+    return { ok: false, error: failure };
+  }
   const url = new URL(path, config.baseUrl);
-  url.searchParams.set("project", config.projectId);
+  if (scope.project !== null) url.searchParams.set("project", scope.project);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
 
   const fail = (failure: ApiFailure): ApiResult<T> => {

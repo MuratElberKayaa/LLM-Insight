@@ -9,15 +9,16 @@ import { ROW_BATCH, Waterfall } from "../../components/traces/waterfall";
 import type { TraceDetail } from "../../lib/api/trace-types";
 import { LosslessInt } from "../../lib/json";
 import { buildTraceView } from "../../lib/span-tree";
-import { parseTraceListQuery, type ListState } from "../../lib/trace-query";
+import { listStateOf, parseTraceListQuery, type ListState } from "../../lib/trace-query";
 import { makeDetail, makeList, makeSpan, makeTrace, makeUsage, retryDetail, tid } from "../fixtures/traces";
 
 const html = (el: React.ReactElement) => renderToStaticMarkup(el);
 const state = (params: Record<string, string> = {}): ListState => {
-  const { ignored, ...s } = parseTraceListQuery(params);
-  assert.deepEqual(ignored, []);
-  return s;
+  const q = parseTraceListQuery(params);
+  assert.deepEqual(q.ignored, []);
+  return listStateOf(q);
 };
+const oneModel = (calls: number) => ({ items: [{ provider: "openai", requested_model: "gpt-5.4-mini", response_model: "gpt-5.4-mini", calls }], distinct: 1, truncated: false });
 const XSS = `<script>alert("x")</script><img src=x onerror=alert(1)>`;
 const assertEscaped = (m: string) => {
   assert.doesNotMatch(m, /<script>/);
@@ -39,7 +40,7 @@ describe("trace list", () => {
   });
 
   it("shows unknown cost as unknown (never $0) and counts unpriced calls", () => {
-    const t = makeTrace({ usage: { inference_calls: 2, input_tokens: null, output_tokens: "48", calls_with_unknown_tokens: 2, known_cost_usd: null, unknown_cost_calls: 2 } });
+    const t = makeTrace({ usage: { inference_calls: 2, input_tokens: null, output_tokens: "48", calls_with_unknown_tokens: 2, known_cost_usd: null, unknown_cost_calls: 2, models: oneModel(2) } });
     const m = html(<TraceListView data={makeList([t])} state={state()} />);
     assert.match(m, /data-cost-state="unknown"/);
     assert.doesNotMatch(m, /\$0/);
@@ -48,9 +49,9 @@ describe("trace list", () => {
   });
 
   it("distinguishes a computed zero from unknown and marks incomplete sums", () => {
-    const zero = makeTrace({ usage: { inference_calls: 1, input_tokens: "0", output_tokens: "0", calls_with_unknown_tokens: 0, known_cost_usd: "0.0000000000", unknown_cost_calls: 0 } });
+    const zero = makeTrace({ usage: { inference_calls: 1, input_tokens: "0", output_tokens: "0", calls_with_unknown_tokens: 0, known_cost_usd: "0.0000000000", unknown_cost_calls: 0, models: oneModel(1) } });
     assert.match(html(<TraceListView data={makeList([zero])} state={state()} />), /\$0\.00/);
-    const partial = makeTrace({ usage: { inference_calls: 3, input_tokens: "10", output_tokens: "5", calls_with_unknown_tokens: 0, known_cost_usd: "0.0015750000", unknown_cost_calls: 2 } });
+    const partial = makeTrace({ usage: { inference_calls: 3, input_tokens: "10", output_tokens: "5", calls_with_unknown_tokens: 0, known_cost_usd: "0.0015750000", unknown_cost_calls: 2, models: oneModel(3) } });
     const m = html(<TraceListView data={makeList([partial])} state={state()} />);
     assert.match(m, /data-cost-state="incomplete"/);
     assert.match(m, /2 of 3 unpriced/);

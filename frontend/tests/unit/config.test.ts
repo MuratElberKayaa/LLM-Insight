@@ -17,7 +17,7 @@ describe("readConfig", () => {
     assert.equal(r.ok, true);
     if (r.ok) {
       assert.equal(r.config.baseUrl.origin, "http://127.0.0.1:8000");
-      assert.equal(r.config.projectId, "1");
+      assert.equal(r.config.defaultProjectId, "1");
       assert.equal(r.config.timeoutMs, 5000);
     }
     assert.equal(readConfig({ ...base, LLMI_API_BASE_URL: "http://localhost:8000/" }).ok, true);

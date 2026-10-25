@@ -1,0 +1,8 @@
+# Build context of the backend image is the repository root; send only what it copies.
+*
+!backend/requirements.lock
+!backend/alembic.ini
+!backend/alembic/
+!backend/app/
+**/__pycache__
+**/*.pyc

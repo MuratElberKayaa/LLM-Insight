@@ -1,30 +1,15 @@
 /**
  * Live E2E for the trace explorer (Phase 3B): browser → Next.js → FastAPI → PostgreSQL.
  * Expectations come from direct backend API calls for the window the page echoes; nothing is
- * mocked. Needs the SYNTHETIC fixtures of `scripts/dev/seed_trace_fixtures.py` (project 1,
- * and `--set isolation` in a second project) plus the mock demos within the last 24 hours.
+ * mocked. The global setup (scripts/dev/e2e_fixtures.py, R41) creates this run's projects and
+ * seeds them through `/v1/traces` with current UTC timestamps (`--set edge` + `--set phase3c`
+ * in the main project, `--set isolation` in the foreign one); the teardown deletes them.
  */
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { formatUsd } from "../../lib/decimal";
 import { formatDurationNs, formatIsoNs } from "../../lib/nanos";
-
-function serverEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const line of readFileSync(path.join(__dirname, "..", "..", ".env.local"), "utf8").split(/\r?\n/)) {
-    const i = line.indexOf("=");
-    if (i > 0 && !line.startsWith("#")) out[line.slice(0, i)] = line.slice(i + 1);
-  }
-  return out;
-}
-
-const ENV = serverEnv();
-const TOKEN = ENV.LLMI_API_TOKEN ?? "";
-const API = ENV.LLMI_API_BASE_URL ?? "http://127.0.0.1:8000";
-const PROJECT = ENV.LLMI_DASHBOARD_PROJECT_ID ?? "1";
-const FOREIGN_PROJECT = process.env.LLMI_E2E_FOREIGN_PROJECT ?? "2";
-const SHOTS = process.env.LLMI_SCREENSHOT_DIR;
+import { API, FOREIGN_PROJECT, PROJECT, SHOTS, TOKEN, u } from "./e2e-env";
 const XSS_MARK = "window.__llmiXss=1";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -63,12 +48,12 @@ async function shot(page: Page, name: string, info?: TestInfo): Promise<void> {
 
 /** All traces of the 24 h list window (one API page; the seeded data set is < 200 traces). */
 async function fixtures(page: Page, request: APIRequestContext): Promise<{ w: Win; items: any[]; by: (service: string) => any }> {
-  await page.goto("/traces");
+  await page.goto(u("/traces"));
   const w = await pageWindow(page);
   const data = await listApi(request, w, { limit: "200" });
   const by = (service: string) => {
     const t = data.items.find((x: any) => x.service_name === service || x.service_name.endsWith(service));
-    expect(t, `seeded trace ${service} in the last 24 h (run scripts/dev/seed_trace_fixtures.py)`).toBeTruthy();
+    expect(t, `seeded trace ${service} of this run (global setup)`).toBeTruthy();
     return t;
   };
   return { w, items: data.items, by };
@@ -79,7 +64,7 @@ test.beforeAll(() => {
 });
 
 test("T45: the trace list shows the seeded database traces exactly as the API returns them", async ({ page, request }, info) => {
-  await page.goto("/traces");
+  await page.goto(u("/traces"));
   await expect(page.getByRole("heading", { level: 1, name: "Traces" })).toBeVisible();
   const w = await pageWindow(page);
   const data = await listApi(request, w, { limit: "25" });
@@ -109,7 +94,7 @@ test("T45: the trace list shows the seeded database traces exactly as the API re
 });
 
 test("cursor pagination walks every trace once, newest first, with a frozen window", async ({ page, request }) => {
-  await page.goto("/traces?limit=10");
+  await page.goto(u("/traces?limit=10"));
   const w = await pageWindow(page);
   const seen: string[] = [];
   let cursor: string | null = null;
@@ -136,22 +121,22 @@ test("cursor pagination walks every trace once, newest first, with a frozen wind
 });
 
 test("filters re-query the backend and live in the URL", async ({ page, request }) => {
-  await page.goto("/traces");
+  await page.goto(u("/traces"));
   const w = await pageWindow(page);
   await page.getByRole("link", { name: "Status Error" }).click();
-  await expect(page).toHaveURL(/\/traces\?status=error$/);
+  await expect(page).toHaveURL(new RegExp(`/traces\\?project=${PROJECT}&status=error$`));
   const errors = await listApi(request, w, { limit: "25", status: "error" });
   expect(await uiTraceIds(page)).toEqual(errors.items.map((t: any) => t.trace_id));
   for (const t of errors.items) expect(t.status).toBe("error");
 
   await page.getByRole("link", { name: "Mixed only" }).click();
   await expect(page).toHaveURL(/status=error&provenance=mixed$|provenance=mixed/);
-  await page.goto("/traces?provenance=mixed");
+  await page.goto(u("/traces?provenance=mixed"));
   const mixed = await listApi(request, w, { limit: "25", provenance: "mixed" });
   expect(await uiTraceIds(page)).toEqual(mixed.items.map((t: any) => t.trace_id));
   expect(mixed.items.some((t: any) => t.service_name === "phase3b.mixed")).toBe(true);
 
-  await page.goto("/traces");
+  await page.goto(u("/traces"));
   await page.getByRole("textbox", { name: /Model \(exact\)/ }).fill("gpt-5.4-mini");
   await page.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/model=gpt-5\.4-mini/);
@@ -171,24 +156,24 @@ test("unsupported URL values are ignored with a notice and never executed", asyn
     dialogs.push(d.message());
     void d.dismiss();
   });
-  await page.goto(`/traces?model=${encodeURIComponent("<script>alert(1)</script>")}&status=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E&range=999d&cursor=${encodeURIComponent('"><svg onload=alert(1)>')}`);
+  await page.goto(u(`/traces?model=${encodeURIComponent("<script>alert(1)</script>")}&status=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E&range=999d&cursor=${encodeURIComponent('"><svg onload=alert(1)>')}`));
   await expect(page.getByTestId("ignored-notice")).toContainText("model");
   await expect(page.getByTestId("ignored-notice")).toContainText("status");
   await expect(page.getByRole("link", { name: "Last 24 hours" })).toHaveAttribute("aria-current", "true");
-  await page.goto(`/traces/${encodeURIComponent("<script>alert(1)</script>")}`);
+  await page.goto(u(`/traces/${encodeURIComponent("<script>alert(1)</script>")}`));
   await expect(page.getByText("Not a valid trace ID")).toBeVisible();
-  await page.goto(`/traces/${"a".repeat(32)}?span=${encodeURIComponent("<img src=x onerror=alert(1)>")}&list=${encodeURIComponent("javascript:alert(1)")}`);
-  await expect(page.getByTestId("back-to-traces")).toHaveAttribute("href", "/traces");
+  await page.goto(u(`/traces/${"a".repeat(32)}?span=${encodeURIComponent("<img src=x onerror=alert(1)>")}&list=${encodeURIComponent("javascript:alert(1)")}`));
+  await expect(page.getByTestId("back-to-traces")).toHaveAttribute("href", `/traces?project=${PROJECT}`);
   expect(dialogs).toEqual([]);
 });
 
 test("T46: list → detail shows the root → child span tree, and back restores the list", async ({ page, request }) => {
   const { by } = await fixtures(page, request);
   const nested = by("phase3b.nested");
-  await page.goto("/traces?provenance=synthetic&limit=50"); // canonical order, as the back link rebuilds it
+  await page.goto(u("/traces?provenance=synthetic&limit=50")); // canonical order, as the back link rebuilds it
   const listUrl = page.url();
   await page.getByTestId("trace-table").locator(`[data-trace-id="${nested.trace_id}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/traces/${nested.trace_id}\\?list=`));
+  await expect(page).toHaveURL(new RegExp(`/traces/${nested.trace_id}\\?project=${PROJECT}&list=`));
   await expect(page.getByRole("heading", { level: 1, name: "Trace" })).toBeVisible();
 
   const detail = await api(request, `/api/v1/traces/${nested.trace_id}`);
@@ -215,7 +200,7 @@ test("nanosecond timestamps, exact offsets, Decimal cost and keyboard navigation
   const { by } = await fixtures(page, request);
   const nested = by("phase3b.nested");
   const detail = await api(request, `/api/v1/traces/${nested.trace_id}`);
-  await page.goto(`/traces/${nested.trace_id}`);
+  await page.goto(u(`/traces/${nested.trace_id}`));
   await expect(page.getByTestId("fact-started")).toHaveText(formatIsoNs(detail.trace.started_at));
   expect(detail.trace.start_time_unix_nano).toMatch(/789$/); // seeded with sub-microsecond digits
   await expect(page.getByTestId("fact-started").locator("[data-ns]")).toHaveAttribute("data-ns", detail.trace.start_time_unix_nano);
@@ -250,7 +235,7 @@ test("nanosecond timestamps, exact offsets, Decimal cost and keyboard navigation
 test("retries are separate physical attempts; trace error, span failure and recovery are distinguished", async ({ page, request }) => {
   const { items } = await fixtures(page, request);
   let retry: any = null;
-  for (const t of items.filter((x: any) => x.status === "error" && x.usage.inference_calls === 2 && x.service_name.endsWith("web-demo"))) {
+  for (const t of items.filter((x: any) => x.status === "error" && x.usage.inference_calls === 2 && x.service_name === "phase3c.retry")) {
     const d = await api(request, `/api/v1/traces/${t.trace_id}`);
     const ids = new Set(d.usage.map((u: any) => u.call_id));
     if (ids.size === 1 && d.usage.some((u: any) => u.attempt_id === 2)) {
@@ -258,8 +243,8 @@ test("retries are separate physical attempts; trace error, span failure and reco
       break;
     }
   }
-  expect(retry, "a demo_app.web retry trace in the last 24 h").toBeTruthy();
-  await page.goto(`/traces/${retry.trace.trace_id}`);
+  expect(retry, "the seeded phase3c.retry trace").toBeTruthy();
+  await page.goto(u(`/traces/${retry.trace.trace_id}`));
   await expect(page.getByTestId("fact-status")).toContainText("Error");
   await expect(page.getByTestId("status-spans")).toContainText("1 span with status ERROR (1 inference attempt, 0 application spans)");
   await expect(page.getByTestId("status-calls")).toContainText("1 recovered after a failed attempt");
@@ -271,7 +256,7 @@ test("retries are separate physical attempts; trace error, span failure and reco
   await expect(calls).toContainText(`error.type ${failed.error_type}`);
 
   const appErr = (await fixtures(page, request)).by("phase3b.app-error");
-  await page.goto(`/traces/${appErr.trace_id}`);
+  await page.goto(u(`/traces/${appErr.trace_id}`));
   await expect(page.getByTestId("status-spans")).toContainText("(0 inference attempts, 1 application span)");
   await expect(page.getByTestId("status-calls")).toContainText("0 recovered after a failed attempt, 0 ended with a failed attempt");
   await shot(page, "trace-detail-app-error");
@@ -279,11 +264,11 @@ test("retries are separate physical attempts; trace error, span failure and reco
 
 test("orphans, parent cycles and equal start times render deterministically", async ({ page, request }) => {
   const { by } = await fixtures(page, request);
-  await page.goto(`/traces/${by("phase3b.orphan").trace_id}`);
+  await page.goto(u(`/traces/${by("phase3b.orphan").trace_id}`));
   await expect(page.locator('[role="treeitem"][data-placement="orphan"]')).toHaveCount(1);
   await expect(page.locator('[role="treeitem"][data-placement="orphan"]')).toContainText("orphan");
 
-  await page.goto(`/traces/${by("phase3b.cycle").trace_id}`);
+  await page.goto(u(`/traces/${by("phase3b.cycle").trace_id}`));
   await expect(page.getByRole("treeitem")).toHaveCount(3);
   await expect(page.locator('[role="treeitem"][data-placement="unreachable"]')).toHaveCount(1);
   await expect(page.getByTestId("trace-provenance-notice")).toHaveAttribute("data-provenance", "unknown");
@@ -292,7 +277,7 @@ test("orphans, parent cycles and equal start times render deterministically", as
   const detail = await api(request, `/api/v1/traces/${eq.trace_id}`);
   const kids = detail.spans.filter((s: any) => s.parent_span_id !== null);
   expect(kids[0].start_time_unix_nano).toBe(kids[1].start_time_unix_nano);
-  await page.goto(`/traces/${eq.trace_id}`);
+  await page.goto(u(`/traces/${eq.trace_id}`));
   const ids = await page.getByRole("treeitem").evaluateAll((els) => els.map((e) => e.getAttribute("data-span-id")));
   expect(ids.slice(1)).toEqual(kids.map((s: any) => s.span_id).sort());
   await page.reload();
@@ -302,7 +287,7 @@ test("orphans, parent cycles and equal start times render deterministically", as
 test("large traces render a bounded number of rows", async ({ page, request }) => {
   const { by } = await fixtures(page, request);
   const large = by("phase3b.large");
-  await page.goto(`/traces/${large.trace_id}`);
+  await page.goto(u(`/traces/${large.trace_id}`));
   await expect(page.getByRole("treeitem")).toHaveCount(200);
   await expect(page.getByTestId("rows-hidden")).toHaveText(`Showing 200 of ${large.span_count} rows.`);
   await page.getByTestId("show-more-rows").click();
@@ -312,7 +297,7 @@ test("large traces render a bounded number of rows", async ({ page, request }) =
 
 test("T48: synthetic, mixed and unknown provenance are labeled and never shown as real", async ({ page, request }) => {
   const { by, items } = await fixtures(page, request);
-  await page.goto("/traces?limit=100");
+  await page.goto(u("/traces?limit=100"));
   for (const p of ["synthetic", "mixed", "unknown"]) {
     const t = items.find((x: any) => x.provenance === p);
     expect(t, `a ${p} trace`).toBeTruthy();
@@ -322,7 +307,7 @@ test("T48: synthetic, mixed and unknown provenance are labeled and never shown a
 
   const mixed = by("phase3b.mixed");
   const detail = await api(request, `/api/v1/traces/${mixed.trace_id}`);
-  await page.goto(`/traces/${mixed.trace_id}`);
+  await page.goto(u(`/traces/${mixed.trace_id}`));
   await expect(page.getByTestId("trace-provenance-notice")).toHaveAttribute("data-provenance", "mixed");
   await expect(page.getByTestId("trace-provenance-notice")).toContainText("never counted as real");
   const attempts = page.getByTestId("table-attempts");
@@ -330,7 +315,7 @@ test("T48: synthetic, mixed and unknown provenance are labeled and never shown a
   expect(new Set(detail.usage.map((u: any) => u.provenance))).toEqual(new Set(["synthetic", "unknown"]));
 
   const nested = by("phase3b.nested");
-  await page.goto(`/traces/${nested.trace_id}`);
+  await page.goto(u(`/traces/${nested.trace_id}`));
   await expect(page.getByTestId("trace-provenance-notice")).toHaveAttribute("data-provenance", "synthetic");
   await expect(page.getByTestId("trace-provenance-notice")).toContainText("Synthetic trace");
   await expect(page.getByRole("treeitem").filter({ hasText: "synthetic" })).toHaveCount(2);
@@ -345,7 +330,7 @@ test("T41: hostile labels ingested through /v1/traces render as text in list and
   const { by } = await fixtures(page, request);
   const xss = by("phase3b.xss");
   expect(xss.service_name).toContain("<img src=x onerror=");
-  await page.goto("/traces?limit=100");
+  await page.goto(u("/traces?limit=100"));
   const link = page.getByTestId("trace-table").locator(`[data-trace-id="${xss.trace_id}"]`);
   await expect(link).toContainText(xss.service_name);
   await link.click();
@@ -378,11 +363,11 @@ test("project isolation: another project's trace is not found and never listed",
   const foreign = await api(request, "/api/v1/traces?limit=10", FOREIGN_PROJECT);
   const t = foreign.items.find((x: any) => x.service_name === "phase3b.isolation");
   expect(t, `phase3b.isolation trace in project ${FOREIGN_PROJECT}`).toBeTruthy();
-  await page.goto(`/traces/${t.trace_id}`);
+  await page.goto(u(`/traces/${t.trace_id}`));
   await expect(page.getByTestId("trace-not-found")).toBeVisible();
   await expect(page.getByRole("treeitem")).toHaveCount(0);
   await expect(page.getByText("phase3b.isolation")).toHaveCount(0);
-  await page.goto("/traces?range=31d&limit=100");
+  await page.goto(u("/traces?range=31d&limit=100"));
   await expect(page.getByTestId("trace-table").locator(`[data-trace-id="${t.trace_id}"]`)).toHaveCount(0);
 });
 
@@ -434,7 +419,7 @@ test("trace pages load without console errors, CSP violations or hydration warni
   const { by } = await fixtures(page, request);
   await page.getByRole("link", { name: "Status Error" }).click();
   await expect(page).toHaveURL(/status=error/);
-  await page.goto(`/traces/${by("phase3b.nested").trace_id}`);
+  await page.goto(u(`/traces/${by("phase3b.nested").trace_id}`));
   await page.getByRole("treeitem").first().focus();
   await page.keyboard.press("ArrowDown");
   await page.getByTestId("span-table-details").locator("summary").click();
@@ -448,7 +433,7 @@ test("accessible structure: one h1, labelled tree and regions, captioned tables,
   await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Traces" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("group", { name: "Status" })).toBeVisible();
   await expect(page.getByRole("search", { name: "Filter by model" })).toBeVisible();
-  await page.goto(`/traces/${by("phase3b.nested").trace_id}`);
+  await page.goto(u(`/traces/${by("phase3b.nested").trace_id}`));
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
   await expect(page.locator("h1")).toHaveCount(1);
@@ -487,12 +472,12 @@ for (const [name, viewport] of [
       else await expect(page.getByTestId("trace-table")).toBeVisible();
       await shot(page, `traces-list-${name}`);
       for (const service of ["phase3b.nested", "phase3b.xss"]) {
-        await page.goto(`/traces/${by(service).trace_id}`);
+        await page.goto(u(`/traces/${by(service).trace_id}`));
         await expect(page.getByRole("tree")).toBeVisible();
         await page.waitForLoadState("networkidle");
         expect(await overflow(), service).toBeLessThanOrEqual(0);
       }
-      await page.goto(`/traces/${by("phase3b.nested").trace_id}`);
+      await page.goto(u(`/traces/${by("phase3b.nested").trace_id}`));
       await page.waitForLoadState("networkidle");
       await shot(page, `trace-detail-${name}`);
     });

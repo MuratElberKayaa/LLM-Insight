@@ -1,0 +1,133 @@
+# LLM Insight CI (Phase 3C): lint, typecheck, unit/integration tests and builds.
+#
+# - No secrets, no paid services, no provider calls: every credential is a throwaway generated
+#   on the runner by scripts/dev/init_env.py (never printed), and tests use mock/fake providers.
+# - The only service is the repository's own docker compose `postgres` (127.0.0.1:55432).
+# - Required suites run with LLMI_TEST_REQUIRE_DB=1, so a missing database fails the job
+#   instead of skipping tests.
+# - Not in CI (documented in docs/reports/phase-3c.md): the Playwright E2E suite (needs a
+#   seeded live backend and the installed Microsoft Edge; run locally with `npm run test:e2e`)
+#   and the compose `app` image build (run locally with `docker compose --profile app build`).
+# - Actions are pinned to full commit SHAs of releases at least two weeks old (CR-09).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12.6"
+
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Documentation consistency
+        run: python -I scripts/verify_phase0.py --quiet
+
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      LLMI_TEST_REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Generate throwaway local secrets (.env, never printed)
+        run: python -I scripts/dev/init_env.py
+      - name: Validate compose (default and app profiles; --quiet never prints secrets)
+        run: |
+          docker compose config --quiet
+          docker compose --profile app config --quiet
+      - name: Start PostgreSQL (compose service)
+        run: docker compose up -d --wait postgres
+      - name: Backend environment
+        working-directory: backend
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --disable-pip-version-check -r requirements.lock
+          .venv/bin/python -m pip install --disable-pip-version-check --no-deps -e .
+          .venv/bin/python -m pip check
+      - name: Backend lint and format
+        working-directory: backend
+        run: |
+          .venv/bin/ruff check .
+          .venv/bin/ruff format --check .
+      - name: Dev scripts lint and format (from the root, ruff defaults, as in Phase 3B)
+        run: |
+          backend/.venv/bin/ruff check scripts/dev/seed_trace_fixtures.py scripts/dev/e2e_fixtures.py
+          backend/.venv/bin/ruff format --check scripts/dev/seed_trace_fixtures.py scripts/dev/e2e_fixtures.py
+      - name: Migrations and drift check
+        working-directory: backend
+        run: |
+          .venv/bin/alembic upgrade head
+          .venv/bin/alembic check
+      - name: Backend tests (unit + PostgreSQL integration)
+        working-directory: backend
+        run: .venv/bin/python -m pytest -q -rs -p no:cacheprovider
+      - name: SDK environment
+        working-directory: sdk
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --disable-pip-version-check -r requirements-dev.lock
+          .venv/bin/python -m pip install --disable-pip-version-check --no-deps .
+          .venv/bin/python -m pip check
+      - name: SDK lint, format and strict types
+        working-directory: sdk
+        run: |
+          .venv/bin/ruff check .
+          .venv/bin/ruff format --check .
+          .venv/bin/python -m mypy src
+          .venv/bin/python -m mypy --config-file pyproject.toml ../demo_app
+      - name: SDK tests (unit + live backend)
+        working-directory: sdk
+        run: .venv/bin/python -m pytest -q -rs -p no:cacheprovider
+      - name: Stop PostgreSQL
+        if: always()
+        run: docker compose down
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+      - name: Throwaway server-side env (for the bundle secret scan; never printed)
+        working-directory: .
+        run: |
+          python3 -I scripts/dev/init_env.py
+          python3 -I scripts/dev/init_frontend_env.py --project-id 1
+      - run: npm ci --no-audit --no-fund
+      - run: npm audit
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Client bundle secret scan (T42)
+        run: npm run check:bundle

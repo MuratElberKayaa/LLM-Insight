@@ -9,13 +9,14 @@ import {
   traceListHref,
   traceListParams,
   withFilter,
+  listStateOf,
   type ListState,
 } from "../../lib/trace-query";
 
 const listState = (params: Record<string, string>): ListState => {
-  const { ignored, ...state } = parseTraceListQuery(params);
-  assert.deepEqual(ignored, []);
-  return state;
+  const q = parseTraceListQuery(params);
+  assert.deepEqual(q.ignored, []);
+  return listStateOf(q);
 };
 
 const NOW = new Date("2026-10-25T08:20:31.123Z");
@@ -25,7 +26,18 @@ const TO = "2026-10-25T09:00:00.000000Z";
 describe("parseTraceListQuery", () => {
   it("defaults: last 24 h, all statuses and provenance, no model, 25 per page, first page", () => {
     const q = parseTraceListQuery({});
-    assert.deepEqual(q, { window: { kind: "preset", range: "24h" }, status: "all", provenance: "all", model: null, limit: 25, cursor: null, page: 1, ignored: [] });
+    assert.deepEqual(q, {
+      project: { kind: "default" },
+      window: { kind: "preset", range: "24h" },
+      status: "all",
+      provenance: "all",
+      model: null,
+      limit: 25,
+      cursor: null,
+      page: 1,
+      ignored: [],
+      windowProblem: null,
+    });
   });
 
   it("accepts the filters the backend implements", () => {
