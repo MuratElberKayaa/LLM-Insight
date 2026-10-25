@@ -62,9 +62,9 @@ def test_ready_503_with_real_driver_against_closed_port(client):
     assert r.json() == {"status": "not_ready"}
 
 
-def test_routes_are_health_otlp_ingest_and_trace_read_api(client):
+def test_routes_are_health_otlp_ingest_and_read_api(client):
     # Phase 1B adds POST /v1/traces; Phase 1C adds the two /api/v1 trace read endpoints;
-    # Phase 2C adds the two aggregate endpoints.
+    # Phase 2C adds the two aggregate endpoints; Phase 3C adds the bounded project listing.
     assert set(client.app.openapi()["paths"]) == {
         "/health/live",
         "/health/ready",
@@ -73,6 +73,7 @@ def test_routes_are_health_otlp_ingest_and_trace_read_api(client):
         "/api/v1/traces/{trace_id}",
         "/api/v1/overview",
         "/api/v1/models/compare",
+        "/api/v1/projects",
     }
     # Authentication comes first: no DB access and no route detail without the token.
     r = client.get("/api/v1/traces")

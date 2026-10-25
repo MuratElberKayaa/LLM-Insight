@@ -1,7 +1,16 @@
-# LLM Insight — local development stack (Phase 1A: PostgreSQL only).
+# LLM Insight — local development stack.
 # Values come from the git-ignored .env (create it with: python -I scripts/dev/init_env.py).
 # Published on 127.0.0.1 only (ARCHITECTURE.md §8). Host port 55432 avoids clashing
 # with a native PostgreSQL on 5432.
+#
+# Default (`docker compose up -d`): PostgreSQL only, as since Phase 1A.
+# Opt-in profile `app` (Phase 3C): `docker compose --profile app up -d --build` adds the backend
+# and the dashboard. They share ONE network namespace (`network_mode: service:backend`), so the
+# backend keeps its loopback-only bind and the dashboard keeps its loopback-only backend URL;
+# only the dashboard is published, on 127.0.0.1:3001 (port 3000 belongs to another service on
+# the dev machine and is not used). The backend's ingest endpoint is not published by this
+# profile: run `python -m app` on the host for SDK ingest. Each container receives only the
+# variables listed below, never the whole .env.
 name: llminsight
 
 services:
@@ -21,6 +30,46 @@ services:
       timeout: 3s
       retries: 12
       start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      LLMI_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?POSTGRES_USER must be set in .env}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      LLMI_BIND_HOST: 127.0.0.1
+      LLMI_PORT: "8000"
+      LLMI_KEY_PEPPER: ${LLMI_KEY_PEPPER:?LLMI_KEY_PEPPER must be set in .env}
+      LLMI_ADMIN_TOKEN: ${LLMI_ADMIN_TOKEN:?LLMI_ADMIN_TOKEN must be set in .env}
+      LLMI_ALLOW_REAL_LLM: "false"
+    # The dashboard shares this network namespace; its port is published here, loopback only.
+    ports:
+      - "127.0.0.1:${LLMI_FRONTEND_HOST_PORT:-3001}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+    network_mode: "service:backend"
+    environment:
+      LLMI_API_BASE_URL: http://127.0.0.1:8000
+      LLMI_API_TOKEN: ${LLMI_ADMIN_TOKEN:?LLMI_ADMIN_TOKEN must be set in .env}
+      LLMI_DASHBOARD_PROJECT_ID: ${LLMI_DASHBOARD_PROJECT_ID:-1}
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

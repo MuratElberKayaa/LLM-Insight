@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { TraceList as TraceListData, TraceSummary } from "../../lib/api/trace-types";
+import type { TraceList as TraceListData, TraceModels, TraceSummary } from "../../lib/api/trace-types";
 import { formatInt } from "../../lib/format";
 import { formatDurationNs, formatIsoNs } from "../../lib/nanos";
 import { firstPageState, nextPageState, traceDetailHref, traceListHref, type ListState } from "../../lib/trace-query";
@@ -36,6 +36,43 @@ function TraceLink({ t, state }: { t: TraceSummary; state: ListState }) {
   );
 }
 
+/**
+ * Providers and models of a trace (R40). One trace can call several providers and models, so
+ * every combination is listed with its call count; none is picked to stand for the trace.
+ */
+export function TraceModelsCell({ models, calls }: { models: TraceModels; calls: number }) {
+  if (calls === 0) return <NullValue label="no inference calls">none</NullValue>;
+  const shown = models.items.slice(0, 3);
+  const hidden = models.distinct - shown.length;
+  return (
+    <ul className="space-y-0.5" data-testid="trace-models" data-distinct={models.distinct}>
+      {shown.map((m) => (
+        <li key={`${m.provider}|${m.requested_model ?? ""}|${m.response_model ?? ""}`} className="whitespace-nowrap text-xs" data-testid="trace-model">
+          <code className="font-mono text-ink-2">{m.provider}</code>
+          <span className="text-ink-3"> · </span>
+          {m.requested_model === null ? <NullValue label="requested model not reported">unknown</NullValue> : <code className="font-mono text-ink-2">{m.requested_model}</code>}
+          {m.response_model !== m.requested_model && (
+            <>
+              <span aria-hidden="true" className="text-ink-3">
+                {" "}
+                →{" "}
+              </span>
+              <span className="sr-only"> response model </span>
+              {m.response_model === null ? <NullValue label="response model not reported">unknown</NullValue> : <code className="font-mono text-ink-2">{m.response_model}</code>}
+            </>
+          )}
+          <span className="text-ink-3"> ×{formatInt(m.calls)}</span>
+        </li>
+      ))}
+      {hidden > 0 && (
+        <li className="text-xs text-ink-3" data-testid="trace-models-more">
+          +{formatInt(hidden)} more combination{hidden === 1 ? "" : "s"}
+        </li>
+      )}
+    </ul>
+  );
+}
+
 function columns(state: ListState): Column<TraceSummary>[] {
   return [
     { key: "trace", header: "Service · trace ID", rowHeader: true, render: (t) => <TraceLink t={t} state={state} /> },
@@ -44,6 +81,7 @@ function columns(state: ListState): Column<TraceSummary>[] {
     { key: "status", header: "Status", render: (t) => <TraceStatusLabel status={t.status} /> },
     { key: "spans", header: "Spans", align: "right", render: (t) => formatInt(t.span_count) },
     { key: "calls", header: "Inference calls", align: "right", render: (t) => formatInt(t.usage.inference_calls) },
+    { key: "models", header: "Providers · models (calls)", render: (t) => <TraceModelsCell models={t.usage.models} calls={t.usage.inference_calls} /> },
     { key: "tokens", header: "Tokens in / out", align: "right", render: (t) => <TokenSummary usage={t.usage} /> },
     { key: "cost", header: "Known cost", align: "right", render: (t) => <TraceCost usage={t.usage} /> },
     { key: "pv", header: "Prompt version", render: (t) => (t.prompt_version === null ? <NullValue label="none or inconsistent" /> : <code className="font-mono text-xs">{t.prompt_version}</code>) },
@@ -88,6 +126,12 @@ function TraceCards({ items, state }: { items: TraceSummary[]; state: ListState 
               <dt className="text-xs text-ink-3">Known cost</dt>
               <dd className="text-ink-2">
                 <TraceCost usage={t.usage} />
+              </dd>
+            </div>
+            <div className="col-span-2">
+              <dt className="text-xs text-ink-3">Providers · models (calls)</dt>
+              <dd className="min-w-0 overflow-x-auto">
+                <TraceModelsCell models={t.usage.models} calls={t.usage.inference_calls} />
               </dd>
             </div>
             <div className="col-span-2">

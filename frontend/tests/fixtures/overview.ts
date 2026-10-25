@@ -139,6 +139,8 @@ export function makeCompare(): ModelsCompare {
         attempts: 4,
         errors: { failed: 1, succeeded: 3, rate: 0.25 },
         latency: latency(4, 80, 290, 300),
+        tokens: tokens(4, 480, 192),
+        usage_source: { provider_reported: 4, estimated: 0, unknown: 0 },
         cost: {
           currency: "USD",
           known_cost_usd: "0.0012345000",
@@ -157,6 +159,8 @@ export function makeCompare(): ModelsCompare {
         attempts: 2,
         errors: { failed: 0, succeeded: 2, rate: 0 },
         latency: latency(2, 5, 9, 9.5),
+        tokens: tokens(2, null, 40, 2, 0),
+        usage_source: { provider_reported: 1, estimated: 1, unknown: 0 },
         cost: {
           currency: "USD",
           known_cost_usd: null,

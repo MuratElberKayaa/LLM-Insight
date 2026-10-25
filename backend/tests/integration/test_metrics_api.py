@@ -504,6 +504,38 @@ def test_m15_groups_by_provider_models_and_prompt_version(api_client, loaded):
     assert sum(g["attempts"] for g in full["groups"]) == 8
 
 
+def test_m15_groups_carry_token_sums_with_unknowns_and_subsets(api_client, loaded):
+    """Phase 3C (additive): M08/M09 and M14 per group, with the overview's null rules."""
+    a, _, _ = loaded
+    full = get(api_client, "/api/v1/models/compare", project=a.project_id, **WINDOW).json()
+    by_key = {
+        (g["requested_model"], g["response_model"], g["prompt_version"]): g for g in full["groups"]
+    }
+    v1 = by_key[(PRICED, PRICED, "v1")]  # a1 (1000/200, cached 400, reasoning 50) + a3 (500/100)
+    assert v1["tokens"] == {
+        "n": 2,
+        "input_tokens": 1500,
+        "calls_with_unknown_input_tokens": 0,
+        "output_tokens": 300,
+        "calls_with_unknown_output_tokens": 0,
+        "subsets": {
+            "cached_input_tokens": {"sum": 400, "calls_reporting": 1},
+            "cache_write_input_tokens": {"sum": None, "calls_reporting": 0},
+            "reasoning_output_tokens": {"sum": 50, "calls_reporting": 1},
+        },
+    }
+    failed = by_key[(PRICED, None, "v1")]  # a2: 429 without usage -> unknown, never 0
+    assert failed["tokens"]["input_tokens"] is None and failed["tokens"]["output_tokens"] is None
+    assert failed["tokens"]["calls_with_unknown_input_tokens"] == 1
+    assert failed["usage_source"]["unknown"] == 1
+    d2 = by_key[(PRICED, PRICED, None)]  # d2: estimated usage is labelled, not provider-reported
+    assert d2["usage_source"] == {"provider_reported": 0, "estimated": 1, "unknown": 0}
+    assert d2["tokens"]["input_tokens"] == 10
+    o = overview(api_client, a.project_id)["inference"]["tokens"]["total"]
+    assert sum(g["tokens"]["input_tokens"] or 0 for g in full["groups"]) == o["input_tokens"]
+    assert sum(g["tokens"]["output_tokens"] or 0 for g in full["groups"]) == o["output_tokens"]
+
+
 # ---------------------------------------------------------------- access and validation
 @pytest.mark.parametrize("path", ["/api/v1/overview", "/api/v1/models/compare"])
 def test_auth_runs_before_validation_and_queries(api_client, path):

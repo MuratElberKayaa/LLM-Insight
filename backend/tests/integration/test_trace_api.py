@@ -303,6 +303,18 @@ def test_list_item_shape_with_unknown_cost_and_provenance(api_client, make_key):
             "calls_with_unknown_tokens": 0,
             "known_cost_usd": None,  # unknown cost is null, never 0
             "unknown_cost_calls": 1,
+            "models": {  # Phase 3C (R40): every provider/model combination, with its calls
+                "items": [
+                    {
+                        "provider": "openai",
+                        "requested_model": "gpt-4o-mini",
+                        "response_model": "gpt-4o-mini-2024-07-18",
+                        "calls": 1,
+                    }
+                ],
+                "distinct": 1,
+                "truncated": False,
+            },
         },
     }
 
@@ -318,6 +330,7 @@ def test_trace_without_inference_has_null_tokens_and_zero_counts(api_client, mak
         "calls_with_unknown_tokens": 0,
         "known_cost_usd": None,
         "unknown_cost_calls": 0,
+        "models": {"items": [], "distinct": 0, "truncated": False},
     }
 
 

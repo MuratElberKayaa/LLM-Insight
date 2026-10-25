@@ -10,9 +10,14 @@ import { defineConfig } from "@playwright/test";
  *   unauthorized state (Phase 3B). Process env overrides frontend/.env.local in Next.js.
  * Uses the installed Microsoft Edge (`channel: "msedge"`), so no browser download is needed.
  * One worker: the backend's /api/v1 rate limit is per client address.
+ * Test data (Phase 3C, R41): the global setup creates this run's own projects and seeds them
+ * with SYNTHETIC traces at current UTC times (scripts/dev/e2e_fixtures.py); the teardown deletes
+ * exactly those projects, even when tests fail. Nothing else in the dev database is touched.
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: "./tests/setup/e2e-global-setup.ts",
+  globalTeardown: "./tests/setup/e2e-global-teardown.ts",
   outputDir: "./test-results",
   fullyParallel: false,
   workers: 1,

@@ -137,6 +137,10 @@ export interface ModelGroup {
   attempts: number;
   errors: { failed: number; succeeded: number; rate: number | null };
   latency: Latency;
+  /** M08/M09 per group (Phase 3C, additive): unknown sums are null and counted. */
+  tokens: Tokens;
+  /** M14 per group: how the token counts were obtained. */
+  usage_source: Record<UsageSource, number>;
   cost: {
     currency: "USD";
     known_cost_usd: string | null;
@@ -156,6 +160,20 @@ export interface ModelsCompare {
   provenance_verified: false;
   groups: ModelGroup[];
   groups_truncated: boolean;
+  limit: number;
+}
+
+/** `GET /api/v1/projects` (Phase 3C): id order, bounded, no key material. */
+export interface ProjectItem {
+  id: number;
+  /** As stored (1–100 characters, admin-chosen): rendered as text only. */
+  name: string;
+  created_at: string;
+}
+
+export interface ProjectList {
+  items: ProjectItem[];
+  truncated: boolean;
   limit: number;
 }
 

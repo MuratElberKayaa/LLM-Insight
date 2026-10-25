@@ -1,30 +1,15 @@
 /**
  * Live E2E: browser → Next.js (127.0.0.1:3001) → FastAPI backend → PostgreSQL.
- * Every expectation is computed from a direct backend API call for the same window, so the
- * test holds for whatever the dev database contains; nothing here is a mocked response.
+ * Every expectation is computed from a direct backend API call for the same window; nothing
+ * here is a mocked response. Pages are opened for this run's project (`?project=`, created
+ * and seeded by the global setup, R41).
  */
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { formatUsd } from "../../lib/decimal";
 import { formatInt, formatMs, formatPercent } from "../../lib/format";
-
-function serverEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  const file = path.join(__dirname, "..", "..", ".env.local");
-  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
-    const i = line.indexOf("=");
-    if (i > 0 && !line.startsWith("#")) out[line.slice(0, i)] = line.slice(i + 1);
-  }
-  return out;
-}
-
-const ENV = serverEnv();
-const TOKEN = ENV.LLMI_API_TOKEN ?? "";
-const API = ENV.LLMI_API_BASE_URL ?? "http://127.0.0.1:8000";
-const PROJECT = ENV.LLMI_DASHBOARD_PROJECT_ID ?? "1";
-const SHOTS = process.env.LLMI_SCREENSHOT_DIR;
+import { API, PROJECT, SHOTS, TOKEN, u } from "./e2e-env";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 async function api(request: APIRequestContext, endpoint: "overview" | "models/compare", window: { from: string; to: string }, extra: Record<string, string> = {}): Promise<any> {
@@ -48,7 +33,7 @@ test.beforeAll(() => {
 });
 
 test("overview renders the values the backend API returns for the same window", async ({ page, request }) => {
-  await page.goto("/");
+  await page.goto(u("/"));
   await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
   await expect(page.getByTestId("backend-status")).toHaveAttribute("data-health", "ready");
   const window = await pageWindow(page);
@@ -108,7 +93,7 @@ test("overview renders the values the backend API returns for the same window", 
 });
 
 test("synthetic telemetry is labeled and never presented as real (T48)", async ({ page, request }) => {
-  await page.goto("/");
+  await page.goto(u("/"));
   const o = await api(request, "overview", await pageWindow(page));
   const t = o.traces.count.by_provenance;
   if (o.traces.count.total === 0) test.skip(true, "no telemetry in the window");
@@ -127,10 +112,10 @@ test("synthetic telemetry is labeled and never presented as real (T48)", async (
 });
 
 test("time range and provenance controls re-run the backend queries", async ({ page, request }) => {
-  await page.goto("/");
+  await page.goto(u("/"));
   const before = await pageWindow(page);
   await page.getByRole("link", { name: "Last 7 days" }).click();
-  await expect(page).toHaveURL(/\?range=7d$/);
+  await expect(page).toHaveURL(new RegExp(`\\?project=${PROJECT}&range=7d$`));
   await expect(page.getByRole("link", { name: "Last 7 days" })).toHaveAttribute("aria-current", "true");
   const after = await pageWindow(page);
   expect(after.from).not.toBe(before.from);
@@ -141,7 +126,7 @@ test("time range and provenance controls re-run the backend queries", async ({ p
   if (o.traces.count.total > 0) await expect(page.getByTestId("traces-value")).toHaveText(formatInt(o.traces.count.total));
 
   await page.getByRole("link", { name: "Synthetic only" }).click();
-  await expect(page).toHaveURL(/\?range=7d&provenance=synthetic$/);
+  await expect(page).toHaveURL(new RegExp(`\\?project=${PROJECT}&range=7d&provenance=synthetic$`));
   const filtered = await api(request, "overview", await pageWindow(page), { provenance: "synthetic" });
   expect(filtered.provenance_label).toBe("synthetic only");
   if (filtered.traces.count.total > 0) {
@@ -164,7 +149,7 @@ test("loads without console errors, CSP violations or hydration warnings", async
     if (m.type() === "error" || m.type() === "warning") problems.push(`${m.type()}: ${m.text().slice(0, 200)}`);
   });
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message.slice(0, 200)}`));
-  await page.goto("/");
+  await page.goto(u("/"));
   await page.waitForLoadState("networkidle");
   await page.getByRole("link", { name: "Last 6 hours" }).click();
   await expect(page).toHaveURL(/range=6h/);
@@ -176,7 +161,7 @@ test("loads without console errors, CSP violations or hydration warnings", async
 });
 
 test("unsupported query values fall back to defaults with a notice", async ({ page }) => {
-  await page.goto("/?range=999d&provenance=%3Cscript%3E");
+  await page.goto(u("/?range=999d&provenance=%3Cscript%3E"));
   await expect(page.getByText("Unsupported filter value ignored")).toBeVisible();
   await expect(page.getByRole("link", { name: "Last 24 hours" })).toHaveAttribute("aria-current", "true");
 });
@@ -190,7 +175,7 @@ test("no credential reaches the browser (T42, live half)", async ({ page }) => {
       /* redirects and aborted responses have no body */
     }
   });
-  await page.goto("/");
+  await page.goto(u("/"));
   await page.getByRole("link", { name: "Last 7 days" }).click();
   await expect(page).toHaveURL(/range=7d/);
   await page.waitForLoadState("networkidle");
@@ -233,7 +218,7 @@ test("backend outage produces a useful error state, not fake data", async ({ pag
 });
 
 test("accessible navigation and controls", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(u("/"));
   await page.keyboard.press("Tab");
   const skip = page.getByRole("link", { name: "Skip to content" });
   await expect(skip).toBeFocused();
@@ -292,7 +277,7 @@ for (const [name, viewport] of [
       };
       requestAnimationFrame(sample);
     });
-    await page.goto("/");
+    await page.goto(u("/"));
     await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     await page.waitForLoadState("networkidle");
     const { overflow, offenders } = await page.evaluate(() => {

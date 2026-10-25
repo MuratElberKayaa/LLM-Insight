@@ -10,7 +10,10 @@
  */
 
 import { TRACE_PROVENANCES } from "./api/types";
-import { DEFAULT_RANGE, MAX_WINDOW_MS, RANGE_KEYS, resolveWindow, toQueryTimestamp, type ProvenanceFilter, type RangeKey } from "./time-range";
+import { hiddenFields, parseProjectParam, projectLinkValue, type ProjectParam } from "./project";
+import { parseWindow, resolveWindowSpec, singleGetter, writeWindow, type ProvenanceFilter, type WindowProblem, type WindowSpec } from "./time-range";
+
+export type { WindowSpec } from "./time-range";
 
 export const PAGE_SIZES = [10, 25, 50, 100] as const;
 export type PageSize = (typeof PAGE_SIZES)[number];
@@ -21,13 +24,11 @@ export const STATUS_FILTERS: readonly StatusFilter[] = ["all", "ok", "error"];
 /** Stored model names match this format (TELEMETRY_CONTRACT.md §3.1); nothing else can match. */
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$/;
 const CURSOR_RE = /^[A-Za-z0-9_-]{1,128}$/;
-/** UTC with `Z` and at most microseconds (what the backend parses and echoes). */
-const ISO_Z_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
 const PAGE_RE = /^[1-9]\d{0,4}$/;
 
-export type WindowSpec = { kind: "preset"; range: RangeKey } | { kind: "custom"; from: string; to: string };
-
 export interface TraceListQuery {
+  /** `?project=` (Phase 3C); `default` = the configured project. */
+  project: ProjectParam;
   window: WindowSpec;
   status: StatusFilter;
   provenance: ProvenanceFilter;
@@ -38,47 +39,17 @@ export interface TraceListQuery {
   page: number;
   /** Names of parameters that were present but unsupported (their values were ignored). */
   ignored: string[];
+  /** Why a custom range was refused, if one was. */
+  windowProblem: WindowProblem | null;
 }
 
 type SearchParams = Readonly<Record<string, string | string[] | undefined>>;
 
-function single(params: SearchParams, name: string, ignored: string[]): string | undefined {
-  const v = params[name];
-  if (Array.isArray(v)) {
-    ignored.push(name);
-    return undefined;
-  }
-  return v;
-}
-
-function isUtcInstant(s: string): boolean {
-  return ISO_Z_RE.test(s) && !Number.isNaN(Date.parse(s));
-}
-
 export function parseTraceListQuery(params: SearchParams): TraceListQuery {
   const ignored: string[] = [];
-  const get = (name: string) => single(params, name, ignored);
-
-  const rawRange = get("range");
-  const rawFrom = get("from");
-  const rawTo = get("to");
-  let window: WindowSpec = { kind: "preset", range: DEFAULT_RANGE };
-  if (rawFrom !== undefined || rawTo !== undefined) {
-    const valid =
-      rawFrom !== undefined &&
-      rawTo !== undefined &&
-      isUtcInstant(rawFrom) &&
-      isUtcInstant(rawTo) &&
-      Date.parse(rawFrom) < Date.parse(rawTo) &&
-      Date.parse(rawTo) - Date.parse(rawFrom) <= MAX_WINDOW_MS;
-    if (valid) window = { kind: "custom", from: rawFrom, to: rawTo };
-    else ignored.push("from/to");
-  }
-  if (rawRange !== undefined) {
-    const range = RANGE_KEYS.find((k) => k === rawRange);
-    if (range === undefined) ignored.push("range");
-    else if (window.kind === "preset") window = { kind: "preset", range };
-  }
+  const get = singleGetter(params, ignored);
+  const project = parseProjectParam(params.project);
+  const { window, problem } = parseWindow(get, ignored);
 
   const rawStatus = get("status");
   const status = STATUS_FILTERS.find((s) => s === rawStatus) ?? "all";
@@ -110,15 +81,11 @@ export function parseTraceListQuery(params: SearchParams): TraceListQuery {
   const rawPage = get("page");
   const page = cursor !== null && rawPage !== undefined && PAGE_RE.test(rawPage) ? Number(rawPage) : 1;
 
-  return { window, status, provenance, model, limit, cursor, page, ignored };
+  return { project, window, status, provenance, model, limit, cursor, page, ignored, windowProblem: problem };
 }
 
 /** `[from, to)` the backend will be asked for: a preset resolved at `now`, or the custom window. */
-export function resolveListWindow(spec: WindowSpec, now: Date): { from: string; to: string } {
-  if (spec.kind === "custom") return { from: spec.from, to: spec.to };
-  const { from, to } = resolveWindow(spec.range, now);
-  return { from: toQueryTimestamp(from), to: toQueryTimestamp(to) };
-}
+export const resolveListWindow = resolveWindowSpec;
 
 /** Backend query parameters for `GET /api/v1/traces` (validated values only, never raw input). */
 export function traceListParams(query: TraceListQuery, now: Date): Record<string, string> {
@@ -130,17 +97,22 @@ export function traceListParams(query: TraceListQuery, now: Date): Record<string
   return params;
 }
 
-export type ListState = Omit<TraceListQuery, "ignored">;
+export type ListState = Omit<TraceListQuery, "ignored" | "windowProblem" | "project"> & {
+  /** The explicit `?project=` id, or null (the configured default applies). */
+  project: string | null;
+};
 
-/** Canonical query string of a list state (defaults omitted). */
-export function traceListSearch(state: ListState): string {
+/** A parsed query as link state (an invalid project never becomes a link). */
+export function listStateOf(query: TraceListQuery): ListState {
+  const { project, window, status, provenance, model, limit, cursor, page } = query;
+  return { project: projectLinkValue(project), window, status, provenance, model, limit, cursor, page };
+}
+
+/** Canonical query string of a list state (defaults omitted, project first). */
+export function traceListSearch(state: ListState, includeProject = true): string {
   const sp = new URLSearchParams();
-  if (state.window.kind === "preset") {
-    if (state.window.range !== DEFAULT_RANGE) sp.set("range", state.window.range);
-  } else {
-    sp.set("from", state.window.from);
-    sp.set("to", state.window.to);
-  }
+  if (includeProject && state.project !== null) sp.set("project", state.project);
+  writeWindow(state.window, sp);
   if (state.status !== "all") sp.set("status", state.status);
   if (state.provenance !== "all") sp.set("provenance", state.provenance);
   if (state.model !== null) sp.set("model", state.model);
@@ -162,6 +134,14 @@ export function withFilter(state: ListState, change: Partial<Pick<ListState, "wi
   return { ...state, ...change, cursor: null, page: 1 };
 }
 
+/**
+ * Hidden fields for forms that leave the current listing (project switch, custom range): the
+ * filters only. A cursor and page number belong to one project's listing and are never kept.
+ */
+export function restartFields(state: ListState, drop: readonly string[]): [string, string][] {
+  return hiddenFields(traceListSearch(withFilter(state, {})), drop);
+}
+
 /** The next page: the backend-echoed window (frozen) plus its cursor. */
 export function nextPageState(state: ListState, window: { from: string; to: string }, cursor: string): ListState {
   return { ...state, window: { kind: "custom", from: window.from, to: window.to }, cursor, page: state.page + 1 };
@@ -172,10 +152,29 @@ export function firstPageState(state: ListState): ListState {
   return { ...state, cursor: null, page: 1 };
 }
 
-/** Detail link that remembers the listing, so "Back to traces" restores filters and page. */
+/**
+ * Detail link that remembers the listing, so "Back to traces" restores filters and page. The
+ * project travels as the detail page's own `project` parameter, not inside `list`.
+ */
 export function traceDetailHref(traceId: string, state: ListState): string {
-  const list = traceListSearch(state);
-  return list ? `/traces/${traceId}?list=${encodeURIComponent(list)}` : `/traces/${traceId}`;
+  const list = traceListSearch(state, false);
+  const parts: string[] = [];
+  if (state.project !== null) parts.push(`project=${state.project}`);
+  if (list) parts.push(`list=${encodeURIComponent(list)}`);
+  return parts.length > 0 ? `/traces/${traceId}?${parts.join("&")}` : `/traces/${traceId}`;
+}
+
+/** Link state of the listing a detail page came from; the detail page's project wins. */
+export function listStateFromBackParam(list: string | string[] | undefined, project: string | null): ListState {
+  if (typeof list !== "string" || list.length > 2048) return { ...listStateOf(parseTraceListQuery({})), project };
+  const sp = new URLSearchParams(list);
+  const params: Record<string, string | string[]> = {};
+  for (const key of new Set(sp.keys())) {
+    if (key === "project") continue;
+    const all = sp.getAll(key);
+    params[key] = all.length === 1 ? (all[0] ?? "") : all;
+  }
+  return { ...listStateOf(parseTraceListQuery(params)), project };
 }
 
 /**
@@ -183,14 +182,6 @@ export function traceDetailHref(traceId: string, state: ListState): string {
  * parser and re-serialized, so only canonical trace-list parameters survive (no open
  * redirect, no arbitrary path or parameter).
  */
-export function backToListHref(list: string | string[] | undefined): string {
-  if (typeof list !== "string" || list.length > 2048) return "/traces";
-  const sp = new URLSearchParams(list);
-  const params: Record<string, string | string[]> = {};
-  for (const key of new Set(sp.keys())) {
-    const all = sp.getAll(key);
-    params[key] = all.length === 1 ? (all[0] ?? "") : all;
-  }
-  const parsed = parseTraceListQuery(params);
-  return traceListHref(parsed);
+export function backToListHref(list: string | string[] | undefined, project: string | null = null): string {
+  return traceListHref(listStateFromBackParam(list, project));
 }

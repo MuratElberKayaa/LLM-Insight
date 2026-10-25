@@ -28,6 +28,8 @@ import {
   type TraceDetail,
   type TraceList,
   type TraceSummary,
+  type TraceModel,
+  type TraceModels,
   type TraceUsageSummary,
   type UsageRecord,
 } from "./trace-types";
@@ -106,14 +108,34 @@ function attributeMap(depth: number): Decoder<Record<string, AttributeValue>> {
   };
 }
 
-const usageSummary: Decoder<TraceUsageSummary> = object<TraceUsageSummary>({
-  inference_calls: count,
-  input_tokens: nullable(bigCount),
-  output_tokens: nullable(bigCount),
-  calls_with_unknown_tokens: count,
-  known_cost_usd: nullable(decimalString),
-  unknown_cost_calls: count,
+export const MAX_MODELS_PER_TRACE = 10;
+
+const traceModels: Decoder<TraceModels> = object<TraceModels>({
+  items: array(
+    object<TraceModel>({ provider: label, requested_model: nullable(label), response_model: nullable(label), calls: positiveInt }),
+    MAX_MODELS_PER_TRACE,
+  ),
+  distinct: count,
+  truncated: boolean,
 });
+
+const usageSummary: Decoder<TraceUsageSummary> = (v, path) => {
+  const u = object<TraceUsageSummary>({
+    inference_calls: count,
+    input_tokens: nullable(bigCount),
+    output_tokens: nullable(bigCount),
+    calls_with_unknown_tokens: count,
+    known_cost_usd: nullable(decimalString),
+    unknown_cost_calls: count,
+    models: traceModels,
+  })(v, path);
+  const m = u.models;
+  const listed = m.items.reduce((sum, item) => sum + item.calls, 0);
+  // The combinations partition the trace's calls: listed ones can only account for fewer.
+  if (m.distinct < m.items.length || m.truncated !== m.distinct > m.items.length) throw new DecodeError(`${path}.models`, "a consistent combination count");
+  if (listed > u.inference_calls || (!m.truncated && listed !== u.inference_calls)) throw new DecodeError(`${path}.models`, "calls matching inference_calls");
+  return u;
+};
 
 const window: Decoder<Window> = object<Window>({ from: isoUtc, to: isoUtc });
 

@@ -128,6 +128,29 @@ def _percentiles(column: Any) -> list[Any]:
 
 
 # ------------------------------------------------ usage level (M02–M04, M06, M08–M12, M14)
+def _token_columns() -> list[Any]:
+    """M08 sums (NULL skipped, unknown counted) and the M09 subsets with their reporters."""
+    u = UsageRecord
+    count = func.count()
+    return [
+        func.sum(u.input_tokens).label("input_tokens"),
+        count.filter(u.input_tokens.is_(None)).label("unknown_input_tokens"),
+        func.sum(u.output_tokens).label("output_tokens"),
+        count.filter(u.output_tokens.is_(None)).label("unknown_output_tokens"),
+        func.sum(u.cached_input_tokens).label("cached_input_tokens"),
+        count.filter(u.cached_input_tokens.is_not(None)).label("calls_reporting_cached"),
+        func.sum(u.cache_write_input_tokens).label("cache_write_input_tokens"),
+        count.filter(u.cache_write_input_tokens.is_not(None)).label("calls_reporting_cache_write"),
+        func.sum(u.reasoning_output_tokens).label("reasoning_output_tokens"),
+        count.filter(u.reasoning_output_tokens.is_not(None)).label("calls_reporting_reasoning"),
+    ]
+
+
+def _usage_source_columns() -> list[Any]:
+    count = func.count()
+    return [count.filter(UsageRecord.usage_source == s).label(f"source_{s}") for s in USAGE_SOURCES]
+
+
 def usage_summary_stmt(f: MetricsFilter) -> Select[Any]:
     u = UsageRecord
     count = func.count()
@@ -138,16 +161,7 @@ def usage_summary_stmt(f: MetricsFilter) -> Select[Any]:
         count.filter(Span.status == "ERROR").label("failed"),  # M04
         func.count(func.distinct(u.call_id)).label("logical_calls"),  # M03
         count.filter(u.call_id.is_(None)).label("attempts_without_call_id"),
-        func.sum(u.input_tokens).label("input_tokens"),  # M08
-        count.filter(u.input_tokens.is_(None)).label("unknown_input_tokens"),
-        func.sum(u.output_tokens).label("output_tokens"),
-        count.filter(u.output_tokens.is_(None)).label("unknown_output_tokens"),
-        func.sum(u.cached_input_tokens).label("cached_input_tokens"),  # M09
-        count.filter(u.cached_input_tokens.is_not(None)).label("calls_reporting_cached"),
-        func.sum(u.cache_write_input_tokens).label("cache_write_input_tokens"),
-        count.filter(u.cache_write_input_tokens.is_not(None)).label("calls_reporting_cache_write"),
-        func.sum(u.reasoning_output_tokens).label("reasoning_output_tokens"),
-        count.filter(u.reasoning_output_tokens.is_not(None)).label("calls_reporting_reasoning"),
+        *_token_columns(),  # M08, M09
         func.sum(u.cost_usd).filter(u.cost_status == "computed").label("known_cost_usd"),  # M10
         count.filter(u.cost_status == "computed").label("computed_cost_calls"),
         count.filter(u.cost_status == "unknown").label("unknown_cost_calls"),  # M11
@@ -155,7 +169,7 @@ def usage_summary_stmt(f: MetricsFilter) -> Select[Any]:
             count.filter(u.cost_unknown_reason == r).label(f"unknown_{r}")
             for r in COST_UNKNOWN_REASONS
         ],
-        *[count.filter(u.usage_source == s).label(f"source_{s}") for s in USAGE_SOURCES],  # M14
+        *_usage_source_columns(),  # M14
         *_percentiles(Span.duration_ns),  # M06
     ]
     return (
@@ -306,8 +320,9 @@ def trace_trend(session: Session, f: MetricsFilter, width: timedelta) -> list[Ro
 
 # ---------------------------------------------------------------- M15 (models/compare)
 def model_groups(session: Session, f: MetricsFilter, limit: int) -> list[Row[Any]]:
-    """M02, M04, M06, M10, M11 per (provider, requested_model, response_model,
-    prompt_version), the largest groups first; `limit + 1` rows so truncation is visible."""
+    """M02, M04, M06, M08–M11 and M14 per (provider, requested_model, response_model,
+    prompt_version), the largest groups first; `limit + 1` rows so truncation is visible.
+    The M08/M09 token columns were added in Phase 3C (additive)."""
     u = UsageRecord
     count = func.count()
     prompt = prompt_version_of_span().label("prompt_version")
@@ -318,6 +333,8 @@ def model_groups(session: Session, f: MetricsFilter, limit: int) -> list[Row[Any
             func.count(func.distinct(u.canonical_call_key)).label("attempts"),
             count.filter(Span.status == "ERROR").label("failed"),
             *_percentiles(Span.duration_ns),
+            *_token_columns(),
+            *_usage_source_columns(),
             func.sum(u.cost_usd).filter(u.cost_status == "computed").label("known_cost_usd"),
             count.filter(u.cost_status == "computed").label("computed_cost_calls"),
             count.filter(u.cost_status == "unknown").label("unknown_cost_calls"),

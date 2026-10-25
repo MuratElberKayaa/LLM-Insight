@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { SideNav } from "./side-nav";
+import { Suspense, type ReactNode } from "react";
+import { SideNav, SideNavFallback } from "./side-nav";
 
 /**
  * Application shell: skip link, left navigation (a horizontal strip below `lg`), header
@@ -19,7 +19,9 @@ export function AppShell({ status, children }: { status: ReactNode; children: Re
           <span aria-hidden="true" className="inline-block h-3 w-3 rounded-sm bg-series-1" />
           <span className="text-sm font-semibold tracking-tight text-ink">LLM Insight</span>
         </div>
-        <SideNav />
+        <Suspense fallback={<SideNavFallback />}>
+          <SideNav />
+        </Suspense>
       </aside>
       <div className="min-w-0">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6 lg:px-8">

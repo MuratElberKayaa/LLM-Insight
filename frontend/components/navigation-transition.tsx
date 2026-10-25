@@ -29,7 +29,7 @@ export function NavigationTransition({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-function useNav(): TransitionState | null {
+export function useNavigationState(): TransitionState | null {
   return useContext(Ctx);
 }
 
@@ -38,7 +38,7 @@ function isPlainClick(e: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 export function FilterLink({ href, current, children, label }: { href: string; current: boolean; children: ReactNode; label?: string }) {
-  const nav = useNav();
+  const nav = useNavigationState();
   return (
     <Link
       href={href}
@@ -59,7 +59,7 @@ export function FilterLink({ href, current, children, label }: { href: string; c
 }
 
 export function RefreshButton() {
-  const nav = useNav();
+  const nav = useNavigationState();
   return (
     <button
       type="button"
@@ -75,7 +75,7 @@ export function RefreshButton() {
 
 /** Wraps the data region: dims it and sets `aria-busy` while a filter navigation runs. */
 export function PendingRegion({ children }: { children: ReactNode }) {
-  const nav = useNav();
+  const nav = useNavigationState();
   const pending = nav?.pending ?? false;
   return (
     <div aria-busy={pending} data-pending={pending ? "true" : "false"} className="transition-opacity duration-150 data-[pending=true]:opacity-55">
