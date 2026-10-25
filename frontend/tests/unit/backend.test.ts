@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { overviewDecoder } from "../../lib/api/schema";
-import { MAX_RESPONSE_BYTES, getHealth, getJson } from "../../lib/server/backend";
+import { traceDetailDecoder, traceListDecoder } from "../../lib/api/trace-schema";
+import { MAX_DETAIL_RESPONSE_BYTES, MAX_RESPONSE_BYTES, getHealth, getJson, traceDetailPath, type BackendPath } from "../../lib/server/backend";
 import type { DashboardConfig } from "../../lib/server/config";
 import { loadOverview } from "../../lib/server/overview";
 import { makeOverview } from "../fixtures/overview";
+import { makeList, makeTrace, retryDetail, toWire } from "../fixtures/traces";
 
 const TOKEN = "SYNTHETIC-test-token-0123456789abcdef0123456789";
 const config: DashboardConfig = { baseUrl: new URL("http://127.0.0.1:8000"), token: TOKEN, projectId: "7", timeoutMs: 200 };
@@ -217,5 +219,64 @@ describe("loadOverview", () => {
       assert.equal(c.url.searchParams.get("provenance"), "synthetic");
     }
     assert.equal(calls.find((c) => c.url.pathname.endsWith("/compare"))?.url.searchParams.get("limit"), "10");
+  });
+});
+
+describe("trace endpoints (Phase 3B)", () => {
+  it("builds detail paths only from a 32-hex trace id", () => {
+    assert.equal(traceDetailPath("56d5c0b2144b3ec23fa58c9561fbbff0"), "/api/v1/traces/56d5c0b2144b3ec23fa58c9561fbbff0");
+    for (const bad of ["../overview", "56D5C0B2144B3EC23FA58C9561FBBFF0", "56d5c0b2144b3ec23fa58c9561fbbff", "56d5c0b2144b3ec23fa58c9561fbbff0/../../x", "%2e%2e", ""]) {
+      assert.equal(traceDetailPath(bad), null, bad);
+    }
+  });
+
+  it("refuses any path outside the runtime allowlist without calling fetch", async () => {
+    const calls: Call[] = [];
+    for (const p of ["/api/v1/traces/../overview", "/api/v1/traces/abc", "/admin", "/api/v1/traces/56d5c0b2144b3ec23fa58c9561fbbff0/x"]) {
+      const r = await getJson(config, p as BackendPath, {}, traceListDecoder, { fetch: fakeFetch(() => jsonResponse({}), calls) });
+      assert.equal(r.ok, false);
+      if (!r.ok) assert.equal(r.error.kind, "config");
+    }
+    assert.equal(calls.length, 0);
+  });
+
+  it("sends list filters as validated parameters with the project and token", async () => {
+    const calls: Call[] = [];
+    const r = await getJson(config, "/api/v1/traces", { from: "2026-10-24T09:00:00.000Z", to: "2026-10-25T09:00:00.000Z", limit: "10", status: "error", cursor: "abc" }, traceListDecoder, {
+      fetch: fakeFetch(() => jsonResponse(toWire(makeList([makeTrace()], "next1"))), calls),
+    });
+    assert.equal(r.ok, true, r.ok ? "" : JSON.stringify(r.error));
+    const url = calls[0]!.url;
+    assert.equal(url.pathname, "/api/v1/traces");
+    assert.equal(url.searchParams.get("project"), "7");
+    assert.equal(url.searchParams.get("cursor"), "abc");
+    assert.equal((calls[0]!.init.headers as Record<string, string>).Authorization, `Bearer ${TOKEN}`);
+  });
+
+  it("parses detail bodies losslessly (an int64 attribute keeps its digits)", async () => {
+    const body = JSON.stringify(toWire(retryDetail())).replace('"attributes":{}', '"attributes":{"gen_ai.request.seed":4611686018427387905}');
+    const r = await getJson(config, "/api/v1/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", {}, traceDetailDecoder, {
+      fetch: fakeFetch(() => new Response(body, { status: 200, headers: { "content-type": "application/json" } })),
+    });
+    assert.equal(r.ok, true, r.ok ? "" : JSON.stringify(r.error));
+    if (r.ok) assert.equal(String(r.data.spans[0]!.attributes["gen_ai.request.seed"]), "4611686018427387905");
+  });
+
+  it("allows the larger detail cap only when asked, and never logs the trace id", async () => {
+    const big = "x".repeat(MAX_RESPONSE_BYTES + 10);
+    const respond = () => new Response(big, { status: 200, headers: { "content-type": "application/json" } });
+    const small = await getJson(config, "/api/v1/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", {}, traceDetailDecoder, { fetch: fakeFetch(respond) });
+    assert.equal(!small.ok && small.error.detail, "response too large");
+    const large = await getJson(config, "/api/v1/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", {}, traceDetailDecoder, { fetch: fakeFetch(respond) }, { maxBytes: MAX_DETAIL_RESPONSE_BYTES });
+    assert.equal(!large.ok && large.error.detail, "invalid JSON", "within the detail cap the body is read (and here rejected as JSON)");
+    assert.ok(warnings.length >= 2);
+    for (const w of warnings) assert.doesNotMatch(w, /a{31}1/, "trace id must not be logged");
+  });
+
+  it("a 404 for a trace (missing, other project, unknown project) is one not_found kind", async () => {
+    const r = await getJson(config, "/api/v1/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", {}, traceDetailDecoder, {
+      fetch: fakeFetch(() => jsonResponse({ error: { code: "not_found", message: "not found" } }, 404)),
+    });
+    assert.deepEqual(!r.ok && r.error, { kind: "not_found", status: 404 });
   });
 });

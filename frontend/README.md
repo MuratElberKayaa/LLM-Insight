@@ -1,8 +1,9 @@
 # LLM Insight dashboard (frontend)
 
-Local-only Next.js App Router dashboard for the LLM Insight backend. Phase 3A delivers the
-foundation (shell, design system, server-side API layer) and the **Overview** page. Trace
-explorer, model comparison page, reviews and experiments are not built yet.
+Local-only Next.js App Router dashboard for the LLM Insight backend. Phase 3A delivered the
+foundation (shell, design system, server-side API layer) and the **Overview** page; Phase 3B
+adds the **Trace Explorer** (`/traces`) and **Trace Detail** (`/traces/{trace_id}`) with the
+span tree and waterfall. The model comparison page, reviews and experiments are not built yet.
 
 ## Runtime and versions
 
@@ -59,17 +60,20 @@ No `NEXT_PUBLIC_*` variable exists or is allowed (ESLint rule + static test).
 
 ```
 browser ──GET──▶ proxy.ts (loopback Host only, GET/HEAD only, CSP nonce)
-                   └─▶ app/page.tsx (server component, dynamic)
-                         └─▶ lib/server/overview.ts ──▶ lib/server/backend.ts ──Bearer──▶ FastAPI /api/v1/*
-                               (validated query)          (fixed paths, timeout, size cap,
-                                                           no redirects, schema decode)
+                   ├─▶ app/page.tsx (Overview, server component, dynamic)
+                   │     └─▶ lib/server/overview.ts ─┐
+                   └─▶ app/traces/page.tsx, app/traces/[traceId]/page.tsx
+                         └─▶ lib/server/traces.ts ───┴─▶ lib/server/backend.ts ──Bearer──▶ FastAPI /api/v1/*
+                               (validated query)          (path allowlist, timeout, size cap,
+                                                           no redirects, lossless JSON, schema decode)
 ```
 
-- `app/` — routes: `layout.tsx` (shell + backend readiness), `page.tsx` (Overview), `loading.tsx`, `error.tsx`, `not-found.tsx`.
+- `app/` — routes: `layout.tsx` (shell + backend readiness), `page.tsx` (Overview), `traces/page.tsx` (trace list), `traces/[traceId]/page.tsx` (trace detail), `loading.tsx` per route, `error.tsx`, `not-found.tsx`.
 - `components/` — design system: `app-shell`, `side-nav`, `page-header`, `metric-card`, `chart-card`, `data-table`, `states` (empty/error/notice/skeleton), `status-indicator`, `provenance-badge`, `filter-bar` + `navigation-transition` (client: transition navigation, refresh), `charts/trend-charts` (client, Recharts), `overview/*` sections.
-- `lib/server/` — `server-only` modules: `config.ts` (env validation), `backend.ts` (the only backend client), `overview.ts` (page loader).
+- `components/traces/` — `trace-filters`, `trace-list` (table ≥ md, cards below), `trace-values` (status, tokens, cost, ids), `trace-detail-sections` (provenance notice, facts, status breakdown, logical calls, attempts, span table) and `waterfall` (client: ARIA tree, keyboard, bounded rows, selected-span panel).
+- `lib/server/` — `server-only` modules: `config.ts` (env validation), `backend.ts` (the only backend client), `overview.ts` and `traces.ts` (page loaders).
 - `lib/api/` — response types mirroring `backend/app/services/metrics.py`, decoders, failure kinds and copy.
-- `lib/` — pure helpers: `validate.ts`, `decimal.ts` (BigInt money), `format.ts` (UTC, en-US), `time-range.ts`, `trend.ts`, `provenance.ts`, `request-guard.ts`.
+- `lib/` — pure helpers: `validate.ts`, `decimal.ts` (BigInt money), `format.ts` (UTC, en-US), `time-range.ts`, `trend.ts`, `provenance.ts`, `request-guard.ts`; Phase 3B: `json.ts` (lossless JSON: integers above 2^53 keep their digits), `nanos.ts` (BigInt nanosecond math), `trace-query.ts` (trace-list URL state), `span-tree.ts` (span hierarchy, waterfall geometry, logical calls), `api/trace-types.ts` and `api/trace-schema.ts`.
 
 **Data rules:** the frontend never computes an alternative metric. Counts, rates,
 percentiles and costs are the backend's (M01–M14 overview, M15 compare). Money stays a decimal
@@ -80,6 +84,14 @@ backend's buckets with text labels; "real" is always called an instrumentation c
 **Time windows:** presets 6 h / 24 h (hourly buckets) and 7 d / 31 d (daily), all UTC. Each
 window ends at the next bucket boundary after now, so every trend bucket is full width; the
 backend echoes the window and the page shows the echo.
+
+**Trace explorer:** only the filters `GET /api/v1/traces` implements (UTC window ≤ 31 days as
+a preset or a fixed `from`/`to`, `status`, `provenance`, exact `model`, page size); the list has
+no provider column or filter because the list API returns neither. Paging follows the opaque
+cursor and freezes the backend-echoed window. Detail links carry the list state (`?list=`),
+which the back link re-parses so only canonical list parameters survive. Nanosecond values stay
+strings/BigInt end to end; the span tree tolerates several roots, orphans, truncated parents and
+client-made parent cycles; failures are shown as recorded (`error.type`), never explained.
 
 **Security:** see `docs/SECURITY.md` §5 and `docs/reports/phase-3a.md` §4. Local use only; no
 login exists, so the dashboard must not be exposed beyond loopback.
@@ -92,6 +104,10 @@ login exists, so the dashboard must not be exposed beyond loopback.
   (statuses, timeout, abort, oversize, malformed, no token in errors or logs), server-rendered
   components (unknown vs zero cost, empty/error states, XSS escaping) and static boundary checks.
 - `tests/e2e/` (Playwright): every expectation is computed from a direct backend API call for
-  the same window; also the outage instance on :3002, Host/method guard, no token in any
-  response, keyboard navigation, console cleanliness, and responsive layouts.
-- `tests/fixtures/overview.ts` is SYNTHETIC test data; production code never imports it.
+  the same window; also the outage instance on :3002, the wrong-token instance on :3003,
+  Host/method guard, no token in any response, keyboard navigation, console cleanliness, and
+  responsive layouts. `traces.spec.ts` needs the SYNTHETIC fixtures of
+  `../scripts/dev/seed_trace_fixtures.py` (and its `--set isolation` in a second project) from
+  the last 24 hours, plus the mock demos; `LLMI_E2E_FOREIGN_PROJECT` (default 2) names that
+  second project.
+- `tests/fixtures/overview.ts` and `tests/fixtures/traces.ts` are SYNTHETIC test data; production code never imports them. `*.live.json` were recorded from the real backend (synthetic telemetry).

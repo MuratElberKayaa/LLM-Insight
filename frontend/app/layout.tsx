@@ -22,7 +22,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <AppShell
-          current="/"
           status={
             <Suspense fallback={<StatusIndicator tone="neutral" label="Checking backend…" />}>
               <BackendStatus />

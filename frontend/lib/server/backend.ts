@@ -2,6 +2,7 @@ import "server-only";
 
 import type { ApiFailure, ApiResult } from "../api/result";
 import type { BackendHealth } from "../api/types";
+import { parseJsonLossless } from "../json";
 import { decode, type Decoder } from "../validate";
 import type { DashboardConfig } from "./config";
 
@@ -15,14 +16,29 @@ import type { DashboardConfig } from "./config";
  * - every body is decoded against the documented schema before use.
  */
 
-export type BackendPath = "/api/v1/overview" | "/api/v1/models/compare";
+export type BackendPath = "/api/v1/overview" | "/api/v1/models/compare" | "/api/v1/traces" | `/api/v1/traces/${string}`;
+
+/** Runtime allowlist behind the type: a trace id path segment must be 32 lowercase hex. */
+const PATH_RE = /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32})$/;
+const TRACE_ID_RE = /^[0-9a-f]{32}$/;
+
+/** `/api/v1/traces/{id}` for a validated trace id, or null (never builds a path from other input). */
+export function traceDetailPath(traceId: string): BackendPath | null {
+  return TRACE_ID_RE.test(traceId) ? `/api/v1/traces/${traceId}` : null;
+}
 
 export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+/** A trace detail holds up to 2000 spans and 2000 usage rows with their attributes. */
+export const MAX_DETAIL_RESPONSE_BYTES = 8 * 1024 * 1024;
 const HEALTH_TIMEOUT_MS = 1500;
 const FIELD_NAME_RE = /^[a-z_]{1,64}$/;
 
 export interface BackendDeps {
   fetch?: typeof fetch;
+}
+
+export interface GetOptions {
+  maxBytes?: number;
 }
 
 function retryAfter(headers: Headers): number | undefined {
@@ -95,8 +111,10 @@ function networkFailure(err: unknown): ApiFailure {
 
 function log(path: string, failure: ApiFailure): void {
   // Kind, status and schema path only: never the token, the query or a response body.
+  // A trace id is logged as its endpoint shape only.
+  const endpoint = path.replace(/^\/api\/v1\/traces\/[0-9a-f]{32}$/, "/api/v1/traces/{trace_id}");
   const parts = [failure.kind, failure.status, failure.detail].filter((p) => p !== undefined);
-  console.warn(`[llm-insight] backend ${path} failed: ${parts.join(" ")}`);
+  console.warn(`[llm-insight] backend ${endpoint} failed: ${parts.join(" ")}`);
 }
 
 /** GET a fixed `/api/v1` endpoint for the configured project and decode the JSON body. */
@@ -106,8 +124,15 @@ export async function getJson<T>(
   params: Readonly<Record<string, string>>,
   decoder: Decoder<T>,
   deps: BackendDeps = {},
+  options: GetOptions = {},
 ): Promise<ApiResult<T>> {
   const doFetch = deps.fetch ?? fetch;
+  const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES;
+  if (!PATH_RE.test(path)) {
+    const failure: ApiFailure = { kind: "config", detail: "refused a backend path outside the allowlist" };
+    log("(refused path)", failure);
+    return { ok: false, error: failure };
+  }
   const url = new URL(path, config.baseUrl);
   url.searchParams.set("project", config.projectId);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -127,7 +152,7 @@ export async function getJson<T>(
       redirect: "error",
       signal: AbortSignal.timeout(config.timeoutMs),
     });
-    body = await readCapped(response, MAX_RESPONSE_BYTES);
+    body = await readCapped(response, maxBytes);
   } catch (err) {
     return fail(networkFailure(err));
   }
@@ -139,7 +164,7 @@ export async function getJson<T>(
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(body);
+    parsed = parseJsonLossless(body);
   } catch {
     return fail({ kind: "malformed", detail: "invalid JSON" });
   }

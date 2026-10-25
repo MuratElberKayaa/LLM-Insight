@@ -65,6 +65,12 @@ describe("server/client boundary", () => {
     for (const f of files) assert.doesNotMatch(read(f), /^\s*["']use server["']/m, rel(f));
   });
 
+  it("only lib/server modules call the backend client, and the client keeps a path allowlist", () => {
+    const callers = files.filter((f) => /\bgetJson\(/.test(read(f))).map(rel).sort();
+    assert.deepEqual(callers, ["lib/server/overview.ts", "lib/server/traces.ts"]);
+    assert.match(read(path.join(ROOT, "lib/server/backend.ts")), /const PATH_RE = /);
+  });
+
   it("production code never imports test fixtures", () => {
     for (const f of files) assert.doesNotMatch(read(f), /tests\/fixtures|fixtures\/overview/, rel(f));
   });
