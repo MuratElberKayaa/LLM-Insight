@@ -66,6 +66,8 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 - 6 non-critical: T07, T14, T31, T38, T40, T47.
 - 10 blockers: T01, T04, T17, T19, T20, T23, T34, T35, T42, T46.
 
+**Phase 3 final re-verification (`reports/phase-3-final.md` §4, §8):** T41, T42, T45, T46 and T48 were re-run on the closure state (44/44 E2E, bundle scan 0); their statuses stay `PASS (phase-3c)`. Still open: T33–T40 (Phase 4, NOT RUN), T43 (PARTIAL, Phase 5) and T47 (Phase 5, NOT RUN).
+
 ## Sub-cases (inherit the parent's criticality)
 
 These are the required protocol, dedup and provenance cases. They are reported under their parent ID and are not new test IDs. Executed sub-cases and their results are listed per phase report (Phase 1B: `reports/phase-1b.md` §4; Phase 1C: `reports/phase-1c.md` §3; Phase 1 closure re-run and R08 evidence: `reports/phase-1-final.md` §3; Phase 2A SDK evidence: `reports/phase-2a.md` §4; Phase 2B pricing and OpenAI adapter evidence, including T23-S1/S2 with costs: `reports/phase-2b.md` §4; Phase 2C metrics, FastAPI demo and T48-S1 at the aggregate API: `reports/phase-2c.md` §6; Phase 3A dashboard foundation and Overview, T41/T42/T48: `reports/phase-3a.md` §5; Phase 3B trace explorer, T41/T45/T46/T48 and the UI re-verification of T02/T18/T25–T28: `reports/phase-3b.md` §6.5; Phase 3C model comparison, project selector, R40/R41 and the re-verification of T41/T42/T45/T46/T48 with run-owned fixtures: `reports/phase-3c.md` §7).

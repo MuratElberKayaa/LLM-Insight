@@ -20,6 +20,8 @@ export function ProjectSelector({ context, action, hidden }: { context: ProjectC
   if (current === null) return null;
   const listing = context.projects;
   const items = listing?.ok ? listing.data.items : [];
+  // The backend lists at most `limit` projects by id; when more exist, say so in the list itself.
+  const truncatedAt = listing?.ok && listing.data.truncated ? listing.data.limit : null;
   const known = items.find((p) => String(p.id) === current);
   return (
     <div className="mb-5 flex flex-wrap items-end gap-x-4 gap-y-2" data-testid="project-bar">
@@ -41,6 +43,11 @@ export function ProjectSelector({ context, action, hidden }: { context: ProjectC
                 {optionLabel(p)}
               </option>
             ))}
+            {truncatedAt !== null && (
+              <option disabled value="" data-testid="project-list-truncated-option">
+                {`More projects exist: only the first ${truncatedAt} by id are listed`}
+              </option>
+            )}
           </select>
         </label>
         <button type="submit" className="min-h-8 rounded-md border border-line px-3 text-sm font-medium text-ink-2 hover:bg-raised hover:text-ink">
@@ -58,8 +65,13 @@ export function ProjectSelector({ context, action, hidden }: { context: ProjectC
           </>
         ) : null}
         {context.explicit ? "" : " (configured default)"}
-        {listing?.ok && listing.data.truncated ? ` · first ${listing.data.limit} projects listed` : ""}
       </p>
+      {truncatedAt !== null && (
+        <p className="w-full text-xs text-ink-3" data-testid="project-list-truncated">
+          The project list is incomplete: only the first {truncatedAt} projects by id are listed. Open any other project with{" "}
+          <code>?project=&lt;id&gt;</code>.
+        </p>
+      )}
       {listing && !listing.ok && (
         // One line, not a second alert: the page's own error state reports an outage.
         <p className="w-full text-xs text-ink-3" data-testid="project-list-error" data-error-kind={listing.error.kind}>
