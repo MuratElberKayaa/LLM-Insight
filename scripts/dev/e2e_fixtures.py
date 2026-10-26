@@ -24,6 +24,9 @@ No provider is called and nothing claims `real`.
 results straight from PostgreSQL, bypassing the API, so the browser test can check the counts
 the dashboard showed against the database. It refuses an experiment whose dataset is not in one
 of this run's projects, and prints counts, case ids and provenance only (no case content).
+Phase 4 closure: it also lists the cases converted from a review (`reviewed_cases`: case id,
+origin trace and review ids, the stored outcome per prompt version), so the test can follow the
+human-approved case's own id into the results.
 """
 
 from __future__ import annotations
@@ -225,9 +228,11 @@ def experiment_counts(state_path: Path, experiment_id: int) -> int:
                 return 2
             rows = c.execute(
                 text(
-                    "SELECT prompt_version, passed, provenance, test_case_id"
-                    " FROM experiment_results WHERE experiment_id = :i"
-                    " ORDER BY test_case_id, prompt_version"
+                    "SELECT x.prompt_version, x.passed, x.provenance, x.test_case_id,"
+                    " t.origin_trace_id, t.origin_review_id"
+                    " FROM experiment_results x JOIN test_cases t ON t.id = x.test_case_id"
+                    " WHERE x.experiment_id = :i"
+                    " ORDER BY x.test_case_id, x.prompt_version"
                 ),
                 {"i": experiment_id},
             ).all()
@@ -245,6 +250,19 @@ def experiment_counts(state_path: Path, experiment_id: int) -> int:
     provenance: dict[str, int] = {}
     for r in rows:
         provenance[r.provenance] = provenance.get(r.provenance, 0) + 1
+    reviewed: dict[int, dict] = {}
+    for r in rows:
+        if r.origin_review_id is not None:
+            entry = reviewed.setdefault(
+                r.test_case_id,
+                {
+                    "test_case_id": r.test_case_id,
+                    "origin_trace_id": r.origin_trace_id,
+                    "origin_review_id": r.origin_review_id,
+                    "passed": {},
+                },
+            )
+            entry["passed"][r.prompt_version] = r.passed
     print(
         json.dumps(
             {
@@ -255,6 +273,7 @@ def experiment_counts(state_path: Path, experiment_id: int) -> int:
                 "results": len(rows),
                 "versions": versions,
                 "provenance": provenance,
+                "reviewed_cases": list(reviewed.values()),
             }
         )
     )
