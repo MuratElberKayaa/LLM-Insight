@@ -272,6 +272,10 @@ test("failed trace → review → approved case → golden dataset → mock A/B 
   expect(db).toMatchObject({ experiment: experimentId, project: Number(PROJECT), mode: "mock", finished: true, results: 24, provenance: { synthetic: 24 } });
   expect(db.versions[A]).toMatchObject({ passed: 7, failed: 4, not_evaluated: 1, case_ids: caseIds });
   expect(db.versions[B]).toMatchObject({ passed: 4, failed: 6, not_evaluated: 2, case_ids: caseIds });
+  // The human-approved case's own id (not a separately seeded G02: G02 was added only through
+  // the review conversion), with its lineage, evaluated under both variants in PostgreSQL.
+  expect(caseIds).toContain(humanCase.id);
+  expect(db.reviewed_cases).toEqual([{ test_case_id: humanCase.id, origin_trace_id: traceId, origin_review_id: reviewId, passed: { [A]: false, [B]: true } }]);
   expect([report.variants[0].passed, report.variants[0].failed, report.variants[0].not_evaluated]).toEqual([7, 4, 1]);
   expect([report.variants[1].passed, report.variants[1].failed, report.variants[1].not_evaluated]).toEqual([4, 6, 2]);
   expect(report.variants[0].pass_rate).toEqual({ value: 0.636364, numerator: 7, denominator: 11 });
@@ -396,6 +400,61 @@ test("real mode, cross-origin, method and project-isolation attempts are refused
   await page.goto(u("/experiments/abc"));
   await expect(page.locator('[data-error-kind="invalid_request"]')).toBeVisible();
   expect(await experiments(request)).toEqual(before);
+});
+
+test("a genuine experiment Server Action POST runs only on its write page (Phase 4 closure, ADR-22)", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const golden = goldenCases();
+  const created = await apiPost(request, "/api/v1/datasets", JSON.stringify({ name: `e2e-${RUN}-replay` }));
+  expect(created.status).toBe(201);
+  const datasetId = created.json.id as number;
+  for (const c of golden.filter((x) => x.key === "G02" || x.key === "G03")) {
+    expect((await apiPost(request, `/api/v1/datasets/${datasetId}/cases`, c.body)).status).toBe(201);
+  }
+  const options = await api(request, "/api/v1/experiment-options");
+  const model = (options.models.find((m: any) => m.model === "gpt-5-mini") ?? options.models[0]).model as string;
+
+  // Capture the real action request the form sends, and abort it: nothing runs.
+  let captured: { headers: Record<string, string>; body: Buffer } | null = null;
+  await page.route("**/experiments/new**", async (route) => {
+    const req = route.request();
+    if (req.method() !== "POST") return route.continue();
+    captured = { headers: await req.allHeaders(), body: req.postDataBuffer() ?? Buffer.alloc(0) };
+    return route.abort();
+  });
+  await page.goto(u("/experiments/new"));
+  await configure(page, datasetId, model);
+  await page.getByTestId("experiment-confirm").check();
+  await page.getByTestId("experiment-submit").click();
+  await expect.poll(() => captured !== null).toBe(true);
+  await page.unroute("**/experiments/new**");
+  const { headers: sent, body } = captured!;
+  expect(sent["next-action"]).toMatch(/^[0-9a-f]{40,}$/);
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(sent)) if (!["host", "content-length", "connection", "cookie"].includes(k) && !k.startsWith(":")) headers[k] = v;
+  const before = (await experiments(request)).length;
+
+  // The same same-origin request on every other path: refused, and nothing runs. `/favicon.ico`
+  // was excluded from proxy.ts before the Phase 4 closure, and the action ran there.
+  for (const [p, want] of [
+    ["/favicon.ico", 405],
+    [`/experiments?project=${PROJECT}`, 405],
+    [`/experiments/${datasetId}?project=${PROJECT}`, 405],
+    ["/_next/static/llmi-probe", 404],
+  ] as const) {
+    await pause();
+    const res = await request.post(`http://127.0.0.1:3001${p}`, { headers, data: body, maxRedirects: 0 });
+    expect(res.status(), p).toBe(want);
+    expect((await experiments(request)).length, p).toBe(before);
+  }
+
+  // Control: the identical request on the write page runs exactly once, so the replay is valid.
+  await pause();
+  const ok = await request.post(`http://127.0.0.1:3001/experiments/new?project=${PROJECT}`, { headers, data: body, maxRedirects: 0 });
+  expect(ok.status()).toBe(200);
+  const after = await experiments(request);
+  expect(after.length).toBe(before + 1);
+  expect(after[0]).toMatchObject({ dataset_id: datasetId, mode: "mock", state: "finished", results: 4 });
 });
 
 test("experiment pages: one h1, labelled controls in tab order, captioned tables, no horizontal scroll on phones", async ({ page, request }) => {

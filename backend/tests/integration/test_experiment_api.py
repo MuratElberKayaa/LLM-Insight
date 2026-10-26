@@ -17,11 +17,12 @@ from sqlalchemy.exc import OperationalError
 from app.api import experiments as experiments_api
 from app.core import exact_json
 from app.services.experiments import golden
+from tests import otlp
 from tests.helpers import alembic_config
 from tests.integration.conftest import ADMIN_AUTH, run_live_server
-from tests.integration.ingest_helpers import rows
+from tests.integration.ingest_helpers import post, rows
 from tests.integration.test_dataset_api import make_dataset
-from tests.integration.test_review_api import FAKE_KEY
+from tests.integration.test_review_api import FAKE_KEY, TRACE, create, failing_trace, patch
 
 pytestmark = pytest.mark.integration
 
@@ -239,6 +240,104 @@ def test_golden_experiment_end_to_end(api_client, golden_setup, db):
     )
     assert again.status_code == 200 and again.json() == doc
     assert again.headers["cache-control"] == "no-store"
+
+
+def test_the_human_approved_case_itself_is_run_under_both_versions(api_client, make_key, db):
+    """Phase 4 closure: trace -> review -> decision -> approved case -> dataset -> experiment,
+    followed by the case id itself. G02 is added only through the review conversion (never
+    also seeded standalone), so the case the experiment ran is the human-approved one."""
+    ensure_price(db)
+    key = make_key("demo")
+    project = key.project_id
+    assert (
+        post(api_client, otlp.body(otlp.request(*failing_trace(TRACE))), key.key).status_code == 200
+    )
+    review = create(api_client, project, issue_type="schema_violation")
+    assert review.status_code == 201, review.text
+    review_id = review.json()["id"]
+    decided = patch(
+        api_client,
+        project,
+        review_id,
+        {"review_status": "closed", "reviewer_decision": "hypothesis_supported"},
+    )
+    assert decided.status_code == 200, decided.text
+    ds = make_dataset(api_client, project, "human-golden").json()["id"]
+    payloads = dict(zip((c.key for c in golden.CASES), golden.case_payloads(), strict=True))
+    converted = post_json(
+        api_client,
+        f"/api/v1/datasets/{ds}/cases",
+        project,
+        {**payloads["G02"], "origin_trace_id": TRACE, "origin_review_id": review_id},
+    )
+    assert converted.status_code == 201, converted.text
+    human_id = converted.json()["id"]
+    for k, payload in payloads.items():
+        if k != "G02":
+            r = post_json(api_client, f"/api/v1/datasets/{ds}/cases", project, payload)
+            assert r.status_code == 201, r.text
+
+    # The stored lineage of that exact id, read from PostgreSQL.
+    case = rows(
+        db,
+        "SELECT c.id, c.dataset_id, c.origin_trace_id, c.origin_review_id,"
+        " r.trace_id AS review_trace_id, r.reviewer_decision"
+        " FROM test_cases c JOIN failure_reviews r ON r.id = c.origin_review_id"
+        " WHERE c.sanitized_input = :i",
+        i=payloads["G02"]["sanitized_input"],
+    )
+    assert case == [
+        {
+            "id": human_id,
+            "dataset_id": ds,
+            "origin_trace_id": TRACE,
+            "origin_review_id": review_id,
+            "review_trace_id": TRACE,
+            "reviewer_decision": "hypothesis_supported",
+        }
+    ]
+    assert rows(db, "SELECT count(*) AS n FROM test_cases WHERE dataset_id = :d", d=ds) == [
+        {"n": 12}
+    ]
+
+    r = post_json(
+        api_client,
+        "/api/v1/experiments",
+        project,
+        {
+            "dataset_id": ds,
+            "prompt_version_a": A,
+            "prompt_version_b": B,
+            "model": MODEL,
+            "mode": "mock",
+        },
+    )
+    assert r.status_code == 201, r.text
+    doc = r.json()
+    experiment_id = doc["experiment"]["id"]
+    assert doc["cases"] == {"count": 12, "ids_identical_across_versions": True}
+
+    stored = rows(
+        db,
+        "SELECT x.prompt_version, x.passed, x.evaluation_detail, x.provenance, e.dataset_id"
+        " FROM experiment_results x JOIN experiments e ON e.id = x.experiment_id"
+        " WHERE x.experiment_id = :e AND x.test_case_id = :c ORDER BY x.prompt_version",
+        e=experiment_id,
+        c=human_id,
+    )
+    assert [(x["prompt_version"], x["passed"]) for x in stored] == [(A, False), (B, True)]
+    assert stored[0]["evaluation_detail"].startswith("schema_violation: ")
+    assert {(x["provenance"], x["dataset_id"]) for x in stored} == {("synthetic", ds)}
+    per_version = rows(
+        db,
+        "SELECT prompt_version, array_agg(test_case_id ORDER BY test_case_id) AS ids"
+        " FROM experiment_results WHERE experiment_id = :e GROUP BY 1 ORDER BY 1",
+        e=experiment_id,
+    )
+    assert len(per_version) == 2 and per_version[0]["ids"] == per_version[1]["ids"]
+    assert human_id in per_version[0]["ids"]
+    reported = sorted(x["prompt_version"] for x in doc["results"] if x["test_case_id"] == human_id)
+    assert reported == [A, B]
 
 
 def test_outputs_are_never_persisted_or_returned(api_client, golden_setup, db):

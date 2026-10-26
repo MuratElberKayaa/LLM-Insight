@@ -20,7 +20,9 @@ function walk(dir: string): string[] {
 }
 
 const files = [...SOURCE_DIRS.flatMap((d) => walk(path.join(ROOT, d))), ...ROOT_FILES.map((f) => path.join(ROOT, f))];
-const read = (f: string) => readFileSync(f, "utf8");
+// Line endings normalized: a Windows checkout with core.autocrlf=true has CRLF files, and the
+// line-anchored checks below are about content, not line endings.
+const read = (f: string) => readFileSync(f, "utf8").replaceAll("\r\n", "\n");
 const rel = (f: string) => path.relative(ROOT, f).replaceAll("\\", "/");
 const isClient = (src: string) => /^\s*["']use client["'];?/.test(src);
 
@@ -57,6 +59,15 @@ describe("server/client boundary", () => {
       assert.doesNotMatch(src, /localStorage|sessionStorage|indexedDB|document\.cookie/, rel(f));
       assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/, rel(f));
     }
+  });
+
+  it("the request guard runs on every path except the static assets and the image optimizer", () => {
+    // Phase 4 closure: a path excluded here gets none of the Host, method, origin and
+    // Next-Action checks, and Next.js dispatches a Server Action on any rendered path
+    // (a POST to /favicon.ico ran one). Only these two never render a page.
+    const proxy = read(path.join(ROOT, "proxy.ts"));
+    const sources = [...proxy.matchAll(/source: "([^"]*)"/g)].map((m) => m[1]);
+    assert.deepEqual(sources, ["/((?!_next/static|_next/image).*)"]);
   });
 
   it("has no route handlers (the UI cannot proxy the backend)", () => {
