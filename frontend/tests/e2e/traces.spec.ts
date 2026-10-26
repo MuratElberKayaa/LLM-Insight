@@ -35,6 +35,7 @@ async function pageWindow(page: Page): Promise<Win> {
 }
 
 async function uiTraceIds(page: Page): Promise<string[]> {
+  await expect(page.getByTestId("trace-table")).toBeVisible(); // evaluateAll does not wait (R72)
   return page.getByTestId("trace-table").getByTestId("trace-link").evaluateAll((els) => els.map((e) => e.getAttribute("data-trace-id") ?? ""));
 }
 
@@ -277,10 +278,13 @@ test("orphans, parent cycles and equal start times render deterministically", as
   const detail = await api(request, `/api/v1/traces/${eq.trace_id}`);
   const kids = detail.spans.filter((s: any) => s.parent_span_id !== null);
   expect(kids[0].start_time_unix_nano).toBe(kids[1].start_time_unix_nano);
+  // evaluateAll does not wait: the streamed tree is revealed by React after `load` (Phase 5A, R72).
   await page.goto(u(`/traces/${eq.trace_id}`));
+  await expect(page.getByRole("treeitem")).toHaveCount(detail.spans.length);
   const ids = await page.getByRole("treeitem").evaluateAll((els) => els.map((e) => e.getAttribute("data-span-id")));
   expect(ids.slice(1)).toEqual(kids.map((s: any) => s.span_id).sort());
   await page.reload();
+  await expect(page.getByRole("treeitem")).toHaveCount(detail.spans.length);
   expect(await page.getByRole("treeitem").evaluateAll((els) => els.map((e) => e.getAttribute("data-span-id")))).toEqual(ids);
 });
 

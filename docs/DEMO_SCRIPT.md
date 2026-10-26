@@ -27,6 +27,17 @@ Steps 4 and 5 run in the dashboard: on the failed trace's page, the reviewer rea
 
 Step 6 runs in the dashboard (Phase 4D, mock only). Load the SYNTHETIC golden dataset (`scripts/dev/seed_golden_dataset.py --project <id> --approved-by <name>`), or type a golden input such as `SYNTHETIC G02: …` as the test input of a reviewed trace's case so the scripted mock can answer it. Then open **Experiments → New mock experiment** (or "Set up a mock experiment" on the dataset page): choose the dataset, `golden-prompt-v1` as A, `golden-prompt-v2` as B and a priced model, review the summary, tick the mock-only confirmation and press **Run mock experiment**. The results page shows the SYNTHETIC banner, per-version passed/failed/not evaluated with the pass-rate denominator, synthetic p50/p95 with `n`, the estimated cost or "Total unknown", the backend's verdict (on the 12-case golden set: no better version is named, because G12 timed out under v2) and every test case's outcome under both versions, each with a detail page. Nothing runs on page load; real mode is not offered and is refused by the backend.
 
+## Clean-clone setup (T47, verified in Phase 5A)
+
+From a fresh clone, mock mode only, nothing real or paid (`reports/phase-5a.md` §5). Commands run from the repository root; on Windows use `.venv\Scripts\python`.
+
+1. `python -I scripts/dev/init_env.py` creates the git-ignored `.env` with generated secrets (never printed).
+2. `docker compose --profile app up -d --build --wait` starts PostgreSQL, the backend (migrates to head on start) and the dashboard on `http://127.0.0.1:3001`. The default `docker compose up` starts PostgreSQL only.
+3. Init, inside the backend container: `docker compose --profile app exec backend python -m app.cli create-key --project demo` (the first project is id 1, the dashboard default; the key is printed once: put it into `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>` in `.env`), then `docker compose --profile app exec backend python -m app.cli seed-prices`.
+4. Host tools for ingest (the `app` profile does not publish the backend, R43): a backend venv (`python -m venv backend/.venv`, then `pip install -r backend/requirements.lock` and `pip install --no-deps -e backend`) and an SDK venv (`python -m venv sdk/.venv`, then `pip install -r sdk/requirements-dev.lock` and `pip install --no-deps ./sdk`). Start `python -m app` in `backend/` (same database through `127.0.0.1:55432`).
+5. Demo traffic: load `.env` into the environment and run `sdk/.venv/Scripts/python -m demo_app.web --drive` (5 SYNTHETIC traces). Golden dataset: `backend/.venv/Scripts/python scripts/dev/seed_golden_dataset.py --project 1 --approved-by <name>` (add `--api http://127.0.0.1:<port>` if the backend is not on 8000).
+6. Steps 2–6 above in the dashboard. Rollback: `docker compose --profile app down -v`, then start again from step 2.
+
 ## Optional real-mode step (requires approval)
 
 Before step 1, send one real OpenAI request with `LLMI_PROVIDER_MODE=real`. The trace then shows `provenance=real`. The cost is `computed` only if a verified `model_prices` row exists; otherwise it stays `unknown`.

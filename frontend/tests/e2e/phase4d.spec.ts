@@ -435,17 +435,26 @@ test("a genuine experiment Server Action POST runs only on its write page (Phase
   const before = (await experiments(request)).length;
 
   // The same same-origin request on every other path: refused, and nothing runs. `/favicon.ico`
-  // was excluded from proxy.ts before the Phase 4 closure, and the action ran there.
+  // was excluded from proxy.ts before the Phase 4 closure, and the action ran there. Phase 5A
+  // (R71): the matcher excluded every path that merely starts with `_next/static` or
+  // `_next/image`, and the action ran on `/_next/staticx`, `/_next/image/x` and the like.
   for (const [p, want] of [
     ["/favicon.ico", 405],
     [`/experiments?project=${PROJECT}`, 405],
     [`/experiments/${datasetId}?project=${PROJECT}`, 405],
     ["/_next/static/llmi-probe", 404],
+    ["/_next/static", 405],
+    ["/_next/staticx", 405],
+    ["/_next/static-x", 405],
+    ["/_next/imagex", 405],
+    ["/_next/images", 405],
+    ["/_next/image/x", 405],
   ] as const) {
     await pause();
     const res = await request.post(`http://127.0.0.1:3001${p}`, { headers, data: body, maxRedirects: 0 });
-    expect(res.status(), p).toBe(want);
+    // Nothing stored first: that is the security property; the status names the refusing layer.
     expect((await experiments(request)).length, p).toBe(before);
+    expect(res.status(), p).toBe(want);
   }
 
   // Control: the identical request on the write page runs exactly once, so the replay is valid.
