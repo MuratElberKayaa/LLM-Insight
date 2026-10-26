@@ -78,7 +78,7 @@ def test_personal_data_is_withheld(value, rule):
     assert g.check(value, rule) is None
 
 
-@pytest.mark.parametrize("ch", ["\x00", "\n", "\r", "\t", "‮", "​", "﻿", " "])
+@pytest.mark.parametrize("ch", ["\x00", "\n", "\r", "\t", "\u202e", "\u200b", "\ufeff", " "])
 def test_unsafe_characters_are_withheld(ch):
     assert g.check(f"mock{ch}chat", g.MODEL) is None
     assert g.check(f"label{ch}x", g.LABEL) is None

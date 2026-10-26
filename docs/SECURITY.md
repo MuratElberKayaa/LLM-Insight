@@ -42,7 +42,7 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 
 **Rotating the local PostgreSQL password** (done in Phase 2C after the R33 exposure): generate a new value, stage the new `.env` (git-ignored), set the role password with `ALTER ROLE … PASSWORD '<SCRAM-SHA-256 verifier>'` (computed client-side, so the plaintext never reaches the server or its logs), check that the new login works and the old one fails, then replace `.env` atomically and recreate the container with `docker compose up -d --wait postgres` (same named volume, so no data is lost). `POSTGRES_PASSWORD` itself only matters when the volume is first initialised. Never print the value.
 
-Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env` and `.env.*`. Phase 5 adds a secret scan.
+Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env` and `.env.*`. **Secret scan (Phase 5B):** `scripts/qa/secret_scan.py` searches every blob reachable from every ref, every commit and tag message and the working files for the exact local secret values (read from the git-ignored env files, never printed) and for credential patterns; a control repository with planted values must be detected first (`reports/phase-5b.md` §4). The dashboard build is scanned by `npm run check:bundle` (T42).
 
 ## 3. Request limits
 

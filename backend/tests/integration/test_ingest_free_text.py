@@ -30,8 +30,8 @@ MARKERS = {
     "multiline": (
         "Traceback (most recent call last):\r\n  File x\n    prompt='SECRET-PROMPT-LINE'\n"
     ),
-    "rtl_zero_width": "safe‮TERCES​‍-hidden-RTL-MARKER",
-    "combining_emoji": "é́ \U0001f511 KEY-EMOJI-MARKER ﻿",
+    "rtl_zero_width": "safe\u202eTERCES\u200b\u200d-hidden-RTL-MARKER",
+    "combining_emoji": "é́ \U0001f511 KEY-EMOJI-MARKER \ufeff",
     "turkish": "Müşteri şikâyeti: İSTANBUL-ĞÜŞ-MARKER",
     "nul_byte": "before\x00after-NUL-MARKER",
     # Prose, like a real exception text. (An identifier-shaped value such as "LONG-MARKER-AAA"

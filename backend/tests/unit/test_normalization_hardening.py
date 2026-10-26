@@ -259,7 +259,7 @@ def test_a9_bounded_prompt_versions_are_accepted(value):
         "-v1",
         ".hidden",
         "v1\x00",
-        "v1‮",  # right-to-left override
+        "v1\u202e",  # right-to-left override
         "sürüm1",  # non-ASCII
         "summarize the customer's complaint",
     ],

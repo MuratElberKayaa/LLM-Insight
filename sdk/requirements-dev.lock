@@ -5,12 +5,14 @@
 # truststore is held at 0.10.4 (0.10.5 was released after the cutoff).
 # Phase 2C: fastapi 0.143.0, starlette 1.7.0, uvicorn 0.54.0, click 8.5.0, annotated-doc 0.0.5 for the FastAPI demo,
 # all identical to backend/requirements.lock (no new version enters the project).
+# Phase 5B (2026-10-26): certifi 2026.10.19, the same security exception as backend/requirements.lock
+# (PYSEC-2026-4320; SOURCES_AND_RISKS.md R74).
 # Install: python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 ast_serialize==0.12.1
-certifi==2026.7.22
+certifi==2026.10.19
 charset-normalizer==3.5.2
 click==8.5.0
 colorama==0.4.6

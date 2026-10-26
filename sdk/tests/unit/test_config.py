@@ -120,7 +120,7 @@ def test_invalid_project_key_format_is_rejected_without_echoing_it(bad_key):
         ("service_name", "svc sk-" + "a" * 20),
         ("service_version", "1.0 beta"),
         ("service_version", "v" * 129),
-        ("deployment_environment", "prod‮"),
+        ("deployment_environment", "prod\u202e"),
     ],
 )
 def test_invalid_metadata_settings(field, value):
