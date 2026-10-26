@@ -46,7 +46,7 @@ export async function submitTestCase(_prev: ActionState, formData: FormData): Pr
   refresh();
   return {
     status: "success",
-    message: `Test case #${result.data.id} approved and stored in dataset #${result.data.dataset_id}. It has not been evaluated (evaluation is Phase 4C).`,
+    message: `Test case #${result.data.id} approved and stored in dataset #${result.data.dataset_id}. It has not been evaluated: cases are evaluated only when an experiment runs on their dataset.`,
     masked: { sanitized_input: result.data.redaction.masked.sanitized_input },
     link: { href: `/datasets/${result.data.dataset_id}?project=${parsed.value.project}`, label: "Open the dataset" },
   };

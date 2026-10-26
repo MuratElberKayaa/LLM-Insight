@@ -17,7 +17,8 @@ const ITEMS: NavItem[] = [
   { label: "Traces", href: "/traces" },
   // Phase 4B: failure reviews live on each trace page; approved test cases in datasets.
   { label: "Datasets", href: "/datasets" },
-  { label: "Experiments", note: "Not built yet" },
+  // Phase 4D: mock A/B experiments on a dataset (SYNTHETIC results).
+  { label: "Experiments", href: "/experiments" },
 ];
 
 /** The current section: "/" only for the overview itself, otherwise the longest prefix. */

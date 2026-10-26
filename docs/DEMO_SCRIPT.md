@@ -23,6 +23,10 @@ The FastAPI demo exists (`demo_app/web.py`, mock and offline fake-OpenAI only): 
 
 Steps 4 and 5 run in the dashboard: on the failed trace's page, the reviewer reads the unverified machine observations, records a review (an issue type from CR-03, evidence, hypothesis, self-declared name), then a decision; "Convert to a regression test case" opens a form that starts empty, where the developer types a synthetic input, chooses a rule, optionally an expected output, ticks the approval box and saves into a dataset (`/datasets`). The server masks e-mail, phone, number and key-like values. Step 6 (experiments) is Phase 4C.
 
+## Implemented in Phase 4C–4D
+
+Step 6 runs in the dashboard (Phase 4D, mock only). Load the SYNTHETIC golden dataset (`scripts/dev/seed_golden_dataset.py --project <id> --approved-by <name>`), or type a golden input such as `SYNTHETIC G02: …` as the test input of a reviewed trace's case so the scripted mock can answer it. Then open **Experiments → New mock experiment** (or "Set up a mock experiment" on the dataset page): choose the dataset, `golden-prompt-v1` as A, `golden-prompt-v2` as B and a priced model, review the summary, tick the mock-only confirmation and press **Run mock experiment**. The results page shows the SYNTHETIC banner, per-version passed/failed/not evaluated with the pass-rate denominator, synthetic p50/p95 with `n`, the estimated cost or "Total unknown", the backend's verdict (on the 12-case golden set: no better version is named, because G12 timed out under v2) and every test case's outcome under both versions, each with a detail page. Nothing runs on page load; real mode is not offered and is refused by the backend.
+
 ## Optional real-mode step (requires approval)
 
 Before step 1, send one real OpenAI request with `LLMI_PROVIDER_MODE=real`. The trace then shows `provenance=real`. The cost is `computed` only if a verified `model_prices` row exists; otherwise it stays `unknown`.

@@ -5,8 +5,9 @@ foundation (shell, design system, server-side API layer) and the **Overview** pa
 adds the **Trace Explorer** (`/traces`) and **Trace Detail** (`/traces/{trace_id}`) with the
 span tree and waterfall; Phase 3C adds model comparison. Phase 4B adds the **human failure review**
 and the unverified machine-observation panel on Trace Detail, **Trace-to-Testset**
-(`/traces/{trace_id}/reviews/{review_id}/test-case`) and **Datasets** (`/datasets`). Experiments are
-not built yet (Phase 4C).
+(`/traces/{trace_id}/reviews/{review_id}/test-case`) and **Datasets** (`/datasets`). Phase 4D adds
+**Experiments**: list (`/experiments`), mock-only setup (`/experiments/new`), results
+(`/experiments/{id}`) and per-case detail (`/experiments/{id}/cases/{case_id}`); every result is SYNTHETIC.
 
 ## Runtime and versions
 
@@ -77,6 +78,7 @@ browser ──GET──▶ proxy.ts (loopback Host only, GET/HEAD, CSP nonce; PO
 - `lib/server/` — `server-only` modules: `config.ts` (env validation), `backend.ts` (the only backend client), `context.ts` (Phase 3C: the page's project scope, the project listing, the echoed-project check), `overview.ts`, `models.ts` and `traces.ts` (page loaders).
 - Phase 3C: `app/models/` (Model comparison), `components/models/model-comparison.tsx`, `components/charts/model-charts.tsx`, `components/project-selector.tsx`, `components/range-form.tsx` (custom UTC range), `components/auto-refresh.tsx`; `lib/project.ts`, `lib/model-query.ts`, `lib/model-groups.ts`, `lib/auto-refresh.ts`.
 - Phase 4B: `components/reviews/` (review section, review and decision forms, diagnostics panel), `components/datasets/` (dataset and test-case forms, case list), `app/datasets/`, `app/traces/[traceId]/reviews/[reviewId]/test-case/`; `lib/actions/{reviews,datasets}.ts` (the only `"use server"` modules: four Server Actions, each re-validating its form and calling one allowlisted write), `lib/server/{reviews,datasets,review-page}.ts`, `lib/review-forms.ts` (form parsing), `lib/action-state.ts`, `lib/api/{review-types,review-schema,diagnostics,ids}.ts`. Writes go through `sendJson` in `lib/server/backend.ts` (method + path allowlist).
+- Phase 4D: `app/experiments/`, `components/experiments/` (setup form, report sections, value renderers), `components/charts/outcome-chart.tsx`; `lib/actions/experiments.ts` (the fifth Server Action, ADR-26: mode always `mock`), `lib/experiment-form.ts`, `lib/server/experiments.ts`, `lib/api/experiment-{types,schema}.ts` (strict report decoding with the report's own invariants).
 - `lib/api/` — response types mirroring `backend/app/services/metrics.py`, decoders, failure kinds and copy.
 - `lib/` — pure helpers: `validate.ts`, `decimal.ts` (BigInt money), `format.ts` (UTC, en-US), `time-range.ts`, `trend.ts`, `provenance.ts`, `request-guard.ts`; Phase 3B: `json.ts` (lossless JSON: integers above 2^53 keep their digits), `nanos.ts` (BigInt nanosecond math), `trace-query.ts` (trace-list URL state), `span-tree.ts` (span hierarchy, waterfall geometry, logical calls), `api/trace-types.ts` and `api/trace-schema.ts`.
 

@@ -44,9 +44,23 @@ export default async function DatasetPage({ params, searchParams }: PageProps) {
         <>
           <PageHeader
             title={ctx.cases.ok ? `Dataset: ${ctx.cases.data.dataset.name}` : "Dataset"}
-            description="Human-approved test cases, each with its source trace and review, as stored. Not evaluated yet: deterministic evaluation is Phase 4C."
+            description="Human-approved test cases, each with its source trace and review, as stored. They are evaluated only by experiments, which you start explicitly."
             meta={<span>Fetched {formatUtcTime(ctx.fetchedAt)}</span>}
-            actions={<RefreshButton />}
+            actions={
+              <>
+                {ctx.cases.ok && ctx.projectId !== null && ctx.cases.data.dataset.case_count > 0 && (
+                  // Phase 4D: only opens the setup page with this dataset preselected; nothing runs.
+                  <Link
+                    href={`/experiments/new?project=${ctx.projectId}&dataset=${ctx.cases.data.dataset.id}`}
+                    className="inline-flex items-center rounded-md border border-line bg-raised px-3 py-2 text-sm font-medium text-ink hover:bg-surface"
+                    data-testid="dataset-new-experiment"
+                  >
+                    Set up a mock experiment
+                  </Link>
+                )}
+                <RefreshButton />
+              </>
+            }
           />
           <ProjectSelector context={ctx} action="/datasets" hidden={[]} />
           <PendingRegion>

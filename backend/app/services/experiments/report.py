@@ -35,9 +35,11 @@ LOW_SAMPLE_P95 = 20
 _SIX = Decimal("0.000001")
 
 
-def _money(value: Decimal | None) -> str | None:
-    """Money is a decimal string (API convention, ARCHITECTURE.md §5.2); null stays null."""
-    return None if value is None else str(value)
+def money(value: Decimal | None) -> str | None:
+    """Money is a plain decimal string (API convention, ARCHITECTURE.md §5.2); null stays
+    null. `format(v, "f")`, not `str(v)`: `str` switches to scientific notation below 1e-6
+    (`1.500E-7`), which is not a decimal string (Phase 4D fix)."""
+    return None if value is None else format(value, "f")
 
 
 LIMITATIONS = (
@@ -130,7 +132,7 @@ def _variant(slot: str, version: str, rows: Sequence[Any]) -> dict[str, Any]:
             "output": _sum([r.output_tokens for r in rows]),
         },
         "cost": {
-            "known_cost_usd": _money(sum(computed, Decimal(0))) if computed else None,
+            "known_cost_usd": money(sum(computed, Decimal(0))) if computed else None,
             "computed": len(computed),
             "unknown": len(unknown),
             "unknown_by_reason": dict(
@@ -205,7 +207,7 @@ def _cost(variants: list[dict[str, Any]], finished: bool) -> dict[str, Any]:
         }
     return {
         "status": "complete",
-        "difference_usd_b_minus_a": _money(
+        "difference_usd_b_minus_a": money(
             Decimal(vb["cost"]["known_cost_usd"]) - Decimal(va["cost"]["known_cost_usd"])
         ),
         "reason": None,
@@ -246,7 +248,7 @@ def build(experiment: Any, dataset_name: str, rows: Sequence[Any], iso: Any) -> 
             "prompt_version_b": b,
             "model": experiment.model,
             "mode": experiment.mode,
-            "budget_usd": _money(experiment.budget_usd),
+            "budget_usd": money(experiment.budget_usd),
             "started_at": iso(experiment.started_at),
             "finished_at": iso(experiment.finished_at) if finished else None,
             "state": "finished" if finished else "running",
@@ -290,7 +292,7 @@ def build(experiment: Any, dataset_name: str, rows: Sequence[Any], iso: Any) -> 
                 "duration_ms": r.duration_ms,
                 "input_tokens": r.input_tokens,
                 "output_tokens": r.output_tokens,
-                "cost_usd": _money(r.cost_usd),
+                "cost_usd": money(r.cost_usd),
                 "cost_status": r.cost_status,
                 "cost_unknown_reason": r.cost_unknown_reason,
                 "provenance": r.provenance,

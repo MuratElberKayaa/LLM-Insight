@@ -175,3 +175,12 @@ def test_case_identity_and_provenance_are_reported():
     }
     assert doc["evaluation"]["language_model_used"] is False
     assert {lim["code"] for lim in doc["limitations"]} >= {"synthetic_mock", "small_sample"}
+
+
+def test_money_is_always_a_plain_decimal_string():
+    # Phase 4D fix: str(Decimal) uses scientific notation below 1e-6 ("1.500E-7").
+    assert report.money(Decimal("0.0000001500")) == "0.0000001500"
+    assert report.money(Decimal("1E-10")) == "0.0000000001"
+    assert report.money(Decimal("-0.0000030000")) == "-0.0000030000"
+    assert report.money(Decimal("9999999999.9999999999")) == "9999999999.9999999999"
+    assert report.money(None) is None

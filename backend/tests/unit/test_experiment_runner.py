@@ -157,3 +157,34 @@ def test_running_guard_stops_calls_when_actual_cost_exceeds_the_budget():
     stopped = [r for r in results if r.code == runner.BUDGET_EXHAUSTED]
     assert len(executed) == 1 and len(stopped) == 5  # 0.075 USD > 0.05 after the first call
     assert all(r.passed is None and r.cost.cost_unknown_reason == "usage_missing" for r in stopped)
+
+
+# ---------------------------------------------------------------- Phase 4D: bounded duration
+class _Stop(Exception):
+    pass
+
+
+def test_checkpoint_runs_before_every_call_and_can_stop_the_run():
+    seen: list[int] = []
+    provider = CountingProvider(GOLDEN_PROVIDER)
+
+    def checkpoint():
+        seen.append(len(provider.calls))
+
+    results = runner.run(records(), VERSIONS, MODEL, provider, [PRICE], AT, None, checkpoint)
+    assert seen == list(range(24)) and len(results) == 24  # before each call, never after
+
+    stopping = CountingProvider(GOLDEN_PROVIDER)
+
+    def stop_at_five():
+        if len(stopping.calls) == 5:
+            raise _Stop
+
+    with pytest.raises(_Stop):
+        runner.run(records(), VERSIONS, MODEL, stopping, [PRICE], AT, None, stop_at_five)
+    assert len(stopping.calls) == 5  # nothing more was called; the caller stores nothing
+
+
+def test_the_mock_lists_exactly_the_prompt_versions_it_answers():
+    assert GOLDEN_PROVIDER.prompt_versions() == {VERSIONS[0]: 12, VERSIONS[1]: 12}
+    assert ScriptedMockProvider({}).prompt_versions() == {}

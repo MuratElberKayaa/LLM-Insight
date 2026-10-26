@@ -65,6 +65,8 @@ def create_app(settings: Settings | None = None, clock: Clock = time.monotonic) 
 
     app = FastAPI(title="LLM Insight", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    # Phase 4D: at most this many experiment runs at once in this process (like CR-08).
+    app.state.experiment_slots = experiments.RunSlots(experiments.MAX_CONCURRENT_EXPERIMENTS)
     app.add_exception_handler(admin.APIError, admin.api_error_handler)
     app.add_exception_handler(RequestValidationError, admin.validation_error_handler)
     app.add_exception_handler(StarletteHTTPException, admin.http_error_handler)
