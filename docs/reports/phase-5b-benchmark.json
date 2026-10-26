@@ -1,0 +1,666 @@
+{
+ "environment": {
+  "python": "3.12.6",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "db": "llmi_bench5b_test",
+  "api_port": 8012,
+  "dash_port": 3006,
+  "runs": 3
+ },
+ "ingest": {
+  "warmup_per_run": 3,
+  "measured_per_run": 15,
+  "trace_shape": "10 spans (1 SERVER + 9 CLIENT)",
+  "sizes": {
+   "100": [
+    {
+     "run": 1,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 112.13,
+      "p95_ms": 125.93,
+      "min_ms": 91.66,
+      "max_ms": 129.89
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 101.5,
+      "p95_ms": 126.58,
+      "min_ms": 92.46,
+      "max_ms": 174.61
+     },
+     "fresh_spans_per_s_p50": 891.8,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 40539
+    },
+    {
+     "run": 2,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 112.19,
+      "p95_ms": 123.22,
+      "min_ms": 105.01,
+      "max_ms": 132.2
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 83.34,
+      "p95_ms": 96.87,
+      "min_ms": 78.04,
+      "max_ms": 114.23
+     },
+     "fresh_spans_per_s_p50": 891.3,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 40539
+    },
+    {
+     "run": 3,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 93.34,
+      "p95_ms": 106.36,
+      "min_ms": 85.19,
+      "max_ms": 122.81
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 82.07,
+      "p95_ms": 91.7,
+      "min_ms": 75.09,
+      "max_ms": 101.93
+     },
+     "fresh_spans_per_s_p50": 1071.4,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 40539
+    }
+   ],
+   "500": [
+    {
+     "run": 1,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 415.08,
+      "p95_ms": 462.7,
+      "min_ms": 374.61,
+      "max_ms": 469.27
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 370.49,
+      "p95_ms": 396.12,
+      "min_ms": 345.86,
+      "max_ms": 419.0
+     },
+     "fresh_spans_per_s_p50": 1204.6,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 202459
+    },
+    {
+     "run": 2,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 411.03,
+      "p95_ms": 471.06,
+      "min_ms": 373.92,
+      "max_ms": 487.9
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 359.92,
+      "p95_ms": 433.94,
+      "min_ms": 350.41,
+      "max_ms": 451.62
+     },
+     "fresh_spans_per_s_p50": 1216.5,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 202459
+    },
+    {
+     "run": 3,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 432.93,
+      "p95_ms": 453.5,
+      "min_ms": 379.41,
+      "max_ms": 462.5
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 368.31,
+      "p95_ms": 451.96,
+      "min_ms": 353.05,
+      "max_ms": 514.49
+     },
+     "fresh_spans_per_s_p50": 1154.9,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 202459
+    }
+   ],
+   "1000": [
+    {
+     "run": 1,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 885.38,
+      "p95_ms": 1090.13,
+      "min_ms": 781.0,
+      "max_ms": 1151.8
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 826.44,
+      "p95_ms": 1079.72,
+      "min_ms": 794.93,
+      "max_ms": 1081.31
+     },
+     "fresh_spans_per_s_p50": 1129.5,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 404859
+    },
+    {
+     "run": 2,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 910.78,
+      "p95_ms": 1015.8,
+      "min_ms": 788.88,
+      "max_ms": 1029.57
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 855.19,
+      "p95_ms": 947.07,
+      "min_ms": 799.67,
+      "max_ms": 953.12
+     },
+     "fresh_spans_per_s_p50": 1098.0,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 404859
+    },
+    {
+     "run": 3,
+     "fresh": {
+      "n": 15,
+      "p50_ms": 889.74,
+      "p95_ms": 1046.49,
+      "min_ms": 820.11,
+      "max_ms": 1068.5
+     },
+     "reingest": {
+      "n": 15,
+      "p50_ms": 854.34,
+      "p95_ms": 952.08,
+      "min_ms": 778.54,
+      "max_ms": 996.14
+     },
+     "fresh_spans_per_s_p50": 1123.9,
+     "rows_unchanged_after_reingest": true,
+     "wire_bytes": 404859
+    }
+   ]
+  },
+  "final_counts": {
+   "traces": 8640,
+   "spans": 86400,
+   "usage_records": 77760
+  }
+ },
+ "dataset": {
+  "counts": {
+   "traces": 612,
+   "spans": 10000,
+   "usage_records": 9388
+  },
+  "composition": "1x2000 + 1x1000 + 10x100 + 600x10 spans",
+  "trace_ids": {
+   "2000": "79f3b1f186a74f088f13d1e9a0ff061a",
+   "1000": "c7ca756185ad414b8f0a926c0315f280",
+   "100": "c56d839abeb94126bc61ff0ed5cb1f33",
+   "10": "4b0d9f482a60410c90a93a6d1d94483e"
+  }
+ },
+ "api": {
+  "warmup_per_run": 5,
+  "measured_per_run": 50,
+  "targets": {
+   "api trace detail 10 spans": [
+    {
+     "run": 1,
+     "n": 50,
+     "p50_ms": 18.43,
+     "p95_ms": 22.5,
+     "min_ms": 14.88,
+     "max_ms": 25.78,
+     "response_bytes": 16520
+    },
+    {
+     "run": 2,
+     "n": 50,
+     "p50_ms": 18.94,
+     "p95_ms": 27.01,
+     "min_ms": 15.54,
+     "max_ms": 30.02,
+     "response_bytes": 16520
+    },
+    {
+     "run": 3,
+     "n": 50,
+     "p50_ms": 18.35,
+     "p95_ms": 22.32,
+     "min_ms": 15.77,
+     "max_ms": 25.8,
+     "response_bytes": 16520
+    }
+   ],
+   "api trace detail 100 spans": [
+    {
+     "run": 1,
+     "n": 50,
+     "p50_ms": 27.34,
+     "p95_ms": 38.25,
+     "min_ms": 22.81,
+     "max_ms": 51.33,
+     "response_bytes": 167199
+    },
+    {
+     "run": 2,
+     "n": 50,
+     "p50_ms": 27.22,
+     "p95_ms": 37.69,
+     "min_ms": 22.85,
+     "max_ms": 90.51,
+     "response_bytes": 167199
+    },
+    {
+     "run": 3,
+     "n": 50,
+     "p50_ms": 27.32,
+     "p95_ms": 31.63,
+     "min_ms": 22.99,
+     "max_ms": 32.84,
+     "response_bytes": 167199
+    }
+   ],
+   "api trace detail 1000 spans": [
+    {
+     "run": 1,
+     "n": 50,
+     "p50_ms": 104.91,
+     "p95_ms": 158.28,
+     "min_ms": 96.19,
+     "max_ms": 180.08,
+     "response_bytes": 1674808
+    },
+    {
+     "run": 2,
+     "n": 50,
+     "p50_ms": 106.05,
+     "p95_ms": 161.79,
+     "min_ms": 96.09,
+     "max_ms": 169.51,
+     "response_bytes": 1674808
+    },
+    {
+     "run": 3,
+     "n": 50,
+     "p50_ms": 110.75,
+     "p95_ms": 159.45,
+     "min_ms": 97.58,
+     "max_ms": 196.73,
+     "response_bytes": 1674808
+    }
+   ],
+   "api trace detail 2000 spans": [
+    {
+     "run": 1,
+     "n": 50,
+     "p50_ms": 185.41,
+     "p95_ms": 252.03,
+     "min_ms": 170.32,
+     "max_ms": 264.52,
+     "response_bytes": 3349811
+    },
+    {
+     "run": 2,
+     "n": 50,
+     "p50_ms": 183.72,
+     "p95_ms": 251.95,
+     "min_ms": 170.21,
+     "max_ms": 258.54,
+     "response_bytes": 3349811
+    },
+    {
+     "run": 3,
+     "n": 50,
+     "p50_ms": 183.21,
+     "p95_ms": 242.38,
+     "min_ms": 170.17,
+     "max_ms": 247.47,
+     "response_bytes": 3349811
+    }
+   ],
+   "api trace diagnostics 2000 spans": [
+    {
+     "run": 1,
+     "n": 50,
+     "p50_ms": 122.22,
+     "p95_ms": 185.03,
+     "min_ms": 112.5,
+     "max_ms": 187.67,
+     "response_bytes": 23968
+    },
+    {
+     "run": 2,
+     "n": 50,
+     "p50_ms": 125.73,
+     "p95_ms": 182.61,
+     "min_ms": 115.38,
+     "max_ms": 189.08,
+     "response_bytes": 23968
+    },
+    {
+     "run": 3,
+     "n": 50,
+     "p50_ms": 130.45,
+     "p95_ms": 188.94,
+     "min_ms": 114.23,
+     "max_ms": 196.88,
+     "response_bytes": 23968
+    }
+   ],
+   "api trace list limit=50": [
+    {
+     "run": 1,
+     "n": 50,
+     "p50_ms": 21.26,
+     "p95_ms": 25.01,
+     "min_ms": 18.39,
+     "max_ms": 29.36,
+     "response_bytes": 35731
+    },
+    {
+     "run": 2,
+     "n": 50,
+     "p50_ms": 21.16,
+     "p95_ms": 27.33,
+     "min_ms": 18.44,
+     "max_ms": 28.84,
+     "response_bytes": 35731
+    },
+    {
+     "run": 3,
+     "n": 50,
+     "p50_ms": 20.86,
+     "p95_ms": 25.98,
+     "min_ms": 18.35,
+     "max_ms": 75.52,
+     "response_bytes": 35731
+    }
+   ],
+   "api overview": [
+    {
+     "run": 1,
+     "n": 50,
+     "p50_ms": 121.33,
+     "p95_ms": 132.55,
+     "min_ms": 111.83,
+     "max_ms": 135.18,
+     "response_bytes": 10078
+    },
+    {
+     "run": 2,
+     "n": 50,
+     "p50_ms": 116.5,
+     "p95_ms": 130.33,
+     "min_ms": 110.81,
+     "max_ms": 145.46,
+     "response_bytes": 10078
+    },
+    {
+     "run": 3,
+     "n": 50,
+     "p50_ms": 124.12,
+     "p95_ms": 156.06,
+     "min_ms": 112.73,
+     "max_ms": 173.21,
+     "response_bytes": 10078
+    }
+   ]
+  }
+ },
+ "dashboard": {
+  "warmup_per_run": 3,
+  "measured_per_run": 20,
+  "targets": {
+   "dashboard trace page 10 spans": [
+    {
+     "run": 1,
+     "n": 20,
+     "p50_ms": 53.54,
+     "p95_ms": 85.21,
+     "min_ms": 42.17,
+     "max_ms": 112.0,
+     "response_bytes": 265425,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 2,
+     "n": 20,
+     "p50_ms": 46.16,
+     "p95_ms": 58.04,
+     "min_ms": 38.99,
+     "max_ms": 71.98,
+     "response_bytes": 265425,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 3,
+     "n": 20,
+     "p50_ms": 45.2,
+     "p95_ms": 60.33,
+     "min_ms": 40.79,
+     "max_ms": 61.12,
+     "response_bytes": 265425,
+     "statuses": [
+      200
+     ]
+    }
+   ],
+   "dashboard trace page 100 spans": [
+    {
+     "run": 1,
+     "n": 20,
+     "p50_ms": 149.43,
+     "p95_ms": 176.84,
+     "min_ms": 128.29,
+     "max_ms": 177.85,
+     "response_bytes": 1908615,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 2,
+     "n": 20,
+     "p50_ms": 142.47,
+     "p95_ms": 164.74,
+     "min_ms": 125.66,
+     "max_ms": 204.65,
+     "response_bytes": 1908615,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 3,
+     "n": 20,
+     "p50_ms": 141.82,
+     "p95_ms": 159.43,
+     "min_ms": 122.5,
+     "max_ms": 168.95,
+     "response_bytes": 1908615,
+     "statuses": [
+      200
+     ]
+    }
+   ],
+   "dashboard trace page 1000 spans": [
+    {
+     "run": 1,
+     "n": 20,
+     "p50_ms": 1043.74,
+     "p95_ms": 1134.05,
+     "min_ms": 965.37,
+     "max_ms": 1142.07,
+     "response_bytes": 14506586,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 2,
+     "n": 20,
+     "p50_ms": 1028.27,
+     "p95_ms": 1115.84,
+     "min_ms": 946.58,
+     "max_ms": 1120.66,
+     "response_bytes": 14506586,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 3,
+     "n": 20,
+     "p50_ms": 1026.15,
+     "p95_ms": 1076.95,
+     "min_ms": 949.29,
+     "max_ms": 1088.61,
+     "response_bytes": 14506586,
+     "statuses": [
+      200
+     ]
+    }
+   ],
+   "dashboard trace page 2000 spans": [
+    {
+     "run": 1,
+     "n": 20,
+     "p50_ms": 1854.11,
+     "p95_ms": 2003.16,
+     "min_ms": 1751.16,
+     "max_ms": 2157.49,
+     "response_bytes": 26448076,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 2,
+     "n": 20,
+     "p50_ms": 1830.67,
+     "p95_ms": 1937.17,
+     "min_ms": 1738.2,
+     "max_ms": 1965.94,
+     "response_bytes": 26448076,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 3,
+     "n": 20,
+     "p50_ms": 1831.19,
+     "p95_ms": 1906.23,
+     "min_ms": 1742.45,
+     "max_ms": 1976.08,
+     "response_bytes": 26448076,
+     "statuses": [
+      200
+     ]
+    }
+   ],
+   "dashboard trace list": [
+    {
+     "run": 1,
+     "n": 20,
+     "p50_ms": 52.68,
+     "p95_ms": 61.79,
+     "min_ms": 42.48,
+     "max_ms": 62.62,
+     "response_bytes": 523382,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 2,
+     "n": 20,
+     "p50_ms": 52.33,
+     "p95_ms": 59.01,
+     "min_ms": 45.08,
+     "max_ms": 59.35,
+     "response_bytes": 523382,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 3,
+     "n": 20,
+     "p50_ms": 52.17,
+     "p95_ms": 61.44,
+     "min_ms": 43.18,
+     "max_ms": 61.92,
+     "response_bytes": 523382,
+     "statuses": [
+      200
+     ]
+    }
+   ],
+   "dashboard overview": [
+    {
+     "run": 1,
+     "n": 20,
+     "p50_ms": 141.63,
+     "p95_ms": 153.27,
+     "min_ms": 131.69,
+     "max_ms": 153.74,
+     "response_bytes": 206108,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 2,
+     "n": 20,
+     "p50_ms": 140.63,
+     "p95_ms": 149.83,
+     "min_ms": 131.86,
+     "max_ms": 202.32,
+     "response_bytes": 206108,
+     "statuses": [
+      200
+     ]
+    },
+    {
+     "run": 3,
+     "n": 20,
+     "p50_ms": 138.54,
+     "p95_ms": 148.82,
+     "min_ms": 132.65,
+     "max_ms": 153.71,
+     "response_bytes": 206108,
+     "statuses": [
+      200
+     ]
+    }
+   ]
+  },
+  "note": "server-rendered HTML, full streamed body; browser parse/paint not included"
+ }
+}

@@ -1,53 +1,51 @@
-# LLM Insight — Demo Script (draft, 3–5 min)
+# LLM Insight — Demo Script (3–5 min)
 
-Status: **draft (Phase 0)**. None of the steps run yet. The default demo uses **mock mode**, and every mock value is labeled SYNTHETIC. Real mode is an optional step that needs explicit approval, an `OPENAI_API_KEY` and a budget.
+Status: **final for the MVP (Phase 5B).** Every step below was run end to end on a clean clone in Phase 5B (`reports/phase-5b.md` §7, screenshots in `reports/phase-5b-screenshots/`). The demo uses **mock mode only**: every trace, output, token count, duration and experiment result is SYNTHETIC, nothing is sent to a provider and nothing is spent. Real mode is not part of the MVP.
 
-## Mock demo scenario (default)
+## Before the demo (setup, not shown)
 
-| # | Step | What is shown | Evidence / data source |
-|---|---|---|---|
-| 0 | `docker compose up --build`, then the init command (creates the project and prints the ingest key once) | Services healthy (`/health/ready` 200) | Terminal |
-| 1 | Send 3 requests to `demo_app` in mock mode: one success, one deterministic JSON-schema violation, one deterministic 429 | trace IDs returned | demo_app response |
-| 2 | Open the dashboard Overview | KPIs with N: 3 traces, inference calls (including the retry attempt), error rate, p95 (low-sample flag), known cost and unknown-cost count | DB-backed `/api/v1/overview`; SYNTHETIC badge |
-| 3 | Trace Explorer, then the failed trace | Root `POST /v1/summarize`, then child `chat gpt-4o-mini` and `validate_output` (passed=false). Shows tokens, provenance and price version | `/api/v1/traces/{id}` |
-| 4 | Failure Review on that trace | `issue_type=schema_violation`, evidence ("validate_output failed rule json_schema:summary_v1"), hypothesis ("prompt v1 lacks explicit JSON instruction"), `reviewer_decision=hypothesis_supported`. Labeled as a hypothesis | `failure_reviews` row |
-| 5 | Propose a test case | The developer **types** a safe synthetic input; telemetry never stored the original prompt. Approve, which runs redaction, then save to the dataset | `test_cases` row with `approved_by` |
-| 6 | Run experiment v1 vs v2 (mock) on the 10+ case dataset | Pass rate with N, p50/p95 latency, cost (or unknown), SYNTHETIC label | `experiments` / `experiment_results` |
-| 7 | "How we measure" slide | OTLP protobuf ingest, idempotent ledger, unknown ≠ $0, metadata-only privacy | `ARCHITECTURE.md` diagrams |
+Follow the root `README.md` quick start (or the clean-clone setup below): PostgreSQL, backend with migrations at head, a project and ingest key, seeded prices, the dashboard on `http://127.0.0.1:3001`, demo traffic (`sdk/.venv/Scripts/python -m demo_app.web --drive`, 5 SYNTHETIC traces) and the golden dataset (`backend/.venv/Scripts/python scripts/dev/seed_golden_dataset.py --project 1 --approved-by <name>`, 12 cases in `golden-synthetic-v1`). Keep the G02 golden input at hand (`backend/app/services/experiments/golden.py`, case `G02`: input, JSON Schema and expected output), so the scripted mock can answer the case typed in step 5.
 
-## Implemented so far (Phase 2C)
+## Script
 
-The FastAPI demo exists (`demo_app/web.py`, mock and offline fake-OpenAI only): `sdk/.venv/Scripts/python -m demo_app.web` serves `POST /v1/summarize`, `/v1/summarize/multi`, `/v1/summarize/failure`, `/v1/summarize/retry` and `/v1/summarize/openai` on `127.0.0.1:8100`; `--drive` sends one request per route and prints the trace IDs. Each request is a `SERVER` root span (`POST /v1/summarize…`) with one `CLIENT` inference span per physical attempt, and the numbers appear in `/api/v1/overview`. Steps 1–3 can be rehearsed against the API now; the dashboard (Phase 3), the `validate_output` span and steps 4–6 (Phase 4) do not exist yet.
+| # | Time | Step | What is shown | Data source |
+|---|---|---|---|---|
+| 1 | 0:00 | "An instrumented FastAPI app sent five requests through our SDK" (terminal output of `--drive`) | five trace ids; OTLP/HTTP protobuf export delivered; provenance `synthetic` | demo app output |
+| 2 | 0:20 | **Overview** | traces and inference calls (the retry counts as two attempts), error rate, p50/p95 latency with `n` and a low-sample note, known estimated cost next to the number of calls whose cost is unknown, the SYNTHETIC notice | `GET /api/v1/overview` |
+| 3 | 0:50 | **Traces** → the failing trace `POST /v1/summarize/failure` | root SERVER span → child CLIENT `chat …` span in the tree and waterfall, the error status; model, tokens, usage source, provenance, price version | `GET /api/v1/traces/{id}` |
+| 4 | 1:20 | Machine observations panel on the same page | labelled "Automatic · Unverified · Not a human review"; evidence spans; no form | `GET /api/v1/traces/{id}/diagnostics` |
+| 5 | 1:40 | **Failure review**: issue type `schema_violation`, evidence ("validate_output failed rule json_schema"), hypothesis ("prompt v1 does not ask for the priority field"), reviewer name; then decision "closed / hypothesis supported" | the cause is stated as a hypothesis, never as a verified root cause; the name is self-declared | `failure_reviews` |
+| 6 | 2:10 | **Convert to a regression test case**: dataset `golden-synthetic-v1`, type the G02 input, rule JSON Schema, expected output, approver; press save **without** the approval tick, then with it | without the tick nothing is stored; with it the case is stored, masked if needed (`redaction_applied`), and linked to its review and trace | `test_cases` |
+| 7 | 2:50 | **Experiments → New mock experiment**: `golden-synthetic-v1`, `golden-prompt-v1` vs `golden-prompt-v2`, a priced model, tick "mock only", run | "mock only · real mode not available"; "13 test cases → 26 simulated calls"; "26 results (26 SYNTHETIC, 0 real)" | `POST /api/v1/experiments` |
+| 8 | 3:20 | **Results** | SYNTHETIC banner; per version passed / failed / not evaluated and the pass rate with its denominator (7/12 vs 5/11 on the Phase 5B run); synthetic p50/p95 marked unreliable below 20 samples; cost of v1 vs "Total unknown" for v2; the backend's verdict: **no better version is named** (G12 timed out under v2, so the evidence is incomplete) | `GET /api/v1/experiments/{id}` |
+| 9 | 3:50 | Open the human-approved case from the results table | its lineage ("Trace …, review #…"), rule and version, the outcome under both versions (v1 failed `schema_violation`, v2 passed) | per-case page |
+| 10 | 4:10 | "How we measure" | OTLP protobuf ingest and idempotent ledger (re-ingest changes nothing), unknown cost ≠ $0, metadata-only privacy, deterministic rules instead of an LLM judge, local-only boundary | `ARCHITECTURE.md`, `SECURITY.md` |
 
-## Implemented in Phase 4B
+**Say explicitly:** results are SYNTHETIC and say nothing about a real model; estimated costs are not provider invoices; reviewer and approver names are self-declared; redaction is heuristic and not a privacy guarantee; the MVP is authorized for local use only.
 
-Steps 4 and 5 run in the dashboard: on the failed trace's page, the reviewer reads the unverified machine observations, records a review (an issue type from CR-03, evidence, hypothesis, self-declared name), then a decision; "Convert to a regression test case" opens a form that starts empty, where the developer types a synthetic input, chooses a rule, optionally an expected output, ticks the approval box and saves into a dataset (`/datasets`). The server masks e-mail, phone, number and key-like values. Step 6 (experiments) is Phase 4C.
+## Clean-clone setup (T47; verified in Phase 5A and Phase 5B)
 
-## Implemented in Phase 4C–4D
-
-Step 6 runs in the dashboard (Phase 4D, mock only). Load the SYNTHETIC golden dataset (`scripts/dev/seed_golden_dataset.py --project <id> --approved-by <name>`), or type a golden input such as `SYNTHETIC G02: …` as the test input of a reviewed trace's case so the scripted mock can answer it. Then open **Experiments → New mock experiment** (or "Set up a mock experiment" on the dataset page): choose the dataset, `golden-prompt-v1` as A, `golden-prompt-v2` as B and a priced model, review the summary, tick the mock-only confirmation and press **Run mock experiment**. The results page shows the SYNTHETIC banner, per-version passed/failed/not evaluated with the pass-rate denominator, synthetic p50/p95 with `n`, the estimated cost or "Total unknown", the backend's verdict (on the 12-case golden set: no better version is named, because G12 timed out under v2) and every test case's outcome under both versions, each with a detail page. Nothing runs on page load; real mode is not offered and is refused by the backend.
-
-## Clean-clone setup (T47, verified in Phase 5A)
-
-From a fresh clone, mock mode only, nothing real or paid (`reports/phase-5a.md` §5). Commands run from the repository root; on Windows use `.venv\Scripts\python`.
+From a fresh clone, mock mode only, nothing real or paid. Commands run from the repository root in Git Bash; on Linux/macOS use `.venv/bin/` instead of `.venv/Scripts/`.
 
 1. `python -I scripts/dev/init_env.py` creates the git-ignored `.env` with generated secrets (never printed).
 2. `docker compose --profile app up -d --build --wait` starts PostgreSQL, the backend (migrates to head on start) and the dashboard on `http://127.0.0.1:3001`. The default `docker compose up` starts PostgreSQL only.
 3. Init, inside the backend container: `docker compose --profile app exec backend python -m app.cli create-key --project demo` (the first project is id 1, the dashboard default; the key is printed once: put it into `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>` in `.env`), then `docker compose --profile app exec backend python -m app.cli seed-prices`.
-4. Host tools for ingest (the `app` profile does not publish the backend, R43): a backend venv (`python -m venv backend/.venv`, then `pip install -r backend/requirements.lock` and `pip install --no-deps -e backend`) and an SDK venv (`python -m venv sdk/.venv`, then `pip install -r sdk/requirements-dev.lock` and `pip install --no-deps ./sdk`). Start `python -m app` in `backend/` (same database through `127.0.0.1:55432`).
-5. Demo traffic: load `.env` into the environment and run `sdk/.venv/Scripts/python -m demo_app.web --drive` (5 SYNTHETIC traces). Golden dataset: `backend/.venv/Scripts/python scripts/dev/seed_golden_dataset.py --project 1 --approved-by <name>` (add `--api http://127.0.0.1:<port>` if the backend is not on 8000).
-6. Steps 2–6 above in the dashboard. Rollback: `docker compose --profile app down -v`, then start again from step 2.
+4. Host tools for ingest. **The `app` profile does not by itself expose host OTLP ingestion** (R43): create a backend venv (`python -m venv backend/.venv`, `pip install -r backend/requirements.lock`, `pip install --no-deps -e backend`) and an SDK venv (`python -m venv sdk/.venv`, `pip install -r sdk/requirements-dev.lock`, `pip install --no-deps ./sdk`), then start `backend/.venv/Scripts/python -m app` from `backend/` (it uses the same database through `127.0.0.1:55432`).
+5. Demo traffic: `set -a; . ./.env; set +a`, then `sdk/.venv/Scripts/python -m demo_app.web --drive` (5 SYNTHETIC traces). Golden dataset: `backend/.venv/Scripts/python scripts/dev/seed_golden_dataset.py --project 1 --approved-by <name>` (add `--api http://127.0.0.1:<port>` if the backend is not on 8000).
+6. The script above, in the dashboard.
 
-## Optional real-mode step (requires approval)
-
-Before step 1, send one real OpenAI request with `LLMI_PROVIDER_MODE=real`. The trace then shows `provenance=real`. The cost is `computed` only if a verified `model_prices` row exists; otherwise it stays `unknown`.
-
-## Mock fixture design (implemented in Phase 2/4)
-
-- The mock adapter is deterministic: a fixed seed and a fixed response per input key. It reports usage as `provider_reported` with explicit numbers, so the cost path is exercised. Every mock span carries `llminsight.provenance=synthetic`.
-- Failure modes are selectable per request: `ok`, `schema_violation`, `rate_limited_429`, `timeout`.
-- Dataset: at least 10 synthetic summarization cases with JSON-schema expected outputs. No real personal data.
+**Relocated ports** (when a developer stack already holds the defaults, as on the Phase 5A/5B machine): in the clone's `.env` set `POSTGRES_HOST_PORT` and the port in `LLMI_DATABASE_URL` (e.g. `55433`), `LLMI_PORT`, the port in `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `LLMI_API_BASE_URL` (e.g. `8010`), and add `LLMI_FRONTEND_HOST_PORT` (e.g. `3011`); run compose with its own project name (`docker compose -p <name> --profile app …`) so the developer's containers and volume are never reused; pass `--api` to the seed script (R73).
 
 ## Rollback
 
-If the demo breaks, run `docker compose down -v`, then `up --build`, init, and reseed with the synthetic seed script (Phase 2). Recorded screenshots are the fallback.
+If the demo breaks: `docker compose --profile app down -v` (this deletes the demo database volume; never run it on a stack whose data you need), then start again from step 2 of the clean-clone setup. On the host stack: `docker compose down -v`, `docker compose up -d --wait postgres`, migrations, key, prices, demo traffic and golden dataset again (`README.md`). The Phase 5B screenshots are the fallback if the live demo cannot run.
+
+## Mock fixture design
+
+- The mock adapter is deterministic: a fixed response per input key and prompt version. It reports usage as `provider_reported` with explicit numbers, so the cost path is exercised. Every mock span and result carries `synthetic` provenance.
+- Failure modes are selectable per request: `ok`, `schema_violation`, `rate_limited_429`, `timeout`.
+- The golden dataset has 12 SYNTHETIC cases with deterministic rules (JSON Schema, field, exact, regex) and expected outputs; one case has no expected output and is "not evaluated" by design (T40). The mock answers only the golden inputs (R65).
+
+## Real mode (not part of the MVP)
+
+Real-provider experiments are refused by the backend (`409`) and the backend has no real executor. The SDK's OpenAI adapter is tested offline only. A real run would need explicit approval, an `OPENAI_API_KEY`, a budget, durable idempotency (R66) and a pre-call budget guard first.

@@ -41,9 +41,9 @@ UNSAFE_CHARS = {
     "crlf": "a\r\nb",
     "tab": "a\tb",
     "nul": "a\x00b",
-    "rtl_override": "abc‮def",
-    "zero_width": "ab​c",
-    "bom": "﻿abc",
+    "rtl_override": "abc\u202edef",
+    "zero_width": "ab\u200bc",
+    "bom": "\ufeffabc",
     "line_separator": "a b",
 }
 

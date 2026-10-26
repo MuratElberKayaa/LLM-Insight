@@ -68,7 +68,7 @@ def test_engine_evaluates_a_pathological_regex_rule_quickly():
         r"(",
         "",
         "x" * 1001,
-        "a‮b",  # bidi override
+        "a\u202eb",  # bidi override
         "a\x00b",  # control character
         r"[\p{L}\p{N}]{1,400}",  # compiles beyond the program size cap
     ],

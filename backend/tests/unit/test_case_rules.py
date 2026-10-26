@@ -78,7 +78,7 @@ def test_valid_v1_rules_are_returned_unchanged(rule, expected):
         (v1("regex", pattern=r"(?=a)a", match="full"), None, "rule"),  # lookahead
         (v1("regex", pattern=r"(?<!a)b", match="full"), None, "rule"),  # lookbehind
         (v1("regex", pattern=r"a++", match="full"), None, "rule"),  # possessive
-        (v1("regex", pattern="a‮b", match="full"), None, "rule"),  # bidi override
+        (v1("regex", pattern="a\u202eb", match="full"), None, "rule"),  # bidi override
         # expected output must satisfy its own rule
         (v1("json_schema", schema=SCHEMA), {"summary": 1}, "expected_output"),
         (v1("json_schema", schema=False), {"summary": "s"}, "expected_output"),

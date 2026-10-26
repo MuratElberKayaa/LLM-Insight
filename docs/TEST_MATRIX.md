@@ -11,10 +11,10 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 
 | ID | Group | Scenario | Expected outcome | Crit | Blocker | Phase | Level | Status |
 |---|---|---|---|---|---|---|---|---|
-| T01 | Ingestion | Valid protobuf request | `200` + protobuf `ExportTraceServiceResponse`, `partial_success` unset, sent only after COMMIT; rows stored | ★ | ⛔ | 1→5 | I | PASS (phase-1c) |
+| T01 | Ingestion | Valid protobuf request | `200` + protobuf `ExportTraceServiceResponse`, `partial_success` unset, sent only after COMMIT; rows stored | ★ | ⛔ | 1→5 | I | PASS (phase-5b) |
 | T02 | Ingestion | Parent-child | 3-span fixture: children reference root; tree reconstructs | ★ | | 1→3 | I | PASS (phase-1c) |
 | T03 | Ingestion | Resource / service name | `service.name` from resource; multiple resourceSpans/scopes; missing → `unknown_service` | ★ | | 1 | I | PASS (phase-1c) |
-| T04 | Ingestion | Duplicate upsert | Same payload twice → row counts unchanged, `200` both times | ★ | ⛔ | 1→2,5 | I | PASS (phase-1c) |
+| T04 | Ingestion | Duplicate upsert | Same payload twice → row counts unchanged, `200` both times | ★ | ⛔ | 1→2,5 | I | PASS (phase-5b) |
 | T05 | Ingestion | Invalid key | Missing / unknown / revoked → `401`, identical message, nothing stored, key not logged | ★ | | 1 | I | PASS (phase-1c) |
 | T06 | Ingestion | Corrupt protobuf | `400` + binary `google.rpc.Status` with `BadRequest` (no values echoed), nothing stored | ★ | | 1 | I | PASS (phase-1c) |
 | T07 | Ingestion | gzip valid | `Content-Encoding: gzip` decoded; corrupt gzip → `400` `INVALID_GZIP` | | | 1 | I | PASS (phase-1c) |
@@ -23,42 +23,42 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 | T10 | SDK | Nested context | LLM span is a child of the demo FastAPI root span (same trace) | ★ | | 2→3 | I | PASS (phase-2c) |
 | T11 | SDK | Provider success usage | Provider-reported usage mapped to `gen_ai.usage.*`, `usage_source=provider_reported` | ★ | | 2 | U | PASS (phase-2b) |
 | T12 | SDK | 429 / timeout status | Span `ERROR`, `error.type` set, attempt recorded; app gets a handled error | ★ | | 2 | U | PASS (phase-2b) |
-| T13 | SDK | Export-down fail-open | Backend down: app request succeeds, no exception, latency bounded by design | ★ | | 2→5 | I | PASS (phase-2a) |
+| T13 | SDK | Export-down fail-open | Backend down: app request succeeds, no exception, latency bounded by design | ★ | | 2→5 | I | PASS (phase-5b) |
 | T14 | SDK | Retry attempt IDs | Same `call_id`, `attempt` 1..n; one usage row per attempt; M02 > M03 | | | 2 | U/I | PASS (phase-2a) |
-| T15 | SDK | No secrets in span | No API key / auth header in any exported attribute | ★ | | 2→5 | U | PASS (phase-2b) |
-| T16 | SDK | No content default | No message content exported; backend drops it if sent (counted) | ★ | | 2→5 | U/I | PASS (phase-2b) |
+| T15 | SDK | No secrets in span | No API key / auth header in any exported attribute | ★ | | 2→5 | U | PASS (phase-5b) |
+| T16 | SDK | No content default | No message content exported; backend drops it if sent (counted) | ★ | | 2→5 | U/I | PASS (phase-5b) |
 | T17 | Cost/metrics | Provider token priority | Provider-reported values win over any estimate | ★ | ⛔ | 2 | U | PASS (phase-2b) |
 | T18 | Cost/metrics | Unknown token/cost null | Missing usage → NULL tokens, `cost_status=unknown` + reason, never 0 | ★ | | 2→3 | U/I | PASS (phase-2b) |
 | T19 | Cost/metrics | Decimal known fixture | Hand-computed Decimal cost equals the stored value exactly | ★ | ⛔ | 2 | U | PASS (phase-2b) |
 | T20 | Cost/metrics | Cached subset no double count | Cached tokens priced once, not added to input | ★ | ⛔ | 2 | U | PASS (phase-2b) |
 | T21 | Cost/metrics | Reasoning subset no double count | Reasoning tokens not added to output | ★ | | 2 | U | PASS (phase-2b) |
 | T22 | Cost/metrics | Price version persisted | `price_version` + `model_price_id` stored per usage row; price change doesn't rewrite history | ★ | | 2 | I | PASS (phase-2b) |
-| T23 | Cost/metrics | Duplicate usage ignored | Re-export → one usage row, cost unchanged | ★ | ⛔ | 2→5 | I | PASS (phase-2b) |
+| T23 | Cost/metrics | Duplicate usage ignored | Re-export → one usage row, cost unchanged | ★ | ⛔ | 2→5 | I | PASS (phase-5b) |
 | T24 | Cost/metrics | p95 sample + percentiles math | SQL `percentile_cont` = NumPy `linear` on fixture; `n` returned | ★ | | 2→3 | U/I | PASS (phase-2c) |
 | T25 | API/DB | Pagination | Cursor pagination stable; `limit` max enforced | ★ | | 1→3 | I | PASS (phase-1c) |
 | T26 | API/DB | Timestamp timezone | ns epoch → UTC `TIMESTAMPTZ`; API returns ISO-8601 with `Z`; ns preserved | ★ | | 1→3 | U/I | PASS (phase-1c) |
 | T27 | API/DB | Orphan span | Missing parent stored and returned as orphan | ★ | | 1→3 | I | PASS (phase-1c) |
 | T28 | API/DB | Project filter auth | Other project's trace → `404`; list never mixes projects | ★ | | 1→3 | I | PASS (phase-1c) |
 | T29 | API/DB | Empty aggregation | No data → `n=0`, null values (not 0), `200` | ★ | | 2→3 | I | PASS (phase-2c) |
-| T30 | API/DB | DB outage / transaction rollback | Mid-batch failure → nothing persisted; DB down → `503` + Retry-After; `/health/ready` `503` | ★ | | 1→5 | I | PASS (phase-1c) |
-| T31 | API/DB | Migration clean recreate | `alembic upgrade head` / `downgrade base` / `upgrade head` on a disposable DB; schema matches `ARCHITECTURE.md` §4 | | | 1→5 | I | PASS (phase-2b) |
+| T30 | API/DB | DB outage / transaction rollback | Mid-batch failure → nothing persisted; DB down → `503` + Retry-After; `/health/ready` `503` | ★ | | 1→5 | I | PASS (phase-5b) |
+| T31 | API/DB | Migration clean recreate | `alembic upgrade head` / `downgrade base` / `upgrade head` on a disposable DB; schema matches `ARCHITECTURE.md` §4 | | | 1→5 | I | PASS (phase-5b) |
 | T32 | API/DB | Status counts and total distinct API calls | M02/M04 counts match fixture; trace vs inference counts separate | ★ | | 2→3 | I | PASS (phase-2c) |
 | T33 | Eval/workflow | Failure review create | Valid enum values → `201`; invalid `issue_type` → `422`; duplicate open → `409` | ★ | | 4 | I | PASS (phase-4b) |
-| T34 | Eval/workflow | No approval no test case | Missing or false `approved` → `422`, no row | ★ | ⛔ | 4→5 | I | PASS (phase-4b) |
-| T35 | Eval/workflow | Redaction before case save | Email / phone / key-like input is masked before insert; `redaction_applied=true` | ★ | ⛔ | 4→5 | U/I | PASS (phase-4b) |
+| T34 | Eval/workflow | No approval no test case | Missing or false `approved` → `422`, no row | ★ | ⛔ | 4→5 | I | PASS (phase-5b) |
+| T35 | Eval/workflow | Redaction before case save | Email / phone / key-like input is masked before insert; `redaction_applied=true` | ★ | ⛔ | 4→5 | U/I | PASS (phase-5b) |
 | T36 | Eval/workflow | Golden JSON pass | Valid output passes the JSON Schema + field rule | ★ | | 4 | U | PASS (phase-4c) |
 | T37 | Eval/workflow | Golden JSON fail | Schema violation fails with `evaluation_detail` | ★ | | 4 | U | PASS (phase-4c) |
 | T38 | Eval/workflow | Prompt A/B same dataset | Both versions run on identical case IDs | | | 4 | I | PASS (phase-4c) |
 | T39 | Eval/workflow | Evaluation provenance labels | Each result carries `real`/`synthetic`; mock → synthetic | ★ | | 4 | I | PASS (phase-4c) |
 | T40 | Eval/workflow | Missing expected output handling | `passed=NULL` ("not evaluated"), excluded from the pass-rate denominator | | | 4 | U | PASS (phase-4c) |
-| T41 | Security/UI | XSS escape on labels | `<script>` in a model/service name renders as text | ★ | | 3→5 | E | PASS (phase-3c) |
-| T42 | Security/UI | Server-only API secret | Build output / client bundle / HTML contain no admin token | ★ | ⛔ | 3→5 | E | PASS (phase-3c) |
-| T43 | Security/UI | Request rate limit | Burst over limit → `429` + Retry-After (ingest, auth-failure and API buckets) | ★ | | 3→5 | I | PASS (phase-5a) |
-| T44 | Security/UI | Malformed header/auth log sanitization | Logs contain no key/header value after bad-auth requests | ★ | | 1→5 | I | PASS (phase-1c) |
+| T41 | Security/UI | XSS escape on labels | `<script>` in a model/service name renders as text | ★ | | 3→5 | E | PASS (phase-5b) |
+| T42 | Security/UI | Server-only API secret | Build output / client bundle / HTML contain no admin token | ★ | ⛔ | 3→5 | E | PASS (phase-5b) |
+| T43 | Security/UI | Request rate limit | Burst over limit → `429` + Retry-After (ingest, auth-failure and API buckets) | ★ | | 3→5 | I | PASS (phase-5b) |
+| T44 | Security/UI | Malformed header/auth log sanitization | Logs contain no key/header value after bad-auth requests | ★ | | 1→5 | I | PASS (phase-5b) |
 | T45 | Security/UI | Trace list UI screenshot assertion | Seeded DB data visible in the list; screenshot saved | ★ | | 3 | E | PASS (phase-3c) |
-| T46 | Security/UI | Drilldown tree E2E | Trace list → detail shows root → child tree | ★ | ⛔ | 3→5 | E | PASS (phase-3c) |
-| T47 | Security/UI | Reproducible compose smoke | Clean clone → `docker compose up --build` → init → demo works | | | 5 | E | PASS (phase-5a) |
-| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | PASS (phase-4d) |
+| T46 | Security/UI | Drilldown tree E2E | Trace list → detail shows root → child tree | ★ | ⛔ | 3→5 | E | PASS (phase-5b) |
+| T47 | Security/UI | Reproducible compose smoke | Clean clone → `docker compose up --build` → init → demo works | | | 5 | E | PASS (phase-5b) |
+| T48 | Security/UI | Real vs synthetic provenance on dashboard | SYNTHETIC/MIXED/UNKNOWN badges; mixed and unknown never counted as real | ★ | | 3→4,5 | E | PASS (phase-5b) |
 
 **Counts:**
 - 48 tests in total.
@@ -79,6 +79,8 @@ Source: master plan §I. IDs and scenario names are preserved exactly; the expec
 **Phase 4 final (`reports/phase-4-final.md` §7.3):** feature freeze and release re-verification; **no status changed.** T33–T40 and T48 were re-run on the closure code (backend 1720, frontend unit 311, E2E 53 passed): T38 now also follows the human-approved case's own id into both versions' stored results, in a backend integration test and in the browser loop against PostgreSQL (§4 of the report). T31, T41 and T42 were re-run; their statuses are unchanged. Still open: T43 (PARTIAL, Phase 5) and T47 (Phase 5, NOT RUN); the Phase 5 gate is not claimed.
 
 **Phase 5A (`reports/phase-5a.md` §4–§5, §7):** **T43 now reads PASS (phase-5a)** against its exact definition: on real PostgreSQL, each of the three buckets answers a burst with `429` + `Retry-After`: the ingest bucket (exact `Retry-After` from an injected clock, refill, the refused batch stores nothing), the auth-failure bucket (shared by `/v1/traces` and `/api/v1` in both directions; once exhausted it refuses every `/api/v1` route and ingest, even with valid credentials) and the `/api/v1` bucket on **every** registered route, including the Phase 4 writes, before the body is read and without writing a row (`test_phase5a_rate_limit.py`, 6 tests, two mutants killed). The dashboard path, left open since Phase 1C, is verified live: a second backend with a tiny bucket behind a fourth dashboard shows the fixed 429 state with the backend's `Retry-After` on four pages and refuses a write with "Nothing was stored" while nothing is stored (`phase5a.spec.ts`, 2 tests, mutant killed). **T47 now reads PASS (phase-5a):** a fresh clone from GitHub (`394920c`) plus the Phase 5A code changes, `init_env.py`, `docker compose --profile app up -d --build --wait` (three services healthy), init inside the backend container (migrations at head, `create-key`, `seed-prices`), then the demo: FastAPI demo traffic through a host backend on the same database (R43, R73), the golden dataset, and in a browser on the compose dashboard the overview, trace tree, human review and decision, an approved test case and a mock A/B run whose results page names no better version on incomplete evidence (7 screenshots). Re-run with unchanged statuses: T31 (migration tests in the backend suite), T33–T40 and T48 (backend, frontend unit and E2E suites), T41 and T42 (E2E, bundle scan 0). The Phase 5 gate (all 48 reported, 0 FAIL on the 42 critical tests) is **not** claimed by Phase 5A: the full 48-row PASS/FAIL/SKIP report is the remaining Phase 5 work.
+
+**Phase 5B (`reports/phase-5b.md` §3, §8):** the complete 48-row evidence report. **All 48 scenarios were executed in Phase 5B and passed; 0 FAIL and 0 SKIP among the 42 critical tests; the 10 blockers pass.** Evidence: the final full suites on the Phase 5B tree (backend 1726, SDK 350, frontend unit 311, Playwright E2E 55 passed, 0 failed, 0 skipped) and the clean-clone compose run (T47). The 16 rows whose Phase column includes a Phase 5 re-verification (T01, T04, T13, T15, T16, T23, T30, T31, T34, T35, T41, T42, T43, T44, T46, T48) and T47, owned by Phase 5, now read **PASS (phase-5b)** (17 rows); every other row keeps the status of its owning phase and was re-run green in the same suites. No definition was changed. Each row's implementation, tests and limitation are listed in the report.
 
 ## Sub-cases (inherit the parent's criticality)
 
@@ -104,7 +106,7 @@ These are the required protocol, dedup and provenance cases. They are reported u
 | T48-S1 | T48 | Mixed trace | Real + synthetic inference spans → trace `mixed`, excluded from "reported real" trace counts; its real usage row is counted at usage level only |
 | T48-S2 | T48 | Real claim without response ID | Successful inference span claiming `real` with no `gen_ai.response.id` → stored `unknown` |
 
-**Benchmark (Phase 5, no pre-set targets):** re-ingest 100–1000 span fixtures and measure trace-open time on a 10k-span dataset. Report N, hardware, method, p50 and p95.
+**Benchmark (Phase 5, no pre-set targets):** re-ingest 100–1000 span fixtures and measure trace-open time on a 10k-span dataset. Report N, hardware, method, p50 and p95. **Measured in Phase 5B** (`reports/phase-5b.md` §6, `scripts/qa/benchmark.py`, raw results `reports/phase-5b-benchmark.json`); no target was set or claimed.
 
 **Commands:** `pytest`, `ruff check`, `alembic upgrade/downgrade` exist (backend, see `PHASE_STATUS.md`). Frontend (Phase 3A, in `frontend/`): `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run check:bundle`, `npm run test:e2e` (Playwright, real backend; Phase 3B `traces.spec.ts` also needs `scripts/dev/seed_trace_fixtures.py`).
 

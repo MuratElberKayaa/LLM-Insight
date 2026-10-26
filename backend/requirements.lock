@@ -5,13 +5,16 @@
 # Rule (CR-09): every version was first uploaded to PyPI at least two weeks before it was added
 # (on or before 2026-10-10 for Phase 1; on or before 2026-10-12 for Phase 4C).
 # starlette, certifi and pluggy are pinned below their newest releases to satisfy that rule.
+# Phase 5B 2026-10-26, security exception to that rule (SOURCES_AND_RISKS.md R74): certifi
+# 2026.10.19 (uploaded 2026-10-20) fixes PYSEC-2026-4320 / GHSA-6q48-6c7w-9gw2 (compromised emSign
+# intermediates); wheel hash checked against PyPI, the only content change is the CA bundle.
 # Install: python -m pip install -r requirements.lock && python -m pip install --no-deps -e .
 alembic==1.20.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 attrs==26.1.0
-certifi==2026.7.22
+certifi==2026.10.19
 charset-normalizer==3.5.2
 click==8.5.0
 colorama==0.4.6
