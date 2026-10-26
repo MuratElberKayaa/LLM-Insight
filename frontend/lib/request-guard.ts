@@ -16,10 +16,11 @@ export function isAllowedMethod(method: string): boolean {
 }
 
 /**
- * Phase 4B: the only pages whose forms post Server Actions. Every other path stays GET/HEAD.
- * Ids are checked by shape here and validated again by the action and the backend.
+ * The only pages whose forms post Server Actions (Phase 4B, plus the Phase 4D experiment
+ * setup, ADR-26). Every other path stays GET/HEAD. Ids are checked by shape here and validated
+ * again by the action and the backend.
  */
-const WRITE_PAGES: readonly RegExp[] = [/^\/traces\/[0-9a-f]{32}$/, /^\/traces\/[0-9a-f]{32}\/reviews\/[1-9][0-9]{0,18}\/test-case$/, /^\/datasets$/];
+const WRITE_PAGES: readonly RegExp[] = [/^\/traces\/[0-9a-f]{32}$/, /^\/traces\/[0-9a-f]{32}\/reviews\/[1-9][0-9]{0,18}\/test-case$/, /^\/datasets$/, /^\/experiments\/new$/];
 
 export function isWritePage(pathname: string): boolean {
   return WRITE_PAGES.some((re) => re.test(pathname));

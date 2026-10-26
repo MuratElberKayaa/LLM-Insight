@@ -20,7 +20,7 @@ function CaseCard({ c, project }: { c: TestCase; project: string }) {
           Approved by {c.approved_by}
         </span>
         <span className="rounded-full border border-line px-2 py-0.5 text-xs text-ink-2">Server redaction applied</span>
-        <span className="rounded-full border border-line px-2 py-0.5 text-xs text-ink-3">Not evaluated yet</span>
+        <span className="rounded-full border border-line px-2 py-0.5 text-xs text-ink-3">Evaluated only by experiments</span>
       </div>
       <p className="mt-2 text-xs text-ink-3">
         {c.origin_trace_id === null ? (

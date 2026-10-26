@@ -17,12 +17,19 @@ type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 export function useWriteForm(action: Action) {
   const [state, dispatch, pending] = useActionState(action, IDLE);
   const formRef = useRef<HTMLFormElement>(null);
+  // Set synchronously on submit (Phase 4D): `pending` only changes on the next render, so a
+  // fast double click could otherwise dispatch twice before the button is disabled.
+  const inFlight = useRef(false);
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (pending) return;
+    if (pending || inFlight.current) return;
+    inFlight.current = true;
     const data = new FormData(event.currentTarget);
     startTransition(() => dispatch(data));
   };
+  useEffect(() => {
+    if (!pending) inFlight.current = false;
+  }, [pending, state]);
   useEffect(() => {
     if (state.status === "success") formRef.current?.reset();
   }, [state]);
@@ -30,7 +37,7 @@ export function useWriteForm(action: Action) {
   return { state, pending, formRef, onSubmit, invalid };
 }
 
-export function SubmitButton({ pending, children, testId }: { pending: boolean; children: ReactNode; testId?: string }) {
+export function SubmitButton({ pending, children, testId, pendingLabel = "Saving…" }: { pending: boolean; children: ReactNode; testId?: string; pendingLabel?: string }) {
   return (
     <button
       type="submit"
@@ -39,7 +46,7 @@ export function SubmitButton({ pending, children, testId }: { pending: boolean; 
       data-testid={testId}
       className="inline-flex items-center justify-center rounded-md border border-series-1/70 bg-series-1/20 px-4 py-2 text-sm font-semibold text-ink hover:bg-series-1/30 disabled:cursor-wait disabled:opacity-60"
     >
-      {pending ? "Saving…" : children}
+      {pending ? pendingLabel : children}
     </button>
   );
 }

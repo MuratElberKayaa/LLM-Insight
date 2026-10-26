@@ -28,8 +28,8 @@ export interface ApiFailure {
   retryAfterSeconds?: number;
   /** malformed: JSON path of the first mismatch, or a fixed reason. */
   detail?: string;
-  /** 409: the backend's error code, only when it is one of the documented conflict codes. */
-  code?: ConflictCode;
+  /** 409 (or the 429 `experiments_busy`): the backend's error code, only when it is a documented code. */
+  code?: ConflictCode | BusyCode;
 }
 
 /** The 409 codes of the write endpoints (ARCHITECTURE.md §5.7; Phase 4C adds the review-integrity codes, ADR-24). */
@@ -41,7 +41,18 @@ export const CONFLICT_CODES = [
   "review_not_eligible",
   "review_decision_frozen",
   "review_immutable",
+  // Phase 4D: the refusals of POST /api/v1/experiments (ARCHITECTURE.md §5.9–§5.10).
+  "dataset_empty",
+  "dataset_too_large",
+  "budget_unverifiable",
+  "budget_exceeded",
+  "real_llm_not_allowed",
+  "real_mode_unavailable",
+  "experiment_time_limit",
 ] as const;
+/** Phase 4D: the 429 of a run beyond the backend's concurrency bound (not the rate limit). */
+export const BUSY_CODES = ["experiments_busy"] as const;
+export type BusyCode = (typeof BUSY_CODES)[number];
 export type ConflictCode = (typeof CONFLICT_CODES)[number];
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiFailure };

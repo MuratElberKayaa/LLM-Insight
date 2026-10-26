@@ -24,7 +24,7 @@ export default async function DatasetsPage({ searchParams }: PageProps) {
     <NavigationTransition>
       <PageHeader
         title="Datasets"
-        description="Named sets of human-approved regression test cases. Cases are created from reviewed traces on the trace page; nothing is added automatically and nothing is evaluated here (Phase 4C)."
+        description="Named sets of human-approved regression test cases. Cases are created from reviewed traces on the trace page; nothing is added automatically. Cases are evaluated only by experiments, which you start explicitly."
         meta={<span>Fetched {formatUtcTime(fetchedAt)}</span>}
         actions={<RefreshButton />}
       />

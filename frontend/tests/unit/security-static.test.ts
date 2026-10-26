@@ -64,18 +64,19 @@ describe("server/client boundary", () => {
     assert.deepEqual(appFiles.filter((f) => /\/route\.(ts|tsx)$/.test(f)), []);
   });
 
-  it("Server Actions exist only in the two Phase 4B action modules, each a fixed write", () => {
-    // ARCHITECTURE.md §5.8: every "use server" module is listed here; every export of one is
+  it("Server Actions exist only in the listed action modules, each a fixed write", () => {
+    // ARCHITECTURE.md §5.8, §5.10: the two Phase 4B modules (ADR-22) and the Phase 4D experiment
+    // module (ADR-26). Every "use server" module is listed here; every export of one is
     // a public POST endpoint, so each must be an async function that validates its input and
     // calls one lib/server write. Nothing else may declare a Server Function, inline or not.
     const actionFiles = files.filter((f) => /["']use server["']/.test(read(f))).map(rel).sort();
-    assert.deepEqual(actionFiles, ["lib/actions/datasets.ts", "lib/actions/reviews.ts"]);
+    assert.deepEqual(actionFiles, ["lib/actions/datasets.ts", "lib/actions/experiments.ts", "lib/actions/reviews.ts"]);
     for (const f of actionFiles) {
       const src = read(path.join(ROOT, f));
       assert.match(src, /^"use server";\n/, `${f}: the directive must be the first statement`);
       assert.match(src, /^import "server-only";$/m, f);
       const exports = src.match(/^export .*$/gm) ?? [];
-      assert.ok(exports.length >= 2, f);
+      assert.ok(exports.length >= 1, f);
       for (const e of exports) assert.match(e, /^export async function submit\w+\(_prev: ActionState, formData: FormData\): Promise<ActionState> \{$/, `${f}: ${e}`);
       assert.match(src, /parse\w+Form\(formData\)/, `${f}: every action re-validates its form`);
       assert.doesNotMatch(src, /\b(getJson|sendJson|fetch)\(/, `${f}: actions call lib/server, never the transport`);
@@ -84,9 +85,9 @@ describe("server/client boundary", () => {
 
   it("only lib/server modules call the backend client, and the client keeps path allowlists", () => {
     const readers = files.filter((f) => /\bgetJson\(/.test(read(f))).map(rel).sort();
-    assert.deepEqual(readers, ["lib/server/context.ts", "lib/server/datasets.ts", "lib/server/models.ts", "lib/server/overview.ts", "lib/server/reviews.ts", "lib/server/traces.ts"]);
+    assert.deepEqual(readers, ["lib/server/context.ts", "lib/server/datasets.ts", "lib/server/experiments.ts", "lib/server/models.ts", "lib/server/overview.ts", "lib/server/reviews.ts", "lib/server/traces.ts"]);
     const writers = files.filter((f) => /\bsendJson\(/.test(read(f))).map(rel).sort();
-    assert.deepEqual(writers, ["lib/server/datasets.ts", "lib/server/reviews.ts"]);
+    assert.deepEqual(writers, ["lib/server/datasets.ts", "lib/server/experiments.ts", "lib/server/reviews.ts"]);
     const backend = read(path.join(ROOT, "lib/server/backend.ts"));
     assert.match(backend, /const PATH_RE =/);
     assert.match(backend, /const WRITE_ROUTES: /);

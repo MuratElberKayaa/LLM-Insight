@@ -552,7 +552,7 @@ describe("test case form and case list", () => {
     assert.match(m, new RegExp(`href="/traces/${TRACE}\\?project=7"`));
     assert.match(m, /review #11/);
     assert.match(m, /Standalone case/);
-    assert.match(m, /Not evaluated yet/);
+    assert.match(m, /Evaluated only by experiments/);
     assert.match(m, /this case is never evaluated/);
   });
 });

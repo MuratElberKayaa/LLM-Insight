@@ -17,17 +17,31 @@ GET. Repeating a POST starts a new, independent experiment with identical result
 Access is that of the other `/api/v1` endpoints (§5.1): `require_admin` first, the mandatory
 `project`, one indistinguishable `404` for an unknown project, dataset or experiment or one of
 another project, strict JSON bodies (§5.7, D7).
+
+Phase 4D (the dashboard's experiment pages) adds, without changing the contract above:
+- `GET /api/v1/experiments`: the project's experiments, newest first (read-only, additive);
+- `GET /api/v1/experiment-options`: what a run can use: mock mode only, the prompt versions
+  the scripted mock answers, the models with a stored price, the limits (read-only, additive);
+- bounded execution: at most `MAX_CONCURRENT_EXPERIMENTS` runs at once in this process (more
+  get `429 experiments_busy`, never queued), a wall-clock deadline per run
+  (`409 experiment_time_limit`), and an unexpected evaluation error answered with the fixed
+  `500 internal_error` (its type is logged, never its message). Each refusal stores nothing.
 """
 
+import logging
+import threading
+import time
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.admin import NO_STORE, APIError, invalid, not_found, require_admin
+from app.api.admin import NO_STORE, APIError, internal_error, invalid, not_found, require_admin
 from app.api.human_input import conflict, write_transaction
 from app.api.json_body import ExactJSONResponse, parse_model, read_json
 from app.api.traces import BIGINT_MAX, ProjectParam, iso_from_datetime, read_snapshot
@@ -36,19 +50,60 @@ from app.models.experiment import MODEL_MAX, PROMPT_VERSION_MAX
 from app.repositories import datasets as dataset_repo
 from app.repositories import experiments as repo
 from app.repositories import pricing as pricing_repo
+from app.repositories.traces import project_exists
 from app.services import pricing, redaction
 from app.services.experiments import report, runner
 from app.services.experiments.mock_provider import GOLDEN_PROVIDER, SIMULATED_PROVIDER
 from app.services.ingestion import attrmap
 
+logger = logging.getLogger("app.api")
+
 router = APIRouter(prefix="/api/v1", tags=["experiments"], dependencies=[Depends(require_admin)])
 
 MAX_EXPERIMENT_CASES = 200  # at most 400 results per experiment
+MAX_CONCURRENT_EXPERIMENTS = 4  # each run holds one database connection (pool: 5 + 5)
+RUN_TIME_LIMIT_S = 15  # wall clock per run; one evaluation is bounded separately (R60)
+LIST_MAX_LIMIT = 200
+LIST_DEFAULT_LIMIT = 50
+MAX_PRICE_ROWS = 1000
+OPTIONS_CONTRACT = "llminsight.experiment_options.v1"
 _PROMPT_VERSION = attrmap.PROMPT_VERSION.pattern
 _MODEL = attrmap.MODEL.pattern
 _BUDGET_QUANTUM = Decimal("1E-10")  # NUMERIC(20,10)
 
 ExperimentIdPath = Annotated[int, Path(ge=1, le=BIGINT_MAX)]
+ListLimitParam = Annotated[int, Query(ge=1, le=LIST_MAX_LIMIT)]
+
+
+class RunSlots:
+    """Running experiments in this process (single worker, like CR-08). A run beyond the
+    bound is refused at once, never queued: a queued run would hold the dashboard's request
+    open with no visible progress."""
+
+    def __init__(self, size: int) -> None:
+        self.size = size
+        self._semaphore = threading.BoundedSemaphore(size)
+
+    def try_acquire(self) -> bool:
+        return self._semaphore.acquire(blocking=False)
+
+    def release(self) -> None:
+        self._semaphore.release()
+
+
+class _RunTimeLimit(Exception):
+    pass
+
+
+def _deadline(seconds: float) -> Callable[[], None]:
+    """The runner's checkpoint: raises once `seconds` of wall clock have passed."""
+    end = time.monotonic() + seconds
+
+    def check() -> None:
+        if time.monotonic() > end:
+            raise _RunTimeLimit
+
+    return check
 
 
 class ExperimentCreate(BaseModel):
@@ -168,6 +223,8 @@ async def create_experiment(request: Request, project: ProjectParam) -> ExactJSO
         cases = [_case_record(r) for r in rows]
         experiment = repo.insert_experiment(session, values)
         prices = pricing_repo.load_prices(session, [(SIMULATED_PROVIDER, values["model"])])
+        # Every refusal below raises inside the transaction, so the experiment row is rolled
+        # back with it: a run is stored completely or not at all.
         try:
             planned = runner.run(
                 cases,
@@ -177,14 +234,34 @@ async def create_experiment(request: Request, project: ProjectParam) -> ExactJSO
                 prices,
                 experiment.started_at,
                 values["budget_usd"],
+                checkpoint=_deadline(RUN_TIME_LIMIT_S),
             )
         except runner.BudgetRefused as exc:
-            raise conflict(exc.code, exc.message) from None  # rolls back the experiment row
+            raise conflict(exc.code, exc.message) from None
+        except _RunTimeLimit:
+            raise conflict(
+                "experiment_time_limit",
+                f"the run exceeded {RUN_TIME_LIMIT_S} s and was stopped; nothing was stored",
+            ) from None
+        except Exception as exc:  # noqa: BLE001 - an evaluation bug; its message may quote content
+            logger.error("experiment run failed: %s", type(exc).__name__)
+            raise internal_error() from None
         repo.insert_results(session, [p.as_row(experiment.id) for p in planned])
         repo.finish_experiment(session, experiment.id)
         return experiment.id
 
-    experiment_id = await run_in_threadpool(write_transaction, request, write)
+    slots: RunSlots = request.app.state.experiment_slots
+    if not slots.try_acquire():
+        raise APIError(
+            429,
+            "experiments_busy",
+            f"at most {slots.size} experiments run at once; nothing was run, retry shortly",
+            headers={"Retry-After": "5"},
+        )
+    try:
+        experiment_id = await run_in_threadpool(write_transaction, request, write)
+    finally:
+        slots.release()
     document = await run_in_threadpool(_report, request, project, experiment_id)
     return ExactJSONResponse(document, status_code=201, headers=NO_STORE)
 
@@ -195,3 +272,101 @@ async def get_experiment(
 ) -> ExactJSONResponse:
     document = await run_in_threadpool(_report, request, project, experiment_id)
     return ExactJSONResponse(document, headers=NO_STORE)
+
+
+def _summary(r: Any) -> dict[str, Any]:
+    finished = r.finished_at is not None
+    return {
+        "id": r.id,
+        "dataset_id": r.dataset_id,
+        "dataset_name": r.dataset_name,
+        "prompt_version_a": r.prompt_version_a,
+        "prompt_version_b": r.prompt_version_b,
+        "model": r.model,
+        "mode": r.mode,
+        "budget_usd": report.money(r.budget_usd),
+        "started_at": iso_from_datetime(r.started_at),
+        "finished_at": iso_from_datetime(r.finished_at) if finished else None,
+        "state": "finished" if finished else "running",
+        "results": int(r.result_count),
+    }
+
+
+@router.get("/experiments")
+async def list_experiments(
+    request: Request, project: ProjectParam, limit: ListLimitParam = LIST_DEFAULT_LIMIT
+) -> JSONResponse:
+    """The project's experiments, newest first (Phase 4D, additive, read-only). Summaries
+    only; the report of one experiment is `GET /api/v1/experiments/{id}`."""
+
+    def read(session: Session) -> list[Any]:
+        if not project_exists(session, project):
+            raise not_found()
+        return list(repo.list_experiments(session, project, limit))
+
+    rows = await run_in_threadpool(read_snapshot, request, read)
+    return JSONResponse(
+        {
+            "items": [_summary(r) for r in rows[:limit]],
+            "truncated": len(rows) > limit,
+            "limit": limit,
+        },
+        headers=NO_STORE,
+    )
+
+
+@router.get("/experiment-options")
+async def experiment_options(request: Request, project: ProjectParam) -> JSONResponse:
+    """What a run can use (Phase 4D, additive, read-only): mock mode only; the prompt
+    versions the scripted mock answers (any other version would get
+    `mock_no_scripted_output` for every case); the models with a stored price of the simulated
+    provider in force now (any other model would leave every cost `price_missing`); the
+    limits. Nothing here is invented: versions come from the script, models from
+    `model_prices`."""
+
+    def read(session: Session) -> tuple[Any, list[pricing.Price]]:
+        if not project_exists(session, project):
+            raise not_found()
+        now = pricing_repo.database_now(session)
+        return now, pricing_repo.prices_of_provider(session, SIMULATED_PROVIDER, MAX_PRICE_ROWS)
+
+    now, prices = await run_in_threadpool(read_snapshot, request, read)
+    truncated = len(prices) > MAX_PRICE_ROWS
+    prices = prices[:MAX_PRICE_ROWS]
+    models = []
+    for model in sorted({p.model for p in prices}):
+        price = pricing.select_price(prices, SIMULATED_PROVIDER, model, now)
+        if price is None or len(model) > MODEL_MAX or not _MODEL.fullmatch(model):
+            continue
+        models.append({"model": model, "price_version": price.version})
+    real_code = (
+        "real_mode_unavailable"
+        if request.app.state.settings.allow_real_llm
+        else "real_llm_not_allowed"
+    )
+    return JSONResponse(
+        {
+            "contract_version": OPTIONS_CONTRACT,
+            "modes": ["mock"],
+            "real_mode": {"available": False, "code": real_code},
+            "provider": {
+                "kind": "scripted_mock",
+                "simulates": SIMULATED_PROVIDER,
+                "provenance": "synthetic",
+            },
+            "prompt_versions": [
+                {"prompt_version": v, "scripted_inputs": n}
+                for v, n in GOLDEN_PROVIDER.prompt_versions().items()
+            ],
+            "models": models,
+            "models_truncated": truncated,
+            "limits": {
+                "max_cases": MAX_EXPERIMENT_CASES,
+                "max_concurrent_runs": request.app.state.experiment_slots.size,
+                "run_time_limit_seconds": RUN_TIME_LIMIT_S,
+                "budget_usd_max": report.money(pricing.MAX_COST),
+                "budget_usd_decimal_places": 10,
+            },
+        },
+        headers=NO_STORE,
+    )

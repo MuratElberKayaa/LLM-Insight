@@ -1,6 +1,6 @@
 import "server-only";
 
-import { CONFLICT_CODES, type ApiFailure, type ApiResult, type ConflictCode } from "../api/result";
+import { BUSY_CODES, CONFLICT_CODES, type ApiFailure, type ApiResult, type BusyCode, type ConflictCode } from "../api/result";
 import type { BackendHealth } from "../api/types";
 import { parseJsonLossless } from "../json";
 import { isProjectId } from "../project";
@@ -26,28 +26,34 @@ export type BackendPath =
   | `/api/v1/traces/${string}`
   | "/api/v1/projects"
   | "/api/v1/datasets"
-  | `/api/v1/datasets/${string}/cases`;
+  | `/api/v1/datasets/${string}/cases`
+  | "/api/v1/experiments"
+  | `/api/v1/experiments/${string}`
+  | "/api/v1/experiment-options";
 
 /**
  * Runtime allowlist behind the type: a trace id path segment must be 32 lowercase hex, a
- * dataset id a positive integer. Phase 4B adds the diagnostics read and the dataset reads.
+ * dataset or experiment id a positive integer. Phase 4B adds the diagnostics read and the
+ * dataset reads; Phase 4D the experiment list, report and run options.
  */
 const PATH_RE =
-  /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|traces\/[0-9a-f]{32}\/diagnostics|projects|datasets|datasets\/[1-9][0-9]{0,18}\/cases)$/;
+  /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|traces\/[0-9a-f]{32}\/diagnostics|projects|datasets|datasets\/[1-9][0-9]{0,18}\/cases|experiments|experiments\/[1-9][0-9]{0,18}|experiment-options)$/;
 /** Endpoints without a `project` parameter. */
 const GLOBAL_PATHS: ReadonlySet<string> = new Set(["/api/v1/projects"]);
 
 /**
- * Phase 4B write allowlist: each path accepts exactly one method (ARCHITECTURE.md §5.7). The
- * dashboard writes only through these four endpoints, from explicit form submissions.
+ * Write allowlist: each path accepts exactly one method (ARCHITECTURE.md §5.7, §5.10). The
+ * dashboard writes only through these five endpoints, from explicit form submissions: the four
+ * Phase 4B writes (ADR-22) and the Phase 4D mock experiment run (ADR-26).
  */
-export type WritePath = "/api/v1/failure-reviews" | `/api/v1/failure-reviews/${string}` | "/api/v1/datasets" | `/api/v1/datasets/${string}/cases`;
+export type WritePath = "/api/v1/failure-reviews" | `/api/v1/failure-reviews/${string}` | "/api/v1/datasets" | `/api/v1/datasets/${string}/cases` | "/api/v1/experiments";
 export type WriteMethod = "POST" | "PATCH";
 const WRITE_ROUTES: readonly { method: WriteMethod; re: RegExp }[] = [
   { method: "POST", re: /^\/api\/v1\/failure-reviews$/ },
   { method: "PATCH", re: /^\/api\/v1\/failure-reviews\/[1-9][0-9]{0,18}$/ },
   { method: "POST", re: /^\/api\/v1\/datasets$/ },
   { method: "POST", re: /^\/api\/v1\/datasets\/[1-9][0-9]{0,18}\/cases$/ },
+  { method: "POST", re: /^\/api\/v1\/experiments$/ },
 ];
 
 /** Which project a request reads: a validated id, or `null` for the project listing only. */
@@ -72,6 +78,11 @@ export function datasetCasesPath(datasetId: string): `/api/v1/datasets/${string}
   return RECORD_ID_RE.test(datasetId) && BigInt(datasetId) <= 2n ** 63n - 1n ? `/api/v1/datasets/${datasetId}/cases` : null;
 }
 
+/** `/api/v1/experiments/{id}` for a validated experiment id, or null. */
+export function experimentPath(experimentId: string): `/api/v1/experiments/${string}` | null {
+  return RECORD_ID_RE.test(experimentId) && BigInt(experimentId) <= 2n ** 63n - 1n ? `/api/v1/experiments/${experimentId}` : null;
+}
+
 /** `/api/v1/failure-reviews/{id}` for a validated review id, or null. */
 export function reviewPath(reviewId: string): WritePath | null {
   return RECORD_ID_RE.test(reviewId) && BigInt(reviewId) <= 2n ** 63n - 1n ? `/api/v1/failure-reviews/${reviewId}` : null;
@@ -89,6 +100,12 @@ export interface BackendDeps {
 
 export interface GetOptions {
   maxBytes?: number;
+}
+
+export interface SendOptions {
+  /** Phase 4D: a longer deadline for the one write that runs work (an experiment, whose backend
+   * deadline is shorter), so a completed run is not reported as "outcome unknown". */
+  timeoutMs?: number;
 }
 
 function retryAfter(headers: Headers): number | undefined {
@@ -139,12 +156,12 @@ function errorFields(body: string | null): string[] | undefined {
   }
 }
 
-/** A 409's `error.code`, only when it is a documented conflict code (never free text). */
-function conflictCode(body: string | null): ConflictCode | undefined {
+/** An error body's `error.code`, only when it is one of `known` (never free text). */
+function documentedCode<C extends string>(body: string | null, known: readonly C[]): C | undefined {
   if (body === null) return undefined;
   try {
     const code = (JSON.parse(body) as { error?: { code?: unknown } })?.error?.code;
-    return (CONFLICT_CODES as readonly unknown[]).includes(code) ? (code as ConflictCode) : undefined;
+    return (known as readonly unknown[]).includes(code) ? (code as C) : undefined;
   } catch {
     return undefined;
   }
@@ -156,7 +173,7 @@ function failureForStatus(status: number, headers: Headers, body: string | null)
   if (status === 401) return { kind: "unauthorized", status };
   if (status === 404) return { kind: "not_found", status };
   if (status === 409) {
-    const code = conflictCode(body);
+    const code = documentedCode<ConflictCode>(body, CONFLICT_CODES);
     return code === undefined ? { kind: "conflict", status } : { kind: "conflict", status, code };
   }
   if (status === 413) return { kind: "payload_too_large", status };
@@ -164,7 +181,10 @@ function failureForStatus(status: number, headers: Headers, body: string | null)
     const fields = errorFields(body);
     return fields === undefined ? { kind: "invalid_request", status } : { kind: "invalid_request", status, fields };
   }
-  if (status === 429) return withRetry({ kind: "rate_limited", status });
+  if (status === 429) {
+    const code = documentedCode<BusyCode>(body, BUSY_CODES);
+    return withRetry(code === undefined ? { kind: "rate_limited", status } : { kind: "rate_limited", status, code });
+  }
   if (status === 503) return withRetry({ kind: "storage_unavailable", status });
   if (status >= 500) return { kind: "server_error", status };
   return { kind: "unexpected_status", status };
@@ -181,7 +201,8 @@ function log(path: string, failure: ApiFailure): void {
   const endpoint = path
     .replace(/^\/api\/v1\/traces\/[0-9a-f]{32}/, "/api/v1/traces/{trace_id}")
     .replace(/^\/api\/v1\/failure-reviews\/\d+$/, "/api/v1/failure-reviews/{id}")
-    .replace(/^\/api\/v1\/datasets\/\d+\/cases$/, "/api/v1/datasets/{id}/cases");
+    .replace(/^\/api\/v1\/datasets\/\d+\/cases$/, "/api/v1/datasets/{id}/cases")
+    .replace(/^\/api\/v1\/experiments\/\d+$/, "/api/v1/experiments/{id}");
   const parts = [failure.kind, failure.status, failure.detail].filter((p) => p !== undefined);
   console.warn(`[llm-insight] backend ${endpoint} failed: ${parts.join(" ")}`);
 }
@@ -264,6 +285,7 @@ export async function sendJson<T>(
   body: unknown,
   decoder: Decoder<T>,
   deps: BackendDeps = {},
+  options: SendOptions = {},
 ): Promise<ApiResult<T>> {
   const doFetch = deps.fetch ?? fetch;
   if (!WRITE_ROUTES.some((r) => r.method === method && r.re.test(path))) {
@@ -292,7 +314,7 @@ export async function sendJson<T>(
       body: JSON.stringify(body),
       cache: "no-store",
       redirect: "error",
-      signal: AbortSignal.timeout(config.timeoutMs),
+      signal: AbortSignal.timeout(options.timeoutMs ?? config.timeoutMs),
     });
     text = await readCapped(response, MAX_RESPONSE_BYTES);
   } catch (err) {

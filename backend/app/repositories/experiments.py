@@ -84,6 +84,28 @@ def get_experiment(session: Session, project_id: int, experiment_id: int) -> Row
     return session.execute(stmt).one_or_none()
 
 
+def list_experiments(session: Session, project_id: int, limit: int) -> Sequence[Row[Any]]:
+    """At most `limit + 1` experiments of the project's datasets, newest first, each with its
+    dataset name and stored result count (Phase 4D, `GET /api/v1/experiments`)."""
+    result_count = (
+        select(func.count(ExperimentResult.id))
+        .where(ExperimentResult.experiment_id == Experiment.id)
+        .scalar_subquery()
+    )
+    stmt = (
+        select(
+            *EXPERIMENT_COLUMNS,
+            TestDataset.name.label("dataset_name"),
+            result_count.label("result_count"),
+        )
+        .join(TestDataset, TestDataset.id == Experiment.dataset_id)
+        .where(TestDataset.project_id == project_id)
+        .order_by(Experiment.id.desc())
+        .limit(limit + 1)
+    )
+    return session.execute(stmt).all()
+
+
 def results_for(session: Session, experiment_id: int) -> Sequence[Row[Any]]:
     stmt = (
         select(*RESULT_COLUMNS)

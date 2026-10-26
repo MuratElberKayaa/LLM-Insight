@@ -8,8 +8,9 @@ append-only rule for every other writer (migration `0002`).
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
+from datetime import datetime
 
-from sqlalchemy import select, text, tuple_
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import Session
 
 from app.models import ModelPrice
@@ -49,6 +50,34 @@ def load_prices(session: Session, pairs: Iterable[tuple[str, str]]) -> list[Pric
         m.cache_write_input_per_million,
     ).where(tuple_(m.provider, m.model).in_(wanted))
     return [Price(**r._asdict()) for r in session.execute(stmt)]
+
+
+def prices_of_provider(session: Session, provider: str, limit: int) -> list[Price]:
+    """Stored prices of one provider, at most `limit + 1` rows (Phase 4D: the models an
+    experiment can price). The caller picks the row in force with `pricing.select_price`."""
+    m = ModelPrice
+    stmt = (
+        select(
+            m.id,
+            m.version,
+            m.provider,
+            m.model,
+            m.effective_from,
+            m.input_per_million,
+            m.output_per_million,
+            m.cached_input_per_million,
+            m.cache_write_input_per_million,
+        )
+        .where(m.provider == provider)
+        .order_by(m.model, m.effective_from)
+        .limit(limit + 1)
+    )
+    return [Price(**r._asdict()) for r in session.execute(stmt)]
+
+
+def database_now(session: Session) -> datetime:
+    """The database clock (`now()`), which also stamps `experiments.started_at`."""
+    return session.execute(select(func.now())).scalar_one()
 
 
 def _identity(e: CatalogEntry) -> tuple[str, str, str]:

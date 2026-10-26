@@ -19,6 +19,11 @@ still match the recorded run (the cascade removes their keys, traces, spans and 
 Nothing else is touched: no other project, no price row, no schema object. Set
 `LLMI_E2E_KEEP=1` to keep the data (for screenshots); the state file then says so.
 No provider is called and nothing claims `real`.
+
+`experiment-counts --experiment <id>` (Phase 4D) is read-only: it reads one experiment's stored
+results straight from PostgreSQL, bypassing the API, so the browser test can check the counts
+the dashboard showed against the database. It refuses an experiment whose dataset is not in one
+of this run's projects, and prints counts, case ids and provenance only (no case content).
 """
 
 from __future__ import annotations
@@ -40,7 +45,7 @@ from app.core.config import get_settings
 from app.core.db import create_db_engine, create_session_factory
 from app.models import Project
 from app.repositories import api_keys
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 SEEDER = ROOT / "scripts" / "dev" / "seed_trace_fixtures.py"
@@ -194,12 +199,80 @@ def teardown(state_path: Path) -> int:
     return 0 if not left else 1
 
 
+def experiment_counts(state_path: Path, experiment_id: int) -> int:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    run = state.get("run", "")
+    owned_ids = {
+        p["id"]
+        for role, p in state.get("projects", {}).items()
+        if owned(run, role, p.get("name", "")) and isinstance(p.get("id"), int)
+    }
+    engine = create_db_engine(get_settings())
+    try:
+        with engine.connect() as c:
+            c.execute(text("SET TRANSACTION READ ONLY"))
+            exp = c.execute(
+                text(
+                    "SELECT e.id, e.mode, e.prompt_version_a, e.prompt_version_b,"
+                    " e.finished_at IS NOT NULL AS finished, d.project_id"
+                    " FROM experiments e JOIN test_datasets d ON d.id = e.dataset_id"
+                    " WHERE e.id = :i"
+                ),
+                {"i": experiment_id},
+            ).one_or_none()
+            if exp is None or exp.project_id not in owned_ids:
+                print("error: not an experiment of this e2e run", file=sys.stderr)
+                return 2
+            rows = c.execute(
+                text(
+                    "SELECT prompt_version, passed, provenance, test_case_id"
+                    " FROM experiment_results WHERE experiment_id = :i"
+                    " ORDER BY test_case_id, prompt_version"
+                ),
+                {"i": experiment_id},
+            ).all()
+    finally:
+        engine.dispose()
+    versions = {}
+    for v in (exp.prompt_version_a, exp.prompt_version_b):
+        mine = [r for r in rows if r.prompt_version == v]
+        versions[v] = {
+            "passed": sum(1 for r in mine if r.passed is True),
+            "failed": sum(1 for r in mine if r.passed is False),
+            "not_evaluated": sum(1 for r in mine if r.passed is None),
+            "case_ids": [r.test_case_id for r in mine],
+        }
+    provenance: dict[str, int] = {}
+    for r in rows:
+        provenance[r.provenance] = provenance.get(r.provenance, 0) + 1
+    print(
+        json.dumps(
+            {
+                "experiment": exp.id,
+                "project": exp.project_id,
+                "mode": exp.mode,
+                "finished": exp.finished,
+                "results": len(rows),
+                "versions": versions,
+                "provenance": provenance,
+            }
+        )
+    )
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("setup", "teardown"))
+    parser.add_argument("command", choices=("setup", "teardown", "experiment-counts"))
     parser.add_argument("--state", required=True, type=Path)
+    parser.add_argument("--experiment", type=int, default=None)
     args = parser.parse_args(argv)
     endpoint = os.environ.get("LLMI_SEED_ENDPOINT", "http://127.0.0.1:8000/v1/traces")
+    if args.command == "experiment-counts":
+        if args.experiment is None or args.experiment < 1:
+            print("error: experiment-counts needs --experiment <id>", file=sys.stderr)
+            return 2
+        return experiment_counts(args.state, args.experiment)
     return (
         setup(args.state, endpoint) if args.command == "setup" else teardown(args.state)
     )

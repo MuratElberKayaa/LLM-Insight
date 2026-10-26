@@ -192,7 +192,7 @@ test("human review → decision → dataset → approved test case, end to end",
   await expect(tc).toHaveCount(1);
   await expect(tc.getByTestId("case-origin-trace")).toHaveAttribute("href", u(`/traces/${traceId}`));
   await expect(tc.getByTestId("case-input-text")).toContainText("[REDACTED:phone]");
-  await expect(tc).toContainText("Not evaluated yet");
+  await expect(tc).toContainText("Evaluated only by experiments");
   await shot(page, "phase4b-04-dataset");
   await page.goto(u("/traces?status=error&limit=100"));
   await expect(page.getByTestId("trace-table").locator("tr", { has: page.locator(`[data-trace-id="${traceId}"]`) }).getByTestId("review-cell")).toHaveText("1 review · 1 not closed");
@@ -251,6 +251,9 @@ test("Phase 4B pages: keyboard reachable controls with names, one h1, captioned 
   await expect(page.locator("h1")).toHaveCount(1);
   for (const label of ["Issue type", "Related span", "Evidence", "Hypothesis", "Reviewer"]) {
     const control = page.getByLabel(label, { exact: true });
+    // Phase 4D: streamed content waits in a hidden container until React reveals it, and
+    // locator.focus() does not wait for visibility (a hidden control cannot take focus).
+    await expect(control).toBeVisible();
     await control.focus();
     await expect(control).toBeFocused();
   }
@@ -261,6 +264,7 @@ test("Phase 4B pages: keyboard reachable controls with names, one h1, captioned 
   await page.goto(u("/datasets"));
   await expect(page.locator("h1")).toHaveCount(1);
   await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Datasets" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByLabel("New dataset name")).toBeVisible(); // revealed, not the hidden streamed copy
   await page.getByLabel("New dataset name").focus();
   await page.keyboard.press("Tab");
   await expect(page.getByTestId("dataset-submit")).toBeFocused();

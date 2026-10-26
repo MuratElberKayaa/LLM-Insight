@@ -34,7 +34,17 @@ const CONFLICT_MESSAGES: Record<ConflictCode, string> = {
   review_not_eligible: "Only a review whose hypothesis was supported, or rejected with an expected output you supply, can become a test case. Nothing was stored.",
   review_decision_frozen: "A test case already cites this review, so its decision can no longer change. The status can still change. Nothing was stored.",
   review_immutable: "A review's text and references cannot change. Nothing was stored.",
+  dataset_empty: "This dataset has no test case, so there is nothing to run. Nothing was run.",
+  dataset_too_large: "This dataset has more test cases than one experiment may run (at most 200). Nothing was run.",
+  budget_unverifiable:
+    "The estimated cost of at least one simulated call is unknown, so the budget cannot be shown to hold. Nothing was run. Remove the budget, or use a dataset whose calls are all priced.",
+  budget_exceeded: "The estimated cost of the run exceeds the budget. Nothing was run.",
+  real_llm_not_allowed: "Real provider runs are disabled on the backend. Nothing was run.",
+  real_mode_unavailable: "This build has no real provider executor; only mock runs exist. Nothing was run.",
+  experiment_time_limit: "The run took longer than the backend's time limit and was stopped. Nothing was stored.",
 };
+
+const BUSY_MESSAGE = "Other experiments are running (the backend runs only a few at once). Nothing was run; retry shortly.";
 
 /** Map a failed write to the message its form shows. */
 export function writeFailure(error: ApiFailure, what: string): ActionState {
@@ -43,7 +53,10 @@ export function writeFailure(error: ApiFailure, what: string): ActionState {
     case "invalid_request":
       return { ...base, message: `The backend refused ${what}: check ${(error.fields ?? []).join(", ") || "the fields"}. Nothing was stored.` };
     case "conflict":
-      return { ...base, message: error.code ? CONFLICT_MESSAGES[error.code] : `The backend refused ${what} as conflicting with stored data. Nothing was stored.` };
+      return {
+        ...base,
+        message: error.code !== undefined && Object.hasOwn(CONFLICT_MESSAGES, error.code) ? CONFLICT_MESSAGES[error.code as ConflictCode] : `The backend refused ${what} as conflicting with stored data. Nothing was stored.`,
+      };
     case "not_found":
       return { ...base, message: `The trace, review or dataset is not in this project (or no longer exists). Nothing was stored.` };
     case "payload_too_large":
@@ -56,7 +69,7 @@ export function writeFailure(error: ApiFailure, what: string): ActionState {
         message: `No answer from the backend. ${what[0]?.toUpperCase() ?? ""}${what.slice(1)} may or may not have been stored: refresh the page and check before submitting again.`,
       };
     case "rate_limited":
-      return { ...base, message: "Too many requests in a short time. Nothing was stored; retry shortly." };
+      return { ...base, message: error.code === "experiments_busy" ? BUSY_MESSAGE : "Too many requests in a short time. Nothing was stored; retry shortly." };
     case "storage_unavailable":
       return { ...base, message: "The backend database is unavailable. Nothing was stored; retry later." };
     case "malformed":

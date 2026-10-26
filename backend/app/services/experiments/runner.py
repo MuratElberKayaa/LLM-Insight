@@ -16,9 +16,14 @@ Cost per result: synthetic token counts priced at the stored price of
 (`openai`, experiment model) in force at the experiment's start, with the ledger's rules
 (`services/pricing.py`): no usage -> `usage_missing`, no price -> `price_missing`, never 0.
 Every mock result is `synthetic` (T39).
+
+Duration (Phase 4D): the caller may pass `checkpoint`, called before each (case, version) call.
+It raises to stop the run (the API's wall-clock deadline); the exception propagates, so the
+caller stores nothing. One evaluation is itself bounded (`services/evaluation`), so a run lasts
+at most the deadline plus one evaluation.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -149,9 +154,11 @@ def run(
     prices: Sequence[pricing.Price],
     at: datetime,
     budget: Decimal | None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> list[PlannedResult]:
     """Every (case, version) result in execution order. Raises `BudgetRefused` before any
-    call when a budget is given and cannot be shown to hold."""
+    call when a budget is given and cannot be shown to hold; `checkpoint` may raise to stop
+    the run."""
     if budget is not None:
         check_budget(cases, versions, model, provider, prices, at, budget)
     results: list[PlannedResult] = []
@@ -159,6 +166,8 @@ def run(
     stopped = False
     for case in sorted(cases, key=lambda c: c.id):
         for version in versions:
+            if checkpoint is not None:
+                checkpoint()
             if stopped:
                 results.append(
                     PlannedResult(

@@ -45,5 +45,14 @@ class ScriptedMockProvider:
             model=model, prompt_version=prompt_version, sanitized_input=sanitized_input
         )
 
+    def prompt_versions(self) -> dict[str, int]:
+        """The prompt versions the script answers, with the number of scripted inputs each
+        (Phase 4D: offered by `GET /api/v1/experiment-options`; any other version gets
+        `mock_no_scripted_output` for every case)."""
+        counts: dict[str, int] = {}
+        for version, _ in self.script:
+            counts[version] = counts.get(version, 0) + 1
+        return dict(sorted(counts.items()))
+
 
 GOLDEN_PROVIDER = ScriptedMockProvider(golden.SCRIPT)
