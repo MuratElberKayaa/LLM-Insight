@@ -46,14 +46,17 @@ export function proxy(request: NextRequest) {
   return response;
 }
 
-// Every path except the build's static assets and the image optimizer, which never dispatch a
-// Server Action. Phase 4 closure: `/favicon.ico` is no longer excluded. The app has no such
-// file, so a POST there rendered the not-found page and Next.js ran the Server Action named in
-// `Next-Action` without any of the checks above (ADR-22).
+// Every path except the build's static assets (`/_next/static/…`) and the image optimizer
+// (exactly `/_next/image`), which never dispatch a Server Action. Phase 4 closure: `/favicon.ico`
+// is no longer excluded. The app has no such file, so a POST there rendered the not-found page
+// and Next.js ran the Server Action named in `Next-Action` without any of the checks above
+// (ADR-22). Phase 5A (R71): the exclusions are whole path segments, not prefixes; the old
+// `_next/static|_next/image` also excluded `/_next/static`, `/_next/staticx`, `/_next/image/x`
+// and the like, which render the not-found page and ran the action the same way.
 export const config = {
   matcher: [
     {
-      source: "/((?!_next/static|_next/image).*)",
+      source: "/((?!_next/static/|_next/image$).*)",
     },
   ],
 };

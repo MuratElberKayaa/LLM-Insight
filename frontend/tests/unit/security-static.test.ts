@@ -64,10 +64,11 @@ describe("server/client boundary", () => {
   it("the request guard runs on every path except the static assets and the image optimizer", () => {
     // Phase 4 closure: a path excluded here gets none of the Host, method, origin and
     // Next-Action checks, and Next.js dispatches a Server Action on any rendered path
-    // (a POST to /favicon.ico ran one). Only these two never render a page.
+    // (a POST to /favicon.ico ran one). Only these two never render a page. Phase 5A (R71):
+    // whole segments, not prefixes (`/_next/staticx`, `/_next/image/x` ran an action too).
     const proxy = read(path.join(ROOT, "proxy.ts"));
     const sources = [...proxy.matchAll(/source: "([^"]*)"/g)].map((m) => m[1]);
-    assert.deepEqual(sources, ["/((?!_next/static|_next/image).*)"]);
+    assert.deepEqual(sources, ["/((?!_next/static/|_next/image$).*)"]);
   });
 
   it("has no route handlers (the UI cannot proxy the backend)", () => {

@@ -1,4 +1,6 @@
+import path from "node:path";
 import { defineConfig } from "@playwright/test";
+import { backendPython } from "./tests/setup/e2e-global-setup";
 
 /**
  * Browser-to-frontend-to-backend tests against the REAL local stack (no mocked responses):
@@ -8,6 +10,9 @@ import { defineConfig } from "@playwright/test";
  *   loopback port, for the backend-outage state.
  * - a third instance on 127.0.0.1:3003 with a wrong (well-formed) server-side token, for the
  *   unauthorized state (Phase 3B). Process env overrides frontend/.env.local in Next.js.
+ * - Phase 5A (T43): a second backend on 127.0.0.1:8001 with a tiny /api/v1 bucket and a fourth
+ *   dashboard on 127.0.0.1:3004 reading through it, for the live rate-limited state.
+ *   Process env overrides the backend's .env too (pydantic-settings).
  * Uses the installed Microsoft Edge (`channel: "msedge"`), so no browser download is needed.
  * One worker: the backend's /api/v1 rate limit is per client address.
  * Test data (Phase 3C, R41): the global setup creates this run's own projects and seeds them
@@ -52,6 +57,23 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
       env: { LLMI_API_TOKEN: "e2e-deliberately-wrong-token-0000000000000000" },
+    },
+    // Phase 5A (T43, dashboard half): a second backend with a tiny /api/v1 bucket (5 tokens, one
+    // more every 1000 s) on the same database, and a dashboard on :3004 that reads through it.
+    {
+      command: `"${backendPython()}" -m app`,
+      cwd: path.join(__dirname, "..", "backend"),
+      url: "http://127.0.0.1:8001/health/live",
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { LLMI_PORT: "8001", LLMI_RATE_LIMIT_API_RPS: "0.001", LLMI_RATE_LIMIT_API_BURST: "5" },
+    },
+    {
+      command: "node scripts/next.mjs start --hostname 127.0.0.1 --port 3004",
+      url: "http://127.0.0.1:3004/icon.svg",
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { LLMI_API_BASE_URL: "http://127.0.0.1:8001" },
     },
   ],
 });

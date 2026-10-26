@@ -182,7 +182,11 @@ def test_retry_then_success_is_a_recovered_call(live_backend, telemetry, client)
         (s for s in spans.values() if s["kind"] == "CLIENT"),
         key=lambda s: s["attributes"]["llminsight.attempt"],
     )
-    assert [e["span_id"] for e in recovered["evidence"]] == [s["span_id"] for s in attempts]
+    # Evidence is ordered by (start ns, span id) (ARCHITECTURE.md §5.6), not by attempt number:
+    # on a coarse clock the two mock attempts can share a start time (Phase 5A, R72).
+    assert [e["span_id"] for e in recovered["evidence"]] == [
+        s["span_id"] for s in sorted(attempts, key=lambda s: (s["start_ns"], s["span_id"]))
+    ]
     assert facts(recovered)["error_types"] == [attempts[0]["error_type"]] == ["429"]
     assert facts(recovered)["other_error_spans"] == 0
     assert recovered["hypothesis"]["error_interpretation"]["code"] == "rate_limit_status_recorded"
