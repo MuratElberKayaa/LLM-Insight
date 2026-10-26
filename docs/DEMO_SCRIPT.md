@@ -1,6 +1,6 @@
 # LLM Insight — Demo Script (3–5 min)
 
-Status: **final for the MVP (Phase 5B).** Every step below was run end to end on a clean clone in Phase 5B (`reports/phase-5b.md` §7, screenshots in `reports/phase-5b-screenshots/`). The demo uses **mock mode only**: every trace, output, token count, duration and experiment result is SYNTHETIC, nothing is sent to a provider and nothing is spent. Real mode is not part of the MVP.
+Status: **final for the MVP (Phase 5B; re-checked for the Phase 5 final release, `FINAL_DELIVERY_REPORT.md`).** Every step below was run end to end on a clean clone in Phase 5B (`reports/phase-5b.md` §7, screenshots in `reports/phase-5b-screenshots/`). The demo uses **mock mode only**: every trace, output, token count, duration and experiment result is SYNTHETIC, nothing is sent to a provider and nothing is spent. Real mode is not part of the MVP.
 
 ## Before the demo (setup, not shown)
 
@@ -28,7 +28,7 @@ Follow the root `README.md` quick start (or the clean-clone setup below): Postgr
 From a fresh clone, mock mode only, nothing real or paid. Commands run from the repository root in Git Bash; on Linux/macOS use `.venv/bin/` instead of `.venv/Scripts/`.
 
 1. `python -I scripts/dev/init_env.py` creates the git-ignored `.env` with generated secrets (never printed).
-2. `docker compose --profile app up -d --build --wait` starts PostgreSQL, the backend (migrates to head on start) and the dashboard on `http://127.0.0.1:3001`. The default `docker compose up` starts PostgreSQL only.
+2. `docker compose --profile app up -d --build --wait` starts PostgreSQL, the backend (migrates to head on start) and the dashboard on `http://127.0.0.1:3001`. The default `docker compose up` starts PostgreSQL only. Keep `--build`: without it compose reuses older local images with their old dependencies.
 3. Init, inside the backend container: `docker compose --profile app exec backend python -m app.cli create-key --project demo` (the first project is id 1, the dashboard default; the key is printed once: put it into `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>` in `.env`), then `docker compose --profile app exec backend python -m app.cli seed-prices`.
 4. Host tools for ingest. **The `app` profile does not by itself expose host OTLP ingestion** (R43): create a backend venv (`python -m venv backend/.venv`, `pip install -r backend/requirements.lock`, `pip install --no-deps -e backend`) and an SDK venv (`python -m venv sdk/.venv`, `pip install -r sdk/requirements-dev.lock`, `pip install --no-deps ./sdk`), then start `backend/.venv/Scripts/python -m app` from `backend/` (it uses the same database through `127.0.0.1:55432`).
 5. Demo traffic: `set -a; . ./.env; set +a`, then `sdk/.venv/Scripts/python -m demo_app.web --drive` (5 SYNTHETIC traces). Golden dataset: `backend/.venv/Scripts/python scripts/dev/seed_golden_dataset.py --project 1 --approved-by <name>` (add `--api http://127.0.0.1:<port>` if the backend is not on 8000).

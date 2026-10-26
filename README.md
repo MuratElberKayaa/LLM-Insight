@@ -4,7 +4,7 @@ A local, verifiable observability MVP for LLM applications: **Observe → Diagno
 
 An instrumented application sends **metadata-only** OpenTelemetry GenAI spans over real **OTLP/HTTP binary protobuf** to a FastAPI backend. The backend stores them idempotently in PostgreSQL, prices provider-reported usage with a versioned `Decimal` catalogue (unknown cost stays unknown, never `$0`), and a Next.js dashboard lets a person explore traces, read automatic diagnostics, record a human failure review, turn a reviewed trace into an approved regression test case, and compare two prompt versions in a **mock-only, SYNTHETIC** A/B experiment on a golden dataset.
 
-> **Status: MVP, authorized for local use only.** Real-provider mode is disabled and has never been validated against a real provider. Every experiment result and all demo telemetry are SYNTHETIC. Estimated costs are not provider invoices. Public deployment is not authorized (`docs/SECURITY.md` §7). Evidence for every claim below is in `docs/reports/` (latest: `docs/reports/phase-5b.md`).
+> **Status: MVP, authorized for local use only.** Real-provider mode is disabled and has never been validated against a real provider. Every experiment result and all demo telemetry are SYNTHETIC. Estimated costs are not provider invoices. Public deployment is not authorized (`docs/SECURITY.md` §7). The final technical delivery document is `docs/FINAL_DELIVERY_REPORT.md`, with a short portfolio summary in `docs/PROJECT_PITCH.md`. Evidence for every claim below is in `docs/reports/` (Phase 5 evidence: `docs/reports/phase-5a.md`, `docs/reports/phase-5b.md`).
 
 ## Contents
 
@@ -14,6 +14,7 @@ An instrumented application sends **metadata-only** OpenTelemetry GenAI spans ov
 - [Quick start (host stack)](#quick-start-host-stack)
 - [Alternative: compose `app` profile](#alternative-compose-app-profile)
 - [Demo walkthrough](#demo-walkthrough)
+- [Screenshots](#screenshots)
 - [Configuration](#configuration)
 - [Security boundaries](#security-boundaries)
 - [Running the tests](#running-the-tests)
@@ -66,7 +67,8 @@ Verified on Windows 11 with Git Bash (the commands below use Git Bash syntax; on
 | Tool | Version | Note |
 |---|---|---|
 | Python | 3.12 (3.12.6 used) | separate venvs for `backend/` and `sdk/`, from the lock files |
-| Docker Desktop / Engine with Compose v2 | Engine 28.5.1 used | PostgreSQL 17; optional `app` profile |
+| Docker Desktop / Engine with Compose v2 | Engine 28.5.1 used | runs PostgreSQL and the optional `app` profile |
+| PostgreSQL | 17 (image `postgres:17`; 17.11 used) | started by `docker compose`; no native installation needed |
 | Node.js | 22.23.4 | installed project-locally by `scripts/dev/install_node.py` (SHA-256 checked); the global Node is not changed |
 | Microsoft Edge | installed | only for the Playwright browser tests (no browser download) |
 | Git | any recent | |
@@ -139,7 +141,7 @@ docker compose --profile app exec backend python -m app.cli create-key --project
 docker compose --profile app exec backend python -m app.cli seed-prices
 ```
 
-**`docker compose --profile app` does not by itself expose host OTLP ingestion.** The backend container shares one network namespace with the dashboard and binds `127.0.0.1` inside it; only the dashboard port is published (R43). To send telemetry from a host SDK or `demo_app`, run a host backend on the same database as in quick-start step 2 (`backend/.venv/Scripts/python -m app`, which reaches PostgreSQL on `127.0.0.1:55432`) and keep `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:8000/v1/traces`. The seed script also needs the host backend venv. The default `docker compose up` starts PostgreSQL only. Step-by-step clean-clone instructions, including relocated ports when the defaults are taken, are in `docs/DEMO_SCRIPT.md`.
+**`docker compose --profile app` does not by itself expose host OTLP ingestion.** The backend container shares one network namespace with the dashboard and binds `127.0.0.1` inside it; only the dashboard port is published (R43). To send telemetry from a host SDK or `demo_app`, run a host backend on the same database as in quick-start step 2 (`backend/.venv/Scripts/python -m app`, which reaches PostgreSQL on `127.0.0.1:55432`) and keep `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:8000/v1/traces`. The seed script also needs the host backend venv. The default `docker compose up` starts PostgreSQL only. Always keep `--build` after pulling new commits: without it, compose reuses previously built local images with their old dependencies (for example a backend image built before the R74 `certifi` fix). Step-by-step clean-clone instructions, including relocated ports when the defaults are taken, are in `docs/DEMO_SCRIPT.md`.
 
 ## Demo walkthrough
 
@@ -151,6 +153,16 @@ A 3–5 minute script is in `docs/DEMO_SCRIPT.md`. In short, on `http://127.0.0.
 4. **Convert to a regression test case**: choose the `golden-synthetic-v1` dataset, type a synthetic input (to make the scripted mock answer it, use a golden input such as the G02 input from `backend/app/services/experiments/golden.py`), choose the rule, optionally an expected output, tick the approval box and save. Without the tick nothing is stored; e-mail, phone, long numbers and key-like values are masked.
 5. **Experiments → New mock experiment**: dataset `golden-synthetic-v1`, `golden-prompt-v1` vs `golden-prompt-v2`, a priced model, tick the mock-only confirmation, run.
 6. **Results**: SYNTHETIC banner, passed / failed / not evaluated per version with the pass-rate denominator, synthetic latency, estimated cost or "Total unknown", and every case (including your approved case, linked to its review and trace) under both versions. On the golden set no better version is named, because one case timed out under v2 (incomplete evidence).
+
+## Screenshots
+
+Real captures of this dashboard, taken during the Phase 5B clean-clone demo run (headless Microsoft Edge, SYNTHETIC mock data only; `docs/reports/phase-5b.md` §7):
+
+| Overview | Trace detail and diagnostics | Experiment results |
+|---|---|---|
+| ![Overview](docs/reports/phase-5b-screenshots/5b-01-overview.png) | ![Trace detail](docs/reports/phase-5b-screenshots/5b-03-trace-detail.png) | ![Experiment results](docs/reports/phase-5b-screenshots/5b-07-experiment-results.png) |
+
+More: [trace list](docs/reports/phase-5b-screenshots/5b-02-traces.png), [review decided](docs/reports/phase-5b-screenshots/5b-04-review-decided.png), [approved test case](docs/reports/phase-5b-screenshots/5b-05-test-case-approved.png), [experiment setup](docs/reports/phase-5b-screenshots/5b-06-experiment-setup.png), [case detail](docs/reports/phase-5b-screenshots/5b-08-case-detail.png).
 
 ## Configuration
 
@@ -197,7 +209,7 @@ npm run test:e2e                                                                
 cd .. && python -I scripts/verify_phase0.py --quiet                             # documentation consistency
 ```
 
-The E2E suite needs the backend on `127.0.0.1:8000` with migrations at head and prices seeded, and free ports 3001–3004 and 8001; it creates and deletes its own run projects. Without `LLMI_TEST_REQUIRE_DB=1`, integration tests skip with a reason when PostgreSQL is unreachable. CI (`.github/workflows/ci.yml`) runs everything except the Playwright suite and the compose image build. The scenario-by-scenario status of the 48 acceptance tests is in `docs/TEST_MATRIX.md`.
+The E2E suite needs the backend on `127.0.0.1:8000` with migrations at head and prices seeded, and free ports 3001–3004 and 8001; it creates and deletes its own run projects. Without `LLMI_TEST_REQUIRE_DB=1`, integration tests skip with a reason when PostgreSQL is unreachable. CI (`.github/workflows/ci.yml`, Ubuntu 24.04) runs the commands above except the Playwright suite; it also validates both compose configurations and runs `npm audit`. The compose image build, `pip-audit`, `bandit`, the history secret scan and the route probes in `scripts/qa/` are local release gates (`docs/FINAL_DELIVERY_REPORT.md` §15). The scenario-by-scenario status of the 48 acceptance tests is in `docs/TEST_MATRIX.md`.
 
 ## Known limitations
 
@@ -215,6 +227,8 @@ Full risk register: `docs/SOURCES_AND_RISKS.md`.
 
 | Document | Content |
 |---|---|
+| `docs/FINAL_DELIVERY_REPORT.md` | final MVP delivery report: features, acceptance, security, benchmark, limitations, release evidence |
+| `docs/PROJECT_PITCH.md` | portfolio pitch and short project descriptions |
 | `docs/PRD.md` | scope, P0/P1, non-goals |
 | `docs/ADR.md` | binding architecture decisions |
 | `docs/ARCHITECTURE.md` | data flow, DB columns, `/api/v1` contract, version pins |
