@@ -179,6 +179,7 @@ All settings come from `.env` (template: `.env.example`, placeholders only; `ini
 | `LLMI_ALLOW_REAL_LLM` | `false` | real experiments are refused; the backend has no real executor |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `…_HEADERS` | `http://127.0.0.1:8000/v1/traces` / `X-Project-Key=<key>` | SDK export target and ingest key |
 | `LLMI_PROVIDER_MODE` | `mock` | demo app provider; `real` requires an OpenAI key and explicit approval and is not part of the MVP |
+| `LLMI_LIVE_*`, `LLMI_REAL_LLM_BUDGET_USD` | empty (= refused) | Phase 6A live runner `python -m demo_app.live_openai`: dry run by default; `--execute` needs every key (consent phrase, allowlists, token, request, cost and session limits) — see `docs/PHASE6_LIVE_INTEGRATION_PLAN.md` §G. No real call is part of the MVP |
 | `LLMI_DASHBOARD_PROJECT_ID` | `1` | default project of the dashboard (pages also accept `?project=<id>`) |
 
 **Telemetry ingest from your own app:** install the SDK (see `sdk/README.md`), create a key with `create-key`, and set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>` and `OTEL_SERVICE_NAME`. Any OTLP/HTTP **binary protobuf** exporter works within the supported subset (`docs/TELEMETRY_CONTRACT.md` §0); JSON and gRPC are not accepted. Prompts, completions and other content are never stored: non-allowlisted attributes are dropped and counted.

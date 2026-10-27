@@ -212,6 +212,46 @@ completion = llm.create_chat_completion(
   including OpenAI request IDs. That is the application's logging configuration; the SDK's
   logger (`llm_insight_sdk`) never logs content, keys or provider error text.
 
+## Responses API and live execution guard (Phase 6A)
+
+```python
+from llm_insight_sdk.openai_adapter import ObservedOpenAIClient, OpenAIResponsesTextAdapter
+from llm_insight_sdk.providers import TextRequest
+
+llm = ObservedOpenAIClient(telemetry, openai.OpenAI(max_retries=0), provenance="real")
+response = llm.create_response(
+    model="gpt-5.4-mini", input="...", max_output_tokens=64, service_tier="default"
+)  # store=False is always sent
+outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcome
+    TextRequest(model="gpt-5.4-mini", input_text="...", max_output_tokens=64)
+)
+```
+
+- **Surface (ADR-28):** `responses.create`, sync, non-streaming text. Operation `chat`,
+  `openai.api.type = responses`; the backend contract (`llminsight.attrmap.v1`) is
+  unchanged. `stream`, `stream_options`, `background`, `conversation`,
+  `previous_response_id`, `tools`, `tool_choice` and `store` other than `False` are refused
+  before sending.
+- **Usage:** `usage.input_tokens` / `output_tokens`, `input_tokens_details.cached_tokens` /
+  `cache_write_tokens`, `output_tokens_details.reasoning_tokens`, type-checked (the `openai`
+  library does not validate bodies); anything missing or mistyped stays unknown.
+- **Status:** `incomplete` records `incomplete_details.reason` as the finish reason; `failed`,
+  another status or an unreadable body ends the span with `ERROR` and
+  `openai.response.failed` / `.unexpected_status` / `.malformed`; the response is returned.
+- **Retries:** one attempt by default; only a 429 that is not `insufficient_quota` may be
+  retried. Timeouts, connection errors and 5xx are never retried (they may have been billed).
+- **`TextGenerationAdapter` (`llm_insight_sdk.providers`):** provider failures become an
+  outcome with a stable `error_category`; the provider object is on `provider_response`,
+  outside `repr()`.
+- **Live guard (`llm_insight_sdk.live`, ADR-29):** `evaluate_policy(env, now=...)` lists
+  every refusal; real execution needs `LLMI_PROVIDER_MODE=real`, `LLMI_LIVE_CONSENT=
+  openai-paid-calls`, allowlists, limits and a fresh price catalogue — an API key alone is
+  never enough. `LiveSession` reserves each request's worst-case `Decimal` cost before
+  sending and books estimates (or bounds, never 0) afterwards. In-process only.
+- **Runner (ADR-30):** `python -m demo_app.live_openai` prints a dry-run plan by default;
+  `--execute` sends one SYNTHETIC request only when every gate passes
+  (`docs/PHASE6_LIVE_INTEGRATION_PLAN.md`). Phase 6A tests never contact a provider.
+
 ## What is recorded
 
 One `CLIENT` span per physical attempt, named `{gen_ai.operation.name} {gen_ai.request.model}`

@@ -247,4 +247,42 @@ The architectural review of Phase 4B (decisions D1–D9, `reports/phase-4b.md` �
 - **Affected files:** `frontend/proxy.ts` (matcher, R71), `frontend/tests/unit/security-static.test.ts`, `frontend/tests/e2e/phase4d.spec.ts`, `SECURITY.md` §5, `ARCHITECTURE.md` §5.8.
 - **Tests:** the static matcher test; the live replay of a genuine `submitExperiment` request to ten non-write paths, including `/favicon.ico` and the `/_next/static`, `/_next/staticx` and `/_next/image/x` look-alikes (nothing stored; `405`, or `404` from the static handler), with the write-page control (exactly one run); the raw-path probe of `reports/phase-5a.md` §3.
 
+## 8. Phase 6A decisions (recorded for the architectural review, 2026-10-27)
+
+ADR-28…30 are **accepted within the Phase 6A instruction**, which asked for them (provider abstraction, Responses API, execution permission, cost guards, demo runner); they are implemented on branch `feature/phase-6a-live-foundation` and recorded here for the architectural review, which may revise them before Phase 6B. They supersede nothing; ADR-01…27 are unchanged. Design detail: `PHASE6_LIVE_INTEGRATION_PLAN.md`.
+
+### ADR-28 — OpenAI Responses API in the existing adapter, mapped onto `llminsight.attrmap.v1`
+- **Status:** Accepted within the Phase 6A instruction; recorded for the architectural review. No migration, no backend change; ADR-05, ADR-13, ADR-15, ADR-19 unchanged.
+- **Context:** the Phase 2B adapter instruments Chat Completions only. Observing current OpenAI usage needs the Responses API. The pinned semconv (`9ffc7e00c639`, `openai.md`) defines `openai.api.type = responses` but no Responses-specific operation name, and says instrumentations SHOULD use the applicable predefined value.
+- **Decision:**
+  - `ObservedOpenAIClient.create_response` (sync) wraps `client.responses.create` in the same per-attempt CLIENT span machinery: operation `chat`, `openai.api.type = responses`, Responses usage fields mapped to the five existing `gen_ai.usage.*` counters, `max_output_tokens` → `gen_ai.request.max_tokens`, `incomplete_details.reason` recorded verbatim as the finish reason of an `incomplete` response, none for `completed`.
+  - Non-streaming text only: `stream`, `stream_options`, `background`, `conversation`, `previous_response_id`, `tools`, `tool_choice` and `store ≠ False` are refused before sending; `store=False` is always sent.
+  - A returned response that reports failure, an unexpected status or an unreadable body ends its span with status `ERROR` and `error.type` `openai.response.failed` / `.unexpected_status` / `.malformed` (new additive `InferenceRecorder.mark_failed`), and is returned unchanged. Every field is type-checked because `openai` 3.28.0 does not validate bodies.
+  - Default one attempt; retry only an unambiguous 429 (not `insufficient_quota`). Timeouts, connection errors and 5xx are never retried automatically (duplicate-billing risk).
+  - A provider-neutral `TextGenerationAdapter` protocol (`llm_insight_sdk.providers`) with one implementation, `OpenAIResponsesTextAdapter`, returning metadata-only outcomes and stable error categories.
+- **Alternatives rejected:** a separate Responses adapter module (duplicates the span, retry and client checks); a new operation name or `attrmap.v2` (no semconv basis; breaks ADR-13 detection for no gain); mapping `max_output_tokens` to Chat's `length` (invents a provider value); allowing built-in tools (their charges are not in the catalogue, so a `computed` cost would be understated).
+- **Consequences:** Responses spans are stored, priced (`service_tier=default` on `api.openai.com`) and shown exactly like Chat spans. Diagnostics do not interpret the Responses `incomplete` vocabulary (R82). Async Responses support and streaming are later work.
+- **Affected files:** `sdk/src/llm_insight_sdk/{openai_adapter,providers,instrumentation}.py`, `sdk/README.md`, `TELEMETRY_CONTRACT.md` §3 note.
+- **Tests:** `sdk/tests/unit/test_openai_responses.py`, `sdk/tests/integration/test_live_responses.py`; Phase 2B Chat tests unchanged.
+
+### ADR-29 — Fail-closed live execution guard with conservative in-process spend accounting
+- **Status:** Accepted within the Phase 6A instruction; recorded for the architectural review. Refines the R05 control ("mock by default, flag, per-run approval and budget") for SDK-side callers; backend `LLMI_ALLOW_REAL_LLM` and ADR-25 are unchanged.
+- **Decision:**
+  - Real provider execution is allowed only when `llm_insight_sdk.live.evaluate_policy` finds no refusal: `LLMI_PROVIDER_MODE=real`, the exact consent phrase `LLMI_LIVE_CONSENT=openai-paid-calls`, an API key present, no `OPENAI_BASE_URL`, provider and model allowlists (models only with a verified price), positive request/input/output/money limits under hard caps, bounded timeout, retries and concurrency, and price evidence at most 14 days old. An API key alone never enables a call.
+  - `LiveSession` reserves each request's worst-case cost before sending (input bound from UTF-8 bytes plus a framing allowance, output bound from `max_output_tokens`, every allowed attempt, the higher input rate, rounded up) against a per-request cap and a session budget, with a request count and a non-blocking concurrency limit. After the call, an attempt with priceable provider-reported usage is booked at the backend formula's estimate; any other attempt at its bound (never 0). Usage or attempts beyond the bound, or an unknown estimate, halt the session.
+  - Money is `Decimal` throughout. Every figure is an estimate; the billed amount is never claimed.
+  - The SDK carries a read-only mirror of the verified catalogue (ADR-01 forbids importing the backend); a live integration test compares it with the seeded `model_prices` rows.
+- **Alternatives rejected:** enabling real mode by the presence of `OPENAI_API_KEY` (the instruction forbids it); booking failed attempts at 0 (unknown is not zero, ADR-11); fetching prices from the backend API at run time (adds an authenticated read path to the SDK for a bound that must hold offline); a persistent cross-run ledger (a file is not a durable, concurrency-safe store; the provider-side project budget is the real account-level control, a 6B prerequisite).
+- **Consequences:** limits are per process and reset at exit (R79, like R67); the input bound rests on a tokenization assumption verified only after the first real call (R81); the mirror must be updated together with the backend catalogue (R83).
+- **Affected files:** `sdk/src/llm_insight_sdk/live.py`, `.env.example`, `SECURITY.md` §2/§6, `PRICING.md` §2 note.
+- **Tests:** `sdk/tests/unit/test_live_guard.py`, `test_live_runner.py`, `test_sdk_price_mirror_equals_the_seeded_catalogue`.
+
+### ADR-30 — Local live demo runner: dry run by default, no browser surface
+- **Status:** Accepted within the Phase 6A instruction; recorded for the architectural review. ADR-08, ADR-22, ADR-27 unchanged: no dashboard write, route or Server Action is added.
+- **Decision:** `python -m demo_app.live_openai` is the only entry point for a real call. Without `--execute` it prints the policy decision, the backend readiness (an empty OTLP request: `200` and nothing written) and the worst-case plan, and never creates a provider client. With `--execute` it sends at most one fixed SYNTHETIC request when every gate passes, under a root span, then flushes telemetry and prints metadata only (trace ID, status, models, token counts, duration, estimated cost, dashboard URL and API path). It reads the key from the environment and pins `https://api.openai.com/v1`. Exit codes 0/1/2 (done / provider failure / refused).
+- **Alternatives rejected:** a dashboard "live call" button or an endpoint that accepts a key (an unauthenticated spend surface on a page without login, R54); arbitrary user prompts in the runner (content and cost become unbounded).
+- **Consequences:** a person with shell access and the explicit configuration can spend up to the configured ceilings per run; running the runner repeatedly is bounded per run only (R79).
+- **Affected files:** `demo_app/live_openai.py`, `README.md`, `sdk/README.md`, `DEMO_SCRIPT.md` note.
+- **Tests:** `sdk/tests/unit/test_live_runner.py`, `sdk/tests/integration/test_live_responses.py::test_live_runner_trace_reaches_the_database_and_the_read_api`.
+
 **Supersession rule:** changing an accepted ADR needs evidence and a new ADR entry that names the one it supersedes.

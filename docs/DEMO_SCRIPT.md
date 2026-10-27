@@ -48,4 +48,4 @@ If the demo breaks: `docker compose --profile app down -v` (this deletes the dem
 
 ## Real mode (not part of the MVP)
 
-Real-provider experiments are refused by the backend (`409`) and the backend has no real executor. The SDK's OpenAI adapter is tested offline only. A real run would need explicit approval, an `OPENAI_API_KEY`, a budget, durable idempotency (R66) and a pre-call budget guard first.
+Real-provider experiments are refused by the backend (`409`) and the backend has no real executor. The SDK's OpenAI adapter is tested offline only. A real run would need explicit approval, an `OPENAI_API_KEY`, a budget, durable idempotency (R66) and a pre-call budget guard first. Phase 6A added that pre-call guard and a local CLI for one SDK-side request (`python -m demo_app.live_openai`, dry run by default, ADR-30); it is not part of this demo, experiments stay mock-only, and no real call has been made.

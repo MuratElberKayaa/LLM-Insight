@@ -111,6 +111,7 @@ class InferenceRecorder:
         self._on_withheld = on_withheld
         self._classify = classify
         self._usage_complete = False
+        self._failure: str | None = None
 
     def _set(self, key: str, value: object, rule: _guards.Rule | None = None) -> None:
         if rule is not None:
@@ -160,6 +161,12 @@ class InferenceRecorder:
         except Exception:  # telemetry must never break the call
             logger.debug("llm_insight_sdk: recording metadata failed", exc_info=False)
 
+    def mark_failed(self, error_type: str) -> None:
+        """The attempt returned a response that reports a failure (no exception reached the
+        adapter). The span ends with status `ERROR` and this `error.type`; the response is
+        still returned to the application unchanged."""
+        self._failure = error_type
+
     def _record_usage(self, usage: TokenUsage) -> None:
         counters = {
             "gen_ai.usage.input_tokens": usage.input_tokens,
@@ -184,8 +191,8 @@ class InferenceRecorder:
         try:
             if not self._usage_complete:
                 self._span.set_attribute("llminsight.usage_source", "unknown")
-            if exc is not None:
-                error_type = self._classify(exc)
+            error_type = self._classify(exc) if exc is not None else self._failure
+            if error_type is not None:
                 if _guards.check(error_type, _guards.ERROR_TYPE) != error_type:
                     error_type = OTHER_ERROR
                 self._span.set_attribute("error.type", error_type)

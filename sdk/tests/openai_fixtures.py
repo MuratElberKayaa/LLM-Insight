@@ -73,6 +73,66 @@ def completion_body(
     return body
 
 
+def response_body(
+    *,
+    model: str = "gpt-5.4-mini-2026-03-17",
+    usage: dict[str, Any] | None | bool = True,
+    service_tier: str | None = "default",
+    response_id: str | None | bool = True,
+    status: str | None = "completed",
+    incomplete_reason: str | None = None,
+) -> dict[str, Any]:
+    """A Responses API body (`openai.types.responses.Response`, openai 3.28.0). `usage=True`
+    gives the T19 example in Responses field names: 1200 input (1000 cached), 300 output
+    (200 reasoning). `response_id=True` generates one; None omits the field."""
+    body: dict[str, Any] = {
+        "object": "response",
+        "created_at": 1_792_900_000,
+        "model": model,
+        "output": [
+            {
+                "type": "message",
+                "id": "msg_SYNTHETIC",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": COMPLETION_SENTINEL, "annotations": []}
+                ],
+            }
+        ],
+        "instructions": None,
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        "store": False,
+    }
+    if response_id is True:
+        body["id"] = f"resp_SYNTHETIC{uuid.uuid4().hex}"
+    elif isinstance(response_id, str):
+        body["id"] = response_id
+    if status is not None:
+        body["status"] = status
+    if incomplete_reason is not None:
+        body["incomplete_details"] = {"reason": incomplete_reason}
+    if service_tier is not None:
+        body["service_tier"] = service_tier
+    if usage is True:
+        body["usage"] = {
+            "input_tokens": 1200,
+            "input_tokens_details": {"cached_tokens": 1000, "cache_write_tokens": 0},
+            "output_tokens": 300,
+            "output_tokens_details": {"reasoning_tokens": 200},
+            "total_tokens": 1500,
+        }
+    elif isinstance(usage, dict):
+        body["usage"] = usage
+    return body
+
+
+def response_ok(**kw: Any) -> Step:
+    return Step(200, response_body(**kw))
+
+
 def error_body(kind: str = "rate_limit_error") -> dict[str, Any]:
     """Provider error bodies can quote the request; the adapter must never export them."""
     return {"error": {"message": ERROR_SENTINEL, "type": kind, "code": kind, "param": None}}
@@ -83,6 +143,8 @@ class Step:
     status: int = 200
     body: dict[str, Any] | None = None
     raise_: type[Exception] | None = None  # an httpx2 transport error class
+    raw: bytes | None = None  # a raw body (malformed-response tests)
+    content_type: str = "application/json"
 
 
 @dataclass
@@ -100,6 +162,9 @@ class FakeOpenAI:
         if step.raise_ is not None:
             raise step.raise_("SYNTHETIC transport failure", request=request)
         headers = {"x-request-id": REQUEST_ID_SENTINEL}
+        if step.raw is not None:
+            headers["content-type"] = step.content_type
+            return httpx2.Response(step.status, content=step.raw, headers=headers)
         return httpx2.Response(step.status, json=step.body or {}, headers=headers)
 
     def request_json(self, i: int) -> dict[str, Any]:
@@ -127,6 +192,21 @@ def ok(**kw: Any) -> Step:
 
 def fail(status: int, kind: str = "api_error") -> Step:
     return Step(status, error_body(kind))
+
+
+def quota_exhausted() -> Step:
+    """A 429 whose error code says the quota is exhausted (never worth retrying)."""
+    return Step(
+        429,
+        {
+            "error": {
+                "message": ERROR_SENTINEL,
+                "type": "insufficient_quota",
+                "code": "insufficient_quota",
+                "param": None,
+            }
+        },
+    )
 
 
 # ---------------------------------------------------------------- network prohibition
