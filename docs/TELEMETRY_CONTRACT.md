@@ -150,7 +150,7 @@ Anything not listed below is dropped before persistence and counted in `spans.se
 | `gen_ai.usage.reasoning.output_tokens` | int | `reasoning_output_tokens` | Subset of output; never added again |
 | `error.type` | string, ≤ 256, `[A-Za-z0-9_][A-Za-z0-9_.:$/-]*` | `spans.error_type` | Stable. A low-cardinality identifier (`timeout`, `500`, `openai.RateLimitError`, `_OTHER`); a description with spaces or control characters is dropped and counted (R21) |
 | `server.address`, `server.port` | string/int | JSONB | Stable |
-| `openai.request.service_tier`, `openai.response.service_tier`, `openai.response.system_fingerprint`, `openai.api.type` | string | JSONB | OpenAI conventions |
+| `openai.request.service_tier`, `openai.response.service_tier`, `openai.response.system_fingerprint`, `openai.api.type` | string | JSONB | OpenAI conventions. `openai.api.type` is `chat_completions` or (Phase 6A, ADR-28) `responses`; a Responses span keeps operation `chat`, so this table and v1 are unchanged |
 
 **Alias precedence (ADR-14):** when both the standard name and its alias are present on one span, the **standard value wins**. The alias is dropped and counted.
 
