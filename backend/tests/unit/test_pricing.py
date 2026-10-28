@@ -377,6 +377,34 @@ def test_request_tier_alone_does_not_prove_the_served_tier():
     )
 
 
+@pytest.mark.parametrize(
+    "attrs",
+    [
+        {},
+        {"server.address": "generativelanguage.googleapis.com"},
+        OPENAI_STANDARD,  # OpenAI tier attributes prove nothing about a Gemini call
+    ],
+)
+def test_a_gemini_price_never_applies_because_the_billing_tier_is_unprovable(attrs):
+    """ADR-35: even a stored gcp.gemini row (synthetic here) is not applied, so a Free Tier
+    call can never be stored as a computed paid-tier cost, and unknown never becomes 0."""
+    gemini = _synthetic(provider="gcp.gemini", model="gemini-3.1-flash-lite")
+    out = assess(
+        tokens(20, 32, 4, None, 30),
+        [gemini],
+        provider="gcp.gemini",
+        resp="gemini-3.1-flash-lite",
+        attrs=attrs,
+    )
+    assert out == pricing.unknown("price_missing")
+    assert pricing.price_applicable("gcp.gemini", attrs) is False
+
+
+def test_openai_prices_never_apply_to_a_gemini_call():
+    out = assess(tokens(10, 5), CATALOGUE, provider="gcp.gemini", resp="gpt-5-mini")
+    assert out == pricing.unknown("price_missing")
+
+
 def test_providers_without_billing_modes_need_no_tier():
     out = assess(
         tokens(1, 1), [_synthetic()], provider="synthetic.test", resp="synthetic-model", attrs={}

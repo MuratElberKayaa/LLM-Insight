@@ -180,6 +180,7 @@ All settings come from `.env` (template: `.env.example`, placeholders only; `ini
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `…_HEADERS` | `http://127.0.0.1:8000/v1/traces` / `X-Project-Key=<key>` | SDK export target and ingest key |
 | `LLMI_PROVIDER_MODE` | `mock` | demo app provider; `real` requires an OpenAI key and explicit approval and is not part of the MVP |
 | `LLMI_LIVE_*`, `LLMI_REAL_LLM_BUDGET_USD` | empty (= refused) | Phase 6A live runner `python -m demo_app.live_openai`: dry run by default; `--execute` needs every key (consent phrase, allowlists, token, request, cost and session limits) — see `docs/PHASE6_LIVE_INTEGRATION_PLAN.md` §G. No real call is part of the MVP |
+| `LLMI_GEMINI_MODE`, `LLMI_GEMINI_BILLING_TIER`, `LLMI_GEMINI_TIER_CHECKED_ON`, `GEMINI_API_KEY` | empty (= refused) | Phase 6C-A Gemini Free Tier runner `python -m demo_app.live_gemini`: dry run by default; `--execute` sends at most one SYNTHETIC request and needs `free-tier` mode, the consent phrase `gemini-free-tier-single-call`, the operator's Free Tier attestation (an operator check, not proof from Google billing), the verified model allowlist and the hard caps; it refuses `GOOGLE_API_KEY`, Vertex AI and base-URL variables. Gemini cost is always `unknown`, never 0 — see `docs/PHASE6_LIVE_INTEGRATION_PLAN.md` Part II |
 | `LLMI_DASHBOARD_PROJECT_ID` | `1` | default project of the dashboard (pages also accept `?project=<id>`) |
 
 **Telemetry ingest from your own app:** install the SDK (see `sdk/README.md`), create a key with `create-key`, and set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS=X-Project-Key=<key>` and `OTEL_SERVICE_NAME`. Any OTLP/HTTP **binary protobuf** exporter works within the supported subset (`docs/TELEMETRY_CONTRACT.md` §0); JSON and gRPC are not accepted. Prompts, completions and other content are never stored: non-allowlisted attributes are dropped and counted.
@@ -214,7 +215,8 @@ The E2E suite needs the backend on `127.0.0.1:8000` with migrations at head and 
 
 ## Known limitations
 
-- **No real-provider validation.** The OpenAI adapter is tested offline only; no real OpenAI call has ever been made by this project; real mode is disabled; experiments are mock-only and SYNTHETIC (R62).
+- **No real-provider validation.** The OpenAI and Gemini (Phase 6C-A) adapters are tested offline only; no real OpenAI or Gemini call has ever been made by this project; real mode is disabled; experiments are mock-only and SYNTHETIC (R62).
+- **Gemini cost is never computed:** the Free/paid billing tier cannot be shown from telemetry, so Gemini usage rows always have `unknown` cost (ADR-35); the Free Tier is an operator attestation (R90).
 - **Costs are estimates** from provider-reported usage and a verified catalogue, not invoices; models without a verified price show `unknown` (R28, R29).
 - **Best-effort telemetry:** no persistent queue; spans can be lost when the backend is down longer than the exporter's timeout, or on a crash (R26). Not a billing-grade system.
 - **Per-process limits:** rate limits, experiment run bounds and counters live in the single backend process and reset on restart (R09, R23, R67).

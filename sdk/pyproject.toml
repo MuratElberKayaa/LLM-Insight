@@ -21,6 +21,9 @@ dependencies = [
 # The OpenAI adapter (llm_insight_sdk.openai_adapter). Pinned per ARCHITECTURE.md §6; the
 # core SDK never imports it.
 openai = ["openai==3.28.0"]
+# The Gemini Developer API adapter (llm_insight_sdk.gemini_adapter, Phase 6C-A, ADR-33).
+# google-genai 2.30.1 was uploaded 2026-10-13 (two-week rule); its transports are httpx.
+gemini = ["google-genai==2.30.1"]
 dev = [
     "pytest==9.1.1",
     "ruff==0.17.0",
@@ -29,6 +32,8 @@ dev = [
     "psycopg[binary]==3.3.6",
     # Offline adapter tests (fake transports only; no request ever leaves the machine).
     "openai==3.28.0",
+    # Offline Gemini adapter tests (fake httpx transports only).
+    "google-genai==2.30.1",
     # FastAPI root-span demo (demo_app/web.py, Phase 2C): the backend's exact pins.
     "fastapi==0.143.0",
     "uvicorn==0.54.0",
