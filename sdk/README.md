@@ -236,6 +236,13 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
 - **Live guard environment (ADR-31):** besides `OPENAI_BASE_URL`, the guard refuses
   `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`: the `openai` library
   reads them itself, and a custom `Authorization` header would replace the checked key.
+  `OPENAI_ADMIN_KEY` is refused too (ADR-32).
+- **Live endpoint boundary (ADR-32):** `live_client_problems(client)` /
+  `check_live_client(client)` accept only an `openai.OpenAI` for exactly
+  `https://api.openai.com/v1/` with no redirect following, no proxy or CA setting from the
+  environment, a direct verifying `HTTPTransport`, no extra credential or routing header
+  and `max_retries=0`, on the audited `openai` 3.28.0 / `httpx2` 2.13.1.
+  `ObservedOpenAIClient(..., require_live_endpoint=True)` re-checks the copy it sends with.
 - **Usage:** `usage.input_tokens` / `output_tokens`, `input_tokens_details.cached_tokens` /
   `cache_write_tokens`, `output_tokens_details.reasoning_tokens`, type-checked (the `openai`
   library does not validate bodies); anything missing or mistyped stays unknown.

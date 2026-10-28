@@ -151,7 +151,7 @@ Not changed: backend, schema, migrations, frontend, dependencies, lock files, co
 | PostgreSQL | `llminsight-postgres-1` healthy on 127.0.0.1:55432, `0005 (head)`, catalogue seeded (6 rows) |
 | Port 8000 | held by the unrelated `ppe-split-main-dashboard-1`; the live run uses the host backend on **8010** (§11). For Playwright only, with the user's approval in this session, that container was stopped and restarted afterwards (nothing removed) |
 | Ports 3001–3004, 8001, 8010 | free after the runs |
-| Proxy / CA environment (R87) | `HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE` unset in process, user and machine scope; WinINet proxy disabled, no auto-config URL; `urllib.request.getproxies()` empty |
+| Proxy / CA environment (R87; since §13 ignored by the real client in any case) | `HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE` unset in process, user and machine scope; WinINet proxy disabled, no auto-config URL; `urllib.request.getproxies()` empty |
 | OpenAI variables | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `OPENAI_ADMIN_KEY` unset in every scope |
 | SDK venv | local SDK reinstalled non-editable (`pip install --no-deps ./sdk`, README procedure) so the installed copy equals the branch |
 
@@ -190,7 +190,7 @@ Run on the staged tree immediately before the commit. All 37 pattern hits are `u
 2. **Explicit written spending approval** for exactly this run: provider `openai`, model `gpt-5.4-mini`, one request, `max_output_tokens` 64, request cap USD 0.01, session ceiling USD 0.02, worst case USD 0.0003877500.
 3. **Time window:** the run must start before **2026-11-07T21:40:00Z**; afterwards a new price catalogue version must be verified and released in both copies first.
 4. **Operator-side account controls** (§11 steps 1–4) in place.
-5. No other blocker found: every gate in §9 passed.
+5. No other blocker found: every gate in §9 passed. The endpoint integrity check (§13) adds ADR-32 to the decisions to accept in item 1.
 
 Phase 6B profile (placeholders only; set in the operator's own PowerShell window, never in a file):
 
@@ -256,7 +256,7 @@ Phase 6B profile (placeholders only; set in the operator's own PowerShell window
    ```powershell
    sdk\.venv\Scripts\python -m demo_app.live_openai --dashboard-url http://127.0.0.1:3001
    ```
-   Confirm: `"execution_allowed": true`, `"refusals": []`, `"backend": {"ready": true, ...}`, `"max_attempts": 1`, `"max_requests": 1`, `"max_output_tokens": 64`, `"worst_case_request_usd": "0.0003877500"`, `"session_budget_usd": "0.02"`, `"model": "gpt-5.4-mini"`. Anything else: stop.
+   Confirm: `"execution_allowed": true`, `"refusals": []`, `"backend": {"ready": true, ...}`, `"max_attempts": 1`, `"max_requests": 1`, `"max_output_tokens": 64`, `"worst_case_request_usd": "0.0003877500"`, `"session_budget_usd": "0.02"`, `"model": "gpt-5.4-mini"`. Anything else, including a `client_library_not_audited` refusal: stop.
 9. **Explicit authorization:** only after the reviewer's written approval of ADR-28…31 and of the spend in §10, run **once**:
    ```powershell
    sdk\.venv\Scripts\python -m demo_app.live_openai --execute --dashboard-url http://127.0.0.1:3001
@@ -265,9 +265,77 @@ Phase 6B profile (placeholders only; set in the operator's own PowerShell window
    ```powershell
    Remove-Item Env:OPENAI_API_KEY, Env:LLMI_LIVE_CONSENT, Env:LLMI_PROVIDER_MODE
    ```
-   Do not re-run on a failure or timeout: an ambiguous outcome may already be billed.
+   Do not re-run on a failure or timeout: an ambiguous outcome may already be billed. Exit code 2 with `client_not_allowed` means the endpoint check (§13) refused the client and **nothing was sent**; report it instead of working around it.
 10. **Record the result (no key, no output text):** the printed JSON line (trace ID, status, `incomplete_reason`, models, tokens, `duration_ms`, `estimated_cost_usd`, `booked_against_budget_usd`, `session.halted`); compare reported `input_tokens` with the bound 133 (R81); open the trace (dashboard on :3001 started with `$env:LLMI_API_BASE_URL = "http://127.0.0.1:8010"`, or `/api/v1/traces/{id}?project=…`); later compare the stored cost with the provider's usage page and say which is the estimate and which is the bill; finally revoke or delete the OpenAI project key if no further run is planned.
 
 ## 12. Verdict
 
 The preflight acceptance gate is met: the live path is verified offline end to end on the development stack (CLI runner → Responses adapter → SDK span → OTLP → FastAPI → PostgreSQL → API → dashboard), every regression gate passed, the worst case for the first request is USD 0.0003877500 under a USD 0.02 ceiling, and the two defects found (R85, R86) are fixed with regression tests and recorded as ADR-31. **No real or paid request has been made. Stopped for architectural and explicit spending approval; the real run (§11 step 9) is not authorized by this report.**
+
+## 13. Final provider endpoint integrity check (R87), 2026-10-28
+
+Scope: the exact destination of the API request and the credential boundary of the first live run, against the pinned `openai` 3.28.0 and `httpx2` 2.13.1 source. No real call, no real key.
+
+### 13.1 Where each input comes from (before this check)
+
+| Input | Source in `openai` 3.28.0 / `httpx2` 2.13.1 | Runner before | Effect |
+|---|---|---|---|
+| `api_key` | argument, else `OPENAI_API_KEY` | argument from the environment mapping | sent as `Authorization: Bearer …` by `_auth_headers` |
+| `base_url` | argument, else `OPENAI_BASE_URL`, else `https://api.openai.com/v1`; `data_residency` and `provider` can replace it | explicit `https://api.openai.com/v1`; guard refuses `OPENAI_BASE_URL` | pinned; `with_options` keeps the explicit value |
+| `OPENAI_CUSTOM_HEADERS` | parsed into `_custom_headers`, merged **after** the auth headers (`_merge_headers(auth, default_headers, custom)`) | guard refusal (ADR-31) | an `Authorization` line replaces the key |
+| `OPENAI_ORG_ID` / `OPENAI_PROJECT_ID` | `OpenAI-Organization` / `OpenAI-Project` headers when the argument is `None` | guard refusal (ADR-31) | billing routing |
+| `OPENAI_ADMIN_KEY` | `admin_api_key` when the argument is `None` | **not refused** | an organization-wide credential held by the client (not sent on `/responses`, whose bearer auth is applied first with `setdefault`) |
+| `with_options(max_retries=0)` (adapter) | `copy()` rebuilds the client; organization, project, admin key and custom headers are read from the environment **again** | not checked | the client actually used could differ from the one created |
+| Explicit `default_headers` / `default_query` / `http_client` | caller arguments | none passed | — |
+| HTTP client | none given → `SyncHttpxClientWrapper`: `follow_redirects=True`, `trust_env=True` | library default | **redirects followed; proxies from `HTTP(S)_PROXY`/`ALL_PROXY` and the Windows system proxy (`getproxies()`); CA from `SSL_CERT_FILE`/`SSL_CERT_DIR`** |
+| Redirects | `httpx2` drops `Authorization` when the origin changes (except a same-host http→https upgrade); 307/308 re-send the POST body | followed | key not leaked, but the body (the synthetic input) could go to another host |
+| Retries | `range(max_retries + 1)` over timeouts, connection and status errors; `_send_with_auth_retry` re-sends only for workload identity | `max_retries=0`; no workload identity | one send |
+| TLS | `truststore` (OS store) unless `SSL_CERT_FILE`/`SSL_CERT_DIR` under `trust_env` | default | CA file could be swapped through the environment |
+
+**R87 verdict before the change: FAIL** as an enforced guarantee (it rested on the operator checklist only).
+
+### 13.2 Change (ADR-32)
+
+- Real client: `openai.OpenAI(api_key=…, base_url="https://api.openai.com/v1", timeout=…, max_retries=0, http_client=openai.DefaultHttpxClient(trust_env=False, follow_redirects=False))`.
+- `openai_adapter.live_client_problems` / `check_live_client`: exact class `openai.OpenAI`; exact `base_url` `https://api.openai.com/v1/`; non-empty string key; no admin key, provider runtime, workload identity, key callback, organization, project, custom header or query; `max_retries == 0`; `httpx2.Client` with `follow_redirects is False`, `_trust_env is False`, no mounts (proxies), no hooks, no auth, no credential/routing header; transport exactly `HTTPTransport` with a direct `ConnectionPool`; TLS `CERT_REQUIRED` + hostname check; audited library versions; an unreadable attribute is a problem.
+- Runner (real provenance): checks the client after the reservation and before telemetry → `client_not_allowed`, exit 2, reservation released, nothing booked; `ObservedOpenAIClient(require_live_endpoint=True)` re-checks the given client and the rebuilt copy it sends with; library audit visible in the dry run (`client_library_not_audited`); the guard also refuses `OPENAI_ADMIN_KEY`.
+- Unchanged: `synthetic` provenance and every fake transport; the request body, model, limits and cost preflight; backend, schema, frontend, dependencies.
+
+### 13.3 Final actual endpoint guarantee
+
+For `python -m demo_app.live_openai --execute` with the audited libraries, the OpenAI API key is sent **only** in the `Authorization` header of **one** `POST https://api.openai.com/v1/responses` over a **direct** TLS connection, with certificate and hostname verification against the operating-system trust store. No redirect is followed; no proxy, CA file or system proxy is used; no other credential, organization, project or custom header is added; no SDK retry happens. Any client configuration that could break this is refused **before** a byte is sent. Residual (R88, accepted): the trust anchor is the OS certificate store, so an attacker-installed root plus network-level interception on the operator machine is out of scope.
+
+### 13.4 Test evidence
+
+`sdk/tests/unit/test_live_endpoint.py` (52 tests, offline). It uses the real `HTTPTransport` class with only `handle_request` replaced by a recorder, which also records the connection pool type:
+
+| Requirement | Tests |
+|---|---|
+| The runner's client and its rebuilt copy are allowed | `test_the_runner_client_and_its_effective_copy_are_allowed` |
+| Alternate endpoints and unsafe overrides refused (31 cases) | foreign, lookalike, `http`, other port, userinfo, other path, regional `eu.`, `data_residency`; custom `Authorization`, custom header, custom query, organization, project, admin key, key callback, SDK retries; default HTTP client, `trust_env`, redirects, explicit proxy, transport mount, mock transport, custom transport subclass, `verify=False`, event hook, `httpx2` auth, credential header on the HTTP client; Azure client, `OpenAI` subclass, non-client; the refusal text never quotes a value |
+| Environment re-read in the copy the adapter uses (4) | `test_client_environment_is_caught_even_in_the_copy_the_adapter_uses` |
+| Exact final request | `test_the_credential_goes_only_to_the_responses_endpoint_with_the_exact_request`: one request; `POST https://api.openai.com/v1/responses`; direct `ConnectionPool`; `Authorization: Bearer <fake key>`; no organization/project header; `x-stainless-retry-count: 0`; body exactly `{model: gpt-5.4-mini, input: <fixed synthetic text>, max_output_tokens: 64, service_tier: default, store: false}`; timeouts 30 s; plan worst case `0.0003877500`; span provenance `real`, `server.address api.openai.com` |
+| Environment cannot move it | `OPENAI_BASE_URL=https://evil.example/v1`, `HTTPS_PROXY`, `ALL_PROXY`, a non-existent `SSL_CERT_FILE` and a patched system proxy: still one direct request to the same URL (contrast: a default `httpx2` client would mount the proxy) |
+| Redirects never followed (301/302/307/308) | exactly one request, to `api.openai.com`; exit 1; booked at the bound |
+| No custom `Authorization` can replace the credential | policy refusal (ADR-31); client check on the factory client and on the rebuilt copy; `extra_headers` refused by `RESPONSES_ALLOWED` (ADR-31); `test_a_client_override_the_guard_did_not_see_is_refused_before_sending` (variable only in the process environment: 0 requests, no telemetry) |
+| Injected unsafe clients in real mode | `test_an_unsafe_injected_client_is_refused_in_real_mode`; reservation released (`test_a_refused_client_releases_the_reservation`) |
+| Fake transports still available | `test_fake_transports_remain_available_for_synthetic_runs`, and the unchanged runner, adapter and integration suites |
+
+**Mutation check** (each protection weakened on its own; the suite must fail): default HTTP client with the runner check off → 18 failures; default HTTP client with checks on → 11; `follow_redirects=True` with the runner check off → 17; redirect rule removed from the check → 2; re-check of the rebuilt copy removed → 4; `base_url` rule removed → 10. All restored (diff-identical, 52 passed).
+
+| Command | Result |
+|---|---|
+| `pytest tests/unit/test_live_endpoint.py` (sdk) | **52 passed** |
+| `LLMI_TEST_REQUIRE_DB=1 python -m pytest -q -rs -p no:cacheprovider` (sdk, live backend, after reinstall) | **591 passed**, 0 failed, 0 skipped (144.9 s) = 539 + 52 new; includes the live-backend Responses, runner and price-mirror integration tests and the unchanged telemetry, Chat adapter and redaction suites |
+| `ruff check`, `ruff format --check` (sdk incl. `../demo_app`) | all passed; 40 files formatted |
+| `mypy src`; `mypy --config-file pyproject.toml ../demo_app` (strict) | no issues (10 / 4 files) |
+| `bandit` on `live.py`, `openai_adapter.py`, `demo_app/live_openai.py` | only the accepted B310 readiness probe, 0 High |
+| `python -I scripts/verify_phase0.py` | **797 PASS, 0 FAIL** |
+| `python -I scripts/qa/secret_scan.py --repo . --env .env --env frontend/.env.local` (staged tree) | 843 blobs, 31 messages, 465 working files: **0 secret-value hits**; 38 pattern hits, all `url_userinfo` at the known fixture locations; the one more than §9 is the same `SECURITY.md` example line in that file's new blob; none in a §13 change |
+| `git diff --check` | clean |
+
+Backend, frontend and dependency files are unchanged by this check, so their Phase 6B results (§9) stand.
+
+### 13.5 Verdict
+
+**R87: PASS** (resolved in code by ADR-32; residual R88 accepted). Remaining blockers before the first real request: §10 items 1–4, with ADR-32 added to the decisions to accept. The operator steps in §11 are unchanged and still valid; the dry run (§11 step 8) must show `"refusals": []`. **No paid request was made; the real run is not authorized by this report.**
