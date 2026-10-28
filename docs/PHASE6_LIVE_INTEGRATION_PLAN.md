@@ -91,7 +91,7 @@ The Chat Completions path keeps its Phase 2B retry rule (timeouts, 408/409/429/5
 | `LLMI_LIVE_CONSENT` | yes | exactly `openai-paid-calls` |
 | `OPENAI_API_KEY` | yes | presence only; never read into a log, output, span or exception |
 | `OPENAI_BASE_URL` | must be **unset** | refused if set; the runner pins `https://api.openai.com/v1` |
-| `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` | must be **unset** | Phase 6B preflight (ADR-31): refused if set (`client_env_override`); `openai` 3.28.0 reads them from the process environment, a custom `Authorization` header replaces the checked key, and all three can route billing away from the dedicated project key |
+| `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` (ADR-31), `OPENAI_ADMIN_KEY` (ADR-32) | must be **unset** | Phase 6B preflight (ADR-31): refused if set (`client_env_override`); `openai` 3.28.0 reads them from the process environment, a custom `Authorization` header replaces the checked key, and all three can route billing away from the dedicated project key |
 | `LLMI_LIVE_PROVIDERS` | yes | allowlist; only `openai` |
 | `LLMI_LIVE_MODELS` | yes | allowlist; each model needs a verified price |
 | `LLMI_LIVE_MAX_REQUESTS` | yes | 1–20 per session |
@@ -117,6 +117,8 @@ Example for a Phase 6B smoke test (placeholders only, set in the operator's own 
 ADR-19 unchanged. The runner's input is a fixed SYNTHETIC sentence; its output text is never printed, logged or exported. The runner prints one JSON line of metadata (§J). Tests assert that the key, input, output, provider error text and request ID never appear on the OTLP wire, in SDK logs, in the runner output, in the backend log or in the read API.
 
 ### J. Demo runner architecture
+**Endpoint boundary (Phase 6B, ADR-32):** the real client is built with `openai.DefaultHttpxClient(trust_env=False, follow_redirects=False)` and must pass `openai_adapter.live_client_problems` after the reservation and before telemetry starts (`client_not_allowed`, exit 2, nothing sent, nothing booked), and again on the copy the adapter sends with. The API key therefore reaches only `POST https://api.openai.com/v1/responses` over a direct, verified TLS connection: no redirect is followed, no proxy, CA file or system proxy is used, and no other credential or routing header is added.
+
 `python -m demo_app.live_openai` (SDK venv):
 1. evaluate the policy; 2. load the SDK telemetry config; 3. readiness probe: an empty OTLP request to `/v1/traces` (`200` and nothing written when the backend is up and the project key accepted; `401` → `project_key_rejected`); 4. **default: print the dry-run plan** (model, limits, worst-case cost, catalogue) and exit 0 without creating an OpenAI client; 5. with `--execute` and no refusal: reserve, open root span `demo.live-openai`, call the adapter (`store=False`, `service_tier="default"`), settle, flush and shut down telemetry, print trace ID, status, models, token counts (or `null` = unknown), duration, estimated cost, the dashboard URL `http://127.0.0.1:3001/traces/{trace_id}?project=<LLMI_DASHBOARD_PROJECT_ID>` and the API path. Exit codes: 0 dry run / completed, 1 provider failure, 2 refused. No browser endpoint, no live-call button, no route that accepts a key.
 

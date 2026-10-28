@@ -11,7 +11,9 @@ worst-case cost. It never creates an OpenAI client and never contacts a provider
 live configuration (provider mode `real`, the consent phrase, allowlists, token, retry,
 time and money limits, a fresh price catalogue, an `OPENAI_API_KEY` in the environment),
 a valid SDK telemetry configuration, a ready backend, and a session reservation. Any
-failed gate is a refusal with exit code 2 and nothing is sent.
+failed gate is a refusal with exit code 2 and nothing is sent. The real client must pass
+`openai_adapter.live_client_problems` (ADR-32): only `https://api.openai.com/v1`, no
+redirect, no proxy or CA setting from the environment, no extra credential or header.
 
 The request is fixed and SYNTHETIC (`INPUT_TEXT`), sent with `store=False` and
 `service_tier="default"`. The output text is never printed, logged or exported. One JSON
@@ -45,6 +47,8 @@ from llm_insight_sdk.openai_adapter import (
     ObservedOpenAIClient,
     OpenAIResponsesTextAdapter,
     Provenance,
+    live_client_problems,
+    live_library_problems,
 )
 from llm_insight_sdk.providers import AttemptRecord, TextOutcome, TextRequest
 
@@ -150,6 +154,9 @@ def _default_client(env: Mapping[str, str]) -> ClientFactory:
             base_url=OPENAI_BASE_URL,  # never taken from OPENAI_BASE_URL
             timeout=policy.timeout_seconds,
             max_retries=0,
+            # ADR-32: no redirect is followed and no proxy or CA setting is taken from the
+            # environment or the Windows system proxy; the key goes only to OPENAI_BASE_URL.
+            http_client=openai.DefaultHttpxClient(trust_env=False, follow_redirects=False),
         )
 
     return factory
@@ -182,6 +189,8 @@ def main(
     model = args.model or (policy.models[0] if policy is not None else None)
     if policy is not None and model is not None and model not in policy.models:
         refusals.append(live.Refusal("model_not_allowed", "--model is not in LLMI_LIVE_MODELS"))
+    for problem in live_library_problems():  # the endpoint checks hold for these only
+        refusals.append(live.Refusal("client_library_not_audited", problem))
 
     try:
         config: lli.LLMInsightConfig | None = lli.LLMInsightConfig.from_env(environ)
@@ -225,14 +234,28 @@ def main(
         return 2
 
     factory = client_factory or _default_client(environ)
+    try:
+        client = factory(policy)
+        problems = live_client_problems(client) if provenance == "real" else []
+    except BaseException:
+        session.settle(reservation, [])  # nothing was sent
+        raise
+    if problems:  # ADR-32: the credential may only go to the pinned endpoint
+        session.settle(reservation, [])
+        doc["execution_allowed"] = False
+        doc["refusals"] = [{"code": "client_not_allowed", "message": p} for p in problems]
+        _emit(out, doc)
+        return 2
+
     outcome: TextOutcome | None = None
     telemetry = lli.init(config)
     try:
         observed = ObservedOpenAIClient(
             telemetry,
-            factory(policy),
+            client,
             provenance=provenance,
             backoff_seconds=1.0,
+            require_live_endpoint=provenance == "real",
         )
         adapter = OpenAIResponsesTextAdapter(observed, max_attempts=policy.max_attempts)
         request = TextRequest(

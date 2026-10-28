@@ -46,8 +46,14 @@ SUPPORTED_PROVIDERS = frozenset({"openai"})
 # Read by `openai` 3.28.0 from the process environment, never by this guard (Phase 6B):
 # OPENAI_CUSTOM_HEADERS can replace the `Authorization` header (another credential than the
 # OPENAI_API_KEY checked here) and, like the other two, route billing to another
-# organization or project than the dedicated project key's.
-CLIENT_ENV_OVERRIDES = ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID")
+# organization or project than the dedicated project key's. OPENAI_ADMIN_KEY (ADR-32) puts
+# an organization-wide credential into the client, which the live run never needs.
+CLIENT_ENV_OVERRIDES = (
+    "OPENAI_CUSTOM_HEADERS",
+    "OPENAI_ORG_ID",
+    "OPENAI_PROJECT_ID",
+    "OPENAI_ADMIN_KEY",
+)
 PRICED_SERVICE_TIER = "default"
 
 # One token covers at least one UTF-8 byte under byte-level BPE; the allowance covers the

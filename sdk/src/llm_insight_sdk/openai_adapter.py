@@ -81,6 +81,7 @@ retried automatically (docs/PHASE6_LIVE_INTEGRATION_PLAN.md §H).
 from __future__ import annotations
 
 import logging
+import ssl
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -233,6 +234,99 @@ def _check_client(client: object, expected: type[Any], azure: type[Any], provena
     transport = getattr(getattr(client, "_client", None), "_transport", None)
     if provenance == "real" and isinstance(transport, httpx2.MockTransport):
         raise ConfigError("provenance: 'real' is refused for a client with a mock transport")
+
+
+# ---------------------------------------------------------------- live endpoint boundary (6B)
+# A real-mode credential may only travel to this endpoint (ADR-32). The checks read the
+# pinned libraries' configuration attributes, so they are valid for the audited versions only.
+LIVE_BASE_URL = "https://api.openai.com/v1/"
+AUDITED_LIBRARY_VERSIONS = {"openai": "3.28.0", "httpx2": "2.13.1"}
+_MISSING = object()
+
+
+def live_library_problems() -> list[str]:
+    """Why the installed client libraries are not the audited ones (empty: they are)."""
+    installed = {"openai": openai.__version__, "httpx2": getattr(httpx2, "__version__", None)}
+    return [
+        f"{name} must be the audited version {version}"
+        for name, version in AUDITED_LIBRARY_VERSIONS.items()
+        if installed[name] != version
+    ]
+
+
+def live_client_problems(client: object) -> list[str]:
+    """Every reason `client` may not carry a real-mode credential; empty when it may.
+
+    Allowed: an `openai.OpenAI` (not Azure, not a subclass) for exactly `LIVE_BASE_URL`, a
+    fixed API key and nothing else that authenticates or routes (no admin key, provider
+    runtime, workload identity, organization, project, custom header or query), no SDK
+    retries, and an `httpx2.Client` that follows no redirect, ignores proxy and CA
+    environment settings, has no mount, hook or auth, and sends through the default
+    `HTTPTransport` with a verifying TLS context. Reads configuration only, never the key;
+    an attribute that cannot be read is a problem (fail closed)."""
+    problems = live_library_problems()
+    if type(client) is not openai.OpenAI:
+        return [*problems, "client must be an openai.OpenAI instance (no subclass, not Azure)"]
+
+    def attr(obj: object, name: str) -> Any:
+        return getattr(obj, name, _MISSING)
+
+    if str(attr(client, "base_url")) != LIVE_BASE_URL:
+        problems.append(f"base_url must be exactly {LIVE_BASE_URL}")
+    for name, what in (
+        ("_provider", "a provider runtime"),
+        ("_provider_runtime", "a provider runtime"),
+        ("workload_identity", "a workload identity"),
+        ("_api_key_provider", "an API key callback"),
+        ("admin_api_key", "an admin key"),
+        ("organization", "an organization header"),
+        ("project", "a project header"),
+    ):
+        if attr(client, name) is not None:
+            problems.append(f"{what} must not be configured ({name})")
+    if not isinstance(attr(client, "api_key"), str) or not attr(client, "api_key"):
+        problems.append("api_key must be a non-empty string")
+    for name in ("_custom_headers", "_custom_query"):
+        if attr(client, name) != {}:
+            problems.append(f"no custom headers or query parameters may be set ({name})")
+    if attr(client, "max_retries") != 0:
+        problems.append("SDK retries must be disabled (max_retries=0)")
+
+    http = attr(client, "_client")
+    if not isinstance(http, httpx2.Client):
+        return [*problems, "the HTTP client must be an httpx2.Client"]
+    if attr(http, "follow_redirects") is not False:
+        problems.append("HTTP redirects must not be followed")
+    if attr(http, "_trust_env") is not False:
+        problems.append("proxy and CA environment settings must be ignored (trust_env=False)")
+    if attr(http, "_mounts") != {}:
+        problems.append("no proxy or transport mount may be configured")
+    if attr(http, "auth") is not None:
+        problems.append("no httpx2 auth may be configured")
+    hooks = attr(http, "event_hooks")
+    if not isinstance(hooks, dict) or any(hooks.values()):
+        problems.append("no HTTP event hook may be configured")
+    headers = attr(http, "headers")
+    if not isinstance(headers, httpx2.Headers) or any(
+        name in headers for name in ("authorization", "openai-organization", "openai-project")
+    ):
+        problems.append("the HTTP client must carry no credential or routing header")
+    transport = attr(http, "_transport")
+    pool = attr(transport, "_pool")
+    if type(transport) is not httpx2.HTTPTransport or type(pool).__name__ != "ConnectionPool":
+        problems.append("the default direct HTTPTransport (no proxy, no mock) must be used")
+    else:
+        tls = attr(pool, "_ssl_context")
+        if attr(tls, "verify_mode") != ssl.CERT_REQUIRED or attr(tls, "check_hostname") is not True:
+            problems.append("TLS certificate and hostname verification must be enabled")
+    return problems
+
+
+def check_live_client(client: object) -> None:
+    """Raise `ConfigError` naming every `live_client_problems` entry (no value is quoted)."""
+    problems = live_client_problems(client)
+    if problems:
+        raise ConfigError("live client: " + "; ".join(problems))
 
 
 def _refuse_unsupported(kwargs: Mapping[str, Any]) -> None:
@@ -501,8 +595,14 @@ class ObservedOpenAIClient(_ObservedBase):
         provenance: Provenance,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
+        require_live_endpoint: bool = False,
     ) -> None:
+        """`require_live_endpoint=True` (the live runner, ADR-32) also applies
+        `check_live_client` to `client` and to the copy actually used, which `openai`
+        rebuilds and which re-reads the environment."""
         _check_client(client, openai.OpenAI, openai.AzureOpenAI, provenance)
+        if require_live_endpoint:
+            check_live_client(client)
         super().__init__(
             telemetry,
             provenance=provenance,
@@ -510,6 +610,8 @@ class ObservedOpenAIClient(_ObservedBase):
             backoff_seconds=backoff_seconds,
         )
         self._client = client.with_options(max_retries=0)  # one span per physical request
+        if require_live_endpoint:
+            check_live_client(self._client)
 
     def create_chat_completion(
         self,
