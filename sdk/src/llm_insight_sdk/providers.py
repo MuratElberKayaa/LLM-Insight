@@ -10,9 +10,9 @@ Adapters never raise a provider failure: a failed call is an outcome with
 `status = "error"` and an `error_category`. They raise only for a request they refuse
 before sending (`UnsupportedRequestError` in the OpenAI adapter) or invalid configuration.
 
-The only implementation is `openai_adapter.OpenAIResponsesTextAdapter` (ADR-05: one
-provider adapter). A second provider implements the same protocol, its own usage mapping
-and error categories, and a backend pricing applicability rule (docs/PRICING.md §3).
+Implementations: `openai_adapter.OpenAIResponsesTextAdapter` (ADR-28) and, since Phase 6C-A,
+`gemini_adapter.GeminiTextAdapter` (ADR-33). Each has its own usage mapping and error
+categories and a backend pricing applicability rule (docs/PRICING.md §3).
 """
 
 from __future__ import annotations
@@ -22,7 +22,9 @@ from typing import Literal, Protocol
 
 from llm_insight_sdk.instrumentation import TokenUsage
 
-OutcomeStatus = Literal["completed", "incomplete", "failed", "malformed", "error"]
+# `blocked` (Phase 6C-A): the provider answered, but withheld the output for a content
+# reason (a blocked prompt or a safety-stopped candidate). It is never `completed`.
+OutcomeStatus = Literal["completed", "incomplete", "blocked", "failed", "malformed", "error"]
 
 # Stable, provider-neutral error categories (docs/PHASE6_LIVE_INTEGRATION_PLAN.md §F).
 # Span `error.type` keeps the telemetry-contract values (`429`, `timeout`, ...); these
@@ -43,6 +45,11 @@ ERROR_CATEGORIES = frozenset(
         "response_failed",
         "unexpected_status",
         "unexpected_error",
+        # Phase 6C-A (Gemini, additive)
+        "payment_required",  # 402: a paid project's prepaid credit is exhausted
+        "precondition_failed",  # 400 FAILED_PRECONDITION, e.g. billing not set up
+        "content_blocked",
+        "empty_response",
     }
 )
 
@@ -75,7 +82,9 @@ class TextOutcome:
     """Metadata of one logical call. `usage` is the last attempt's provider-reported usage
     or None (unknown, never 0). `incomplete_reason` is the provider's own reason for an
     `incomplete` status (e.g. `max_output_tokens`): an incomplete answer is not a completed
-    one."""
+    one. `provider_reason` (Phase 6C-A, additive) is the provider's own keyword for an outcome
+    that is not `completed`: a finish or block reason, or an error status such as
+    `RESOURCE_EXHAUSTED`; never a message."""
 
     provider: str
     status: OutcomeStatus
@@ -89,6 +98,7 @@ class TextOutcome:
     duration_ms: float
     provider_response: object | None = field(default=None, repr=False, compare=False)
     incomplete_reason: str | None = None
+    provider_reason: str | None = None
 
 
 class TextGenerationAdapter(Protocol):

@@ -29,11 +29,8 @@ shown as `completed`: its status stays `incomplete` with the provider's `incompl
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, TextIO
@@ -41,8 +38,11 @@ from typing import Any, TextIO
 import openai
 
 import llm_insight_sdk as lli
+from demo_app.live_common import DEFAULT_DASHBOARD_URL, check_backend
+from demo_app.live_common import dashboard_links as _dashboard
+from demo_app.live_common import emit as _emit
 from llm_insight_sdk import live
-from llm_insight_sdk.config import PROJECT_KEY_HEADER, ConfigError
+from llm_insight_sdk.config import ConfigError
 from llm_insight_sdk.openai_adapter import (
     ObservedOpenAIClient,
     OpenAIResponsesTextAdapter,
@@ -59,40 +59,12 @@ INPUT_TEXT = "SYNTHETIC LLM Insight live smoke test. Reply with the single word:
 PROMPT_NAME = "live-smoke"
 PROMPT_VERSION = "v1"
 ROOT_SPAN = "demo.live-openai"
-DEFAULT_DASHBOARD_URL = "http://127.0.0.1:3001"
-READINESS_TIMEOUT_SECONDS = 3.0
 COST_BASIS = (
     "estimate from provider-reported usage and the verified price catalogue "
     f"{live.PRICE_CATALOGUE_VERSION}; not a billed amount"
 )
 
 ClientFactory = Callable[[live.LivePolicy], openai.OpenAI]
-
-
-def check_backend(config: lli.LLMInsightConfig) -> dict[str, Any]:
-    """POST an empty OTLP request: the backend answers 200 and writes nothing when it is up
-    and accepts the project key (TELEMETRY_CONTRACT.md §1.1 step 12)."""
-    request = urllib.request.Request(  # noqa: S310 - the endpoint is validated by LLMInsightConfig
-        config.endpoint,
-        data=b"",
-        method="POST",
-        headers={
-            "Content-Type": "application/x-protobuf",
-            PROJECT_KEY_HEADER: config.project_key,
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=READINESS_TIMEOUT_SECONDS) as response:  # noqa: S310
-            status = int(response.status)
-    except urllib.error.HTTPError as exc:
-        status = exc.code
-    except (urllib.error.URLError, OSError):
-        return {"ready": False, "reason": "backend_unreachable"}
-    if status == 200:
-        return {"ready": True, "reason": "ready"}
-    if status == 401:
-        return {"ready": False, "reason": "project_key_rejected"}
-    return {"ready": False, "reason": f"backend_http_{status}"}
 
 
 def _plan(decision: live.PolicyDecision, model: str | None) -> dict[str, Any] | None:
@@ -138,15 +110,6 @@ def _tokens(outcome: TextOutcome) -> dict[str, int | None] | None:
     }
 
 
-def _dashboard(base: str, trace_id: str, env: Mapping[str, str]) -> dict[str, str]:
-    project = (env.get("LLMI_DASHBOARD_PROJECT_ID") or "").strip()
-    query = f"?project={project}" if project.isdigit() else ""
-    return {
-        "dashboard_url": f"{base.rstrip('/')}/traces/{trace_id}{query}",
-        "api_path": f"/api/v1/traces/{trace_id}",
-    }
-
-
 def _default_client(env: Mapping[str, str]) -> ClientFactory:
     def factory(policy: live.LivePolicy) -> openai.OpenAI:
         return openai.OpenAI(
@@ -160,10 +123,6 @@ def _default_client(env: Mapping[str, str]) -> ClientFactory:
         )
 
     return factory
-
-
-def _emit(out: TextIO, doc: dict[str, Any]) -> None:
-    out.write(json.dumps(doc, sort_keys=True) + "\n")
 
 
 def main(

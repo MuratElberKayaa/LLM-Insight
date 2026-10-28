@@ -1,6 +1,6 @@
 # LLM Insight — Phase 6 Live Integration Plan
 
-**Status:** Phase 6A design contract (2026-10-27), recorded by ADR-28…30 (accepted within the Phase 6A instruction). Phase 6B preflight (2026-10-28, `reports/phase-6b-preflight.md`): verified offline, hardened by ADR-31 (§C, §G). **No real or paid provider call has been made**; the first real request needs architectural and explicit spending approval.
+**Status:** Phase 6A design contract (2026-10-27), recorded by ADR-28…30 (accepted within the Phase 6A instruction). Phase 6B preflight (2026-10-28, `reports/phase-6b-preflight.md`): verified offline, hardened by ADR-31 (§C, §G). Phase 6C-A (2026-10-28, `reports/phase-6c-a.md`): a second adapter for the Gemini Developer API Free Tier, ADR-33…36, design in Part II below. **No real or paid provider call has been made**; the first real request needs architectural and explicit spending approval.
 
 **Baseline:** Phase 5 MVP, release commit `1a57d65` (annotated tag `phase-5`), 48/48 acceptance scenarios, PostgreSQL revision `0005`, local-first and mock-only.
 
@@ -169,3 +169,55 @@ PostgreSQL: spans, traces (derived), usage_records (one row per attempt; key res
 4. The operator sets `OPENAI_API_KEY` in their own shell (never pasted into a chat, file or document), preferably a dedicated OpenAI project key with a provider-side monthly budget and a low rate limit.
 5. Running backend (`python -m app`), seeded prices, a project key in `OTEL_EXPORTER_OTLP_TRACES_HEADERS`; dry run reviewed first.
 6. Afterwards: compare the reported `input_tokens` with the bound (the framing assumption), check the stored row against the provider's usage page, and record the result.
+
+---
+
+# Part II — Phase 6C-A: Gemini Developer API, Free Tier (2026-10-28)
+
+**Decision records:** ADR-33 (adapter), ADR-34 (endpoint and credential boundary), ADR-35 (Free Tier guard and cost semantics), ADR-36 (runner). **Evidence:** `reports/phase-6c-a.md`. **Branch:** `feature/phase-6c-gemini-free` from `0190bf4`. Part I is unchanged and still governs OpenAI.
+
+## 6. Scope
+One single-turn, non-streaming text `models.generateContent` request to `https://generativelanguage.googleapis.com/v1beta` through the official `google-genai` 2.30.1 (optional SDK extra `gemini`). Not supported, refused before sending: streaming, tools and tool config, grounding/search, code execution, file uploads, history, cached content, system instructions, safety settings, structured output, thinking settings, `http_options`, labels, Vertex AI / Gemini Enterprise, automatic continuation, automatic function calling, retries, a paid mode or a fallback model or project. Selected model: **`gemini-3.1-flash-lite`** (Stable, text output, thinking supported, Free Tier input and output "free of charge"; official pricing and model pages read 2026-10-28, `SOURCES_AND_RISKS.md` Phase 6C-A sources). The operator's own project eligibility is verified in Phase 6C-B, not here.
+
+## 7. Provider-neutral reuse
+`GeminiTextAdapter` implements the ADR-28 `TextGenerationAdapter` protocol and reuses `instrumentation.inference_span` (one CLIENT span per physical request), the existing exporter (OTLP/HTTP protobuf), `POST /v1/traces`, `llminsight.attrmap.v1`, the §4 schema and the `/api/v1` read API unchanged. Additive SDK changes only: `OutcomeStatus` gains `blocked`, `TextOutcome` gains `provider_reason`, and four error categories (`payment_required`, `precondition_failed`, `content_blocked`, `empty_response`). Backend: one pricing applicability rule (§9); no migration, column, allowlist entry or API change.
+
+## 8. Telemetry and usage mapping
+Span: `gen_ai.provider.name = gcp.gemini`, `gen_ai.operation.name = generate_content` (semconv pin `9ffc7e00c639`), request model, `modelVersion` → response model, `responseId` → response ID, the candidate's finish reason verbatim, `server.address`/`server.port`, numeric settings. Usage (provider-reported only; `TELEMETRY_CONTRACT.md` §3):
+
+| Semconv counter | Gemini `usageMetadata` | Note |
+|---|---|---|
+| `gen_ai.usage.input_tokens` | `promptTokenCount + toolUsePromptTokenCount` | prompt count already includes cached content |
+| `gen_ai.usage.output_tokens` | `candidatesTokenCount + thoughtsTokenCount` | Google bills output as candidates plus thinking |
+| `gen_ai.usage.cache_read.input_tokens` | `cachedContentTokenCount` | subset of input, never added again |
+| `gen_ai.usage.reasoning.output_tokens` | `thoughtsTokenCount` | subset of output, never added again |
+
+Absent (JSON-omitted) counts are 0 only when `totalTokenCount` equals the sum; a missing prompt or total count, a sum that differs from the total, or a cached count above the prompt count makes the whole usage unknown (`usage_missing` / `usage_inconsistent` in the ledger). Ledger key `resp:gcp.gemini:{responseId}` (R95).
+
+## 9. Free Tier guard and cost
+`gemini_live.evaluate_free_tier_policy` (ADR-35): `LLMI_PROVIDER_MODE=real`, `LLMI_GEMINI_MODE=free-tier`, `LLMI_LIVE_CONSENT=gemini-free-tier-single-call`, a present `GEMINI_API_KEY`, no google-genai routing variable, the operator attestation `LLMI_GEMINI_BILLING_TIER=free` with `LLMI_GEMINI_TIER_CHECKED_ON` at most one day old, provider `gcp.gemini`, the verified model allowlist (evidence window 14 days), hard caps 1 request / concurrency 1 / 0 retries / timeout ≤ 30 s / output 16–1024 / input ≤ 1024. The attestation is an operator check, **not** proof from Google's billing (R90). Cost: no stored price ever applies to `gcp.gemini` (`PRICING.md` §3), so every Gemini usage row is `cost_status = unknown` (never 0, never a paid-tier list price); the runner prints `billed_amount_usd: null`.
+
+## 10. Endpoint boundary
+The runner builds `genai.Client(vertexai=False, api_key=…, http_options=HttpOptions(base_url=…, api_version="v1beta", httpx_client=httpx.Client(verify=<certifi>, trust_env=False, follow_redirects=False)))`; `live_gemini_client_problems` (ADR-34) refuses any other client before telemetry, when the instrumented client is built and immediately before the send. Reason: the library defaults follow redirects (and `httpx` would forward `x-goog-api-key`), trust environment proxies and read `GOOGLE_API_KEY`, Vertex AI, base-URL and replay variables (R94).
+
+## 11. Data flow
+```
+Gemini Developer API ──(HTTPS v1beta, x-goog-api-key, no redirect/proxy)── google-genai 2.30.1 (1 attempt,
+        │ GenerateContentResponse (usageMetadata, responseId, modelVersion, finishReason)   no continuation)
+        ▼                                     — content and thoughts discarded
+ObservedGeminiClient.generate_content ── one CLIENT span (child of demo.live-gemini)
+        ▼  BatchSpanProcessor → OTLP/HTTP protobuf → POST /v1/traces (unchanged)
+PostgreSQL: spans, traces, usage_records (key resp:gcp.gemini:{id}; cost NULL, price_missing)
+        ▼
+/api/v1/traces/{id}, /overview, /models/compare ──► Next.js dashboard (unchanged)
+```
+
+## 12. Tests (offline; evidence in `reports/phase-6c-a.md`)
+`sdk/tests/unit/test_gemini_adapter.py` (span shape, usage mapping incl. thinking and cache, outcomes, continuation never followed, one attempt, refusals, no content leak), `test_gemini_endpoint.py` (30 refused client configurations, exact final request on the real transport class, environment and redirects cannot move it, re-check before the send, library version), `test_gemini_live_guard.py` (each gate, overrides, attestation window, evidence window, OpenAI/Gemini consent separation, session), `test_gemini_runner.py` (dry run default, every refusal, one traced request, outcomes, no retry or fallback), `sdk/tests/integration/test_live_gemini.py` (runner → OTLP → backend → PostgreSQL → `/api/v1`, network blocked, unknown cost, re-export idempotency), `backend/tests/unit/test_pricing.py` (the Gemini rule).
+
+## 13. Phase 6C-B prerequisites (not done in 6C-A)
+1. Architectural review and acceptance of ADR-33…36.
+2. Explicit user approval of the single Free Tier request, given for that run.
+3. A dedicated Google Cloud project with **no billing account linked**, its AI Studio Billing Tier read as Free on the day of the run; a key restricted to the Gemini API, set by the operator in their own shell only.
+4. Re-read the official pricing and model pages if the evidence is older than 14 days (after 2026-11-11T13:00Z the guard refuses).
+5. Operator steps: `reports/phase-6c-a.md` §10.

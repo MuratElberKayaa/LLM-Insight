@@ -24,7 +24,8 @@ For use inside another application, install the wheel (`pip wheel --no-deps ./sd
 runtime dependencies are pinned exactly: `opentelemetry-api`, `opentelemetry-sdk` and
 `opentelemetry-exporter-otlp-proto-http` 1.45.1. The OpenAI adapter needs the optional
 extra `llm-insight-sdk[openai]` (`openai==3.28.0`); the core package never imports
-`openai`.
+`openai`. The Gemini adapter (Phase 6C-A) needs `llm-insight-sdk[gemini]`
+(`google-genai==2.30.1`); the core package never imports `google.genai` either.
 
 ## Quick start
 
@@ -262,6 +263,35 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
 - **Runner (ADR-30):** `python -m demo_app.live_openai` prints a dry-run plan by default;
   `--execute` sends one SYNTHETIC request only when every gate passes
   (`docs/PHASE6_LIVE_INTEGRATION_PLAN.md`). Phase 6A tests never contact a provider.
+
+## Gemini Developer API adapter and Free Tier guard (Phase 6C-A)
+
+- **Adapter (`llm_insight_sdk.gemini_adapter`, ADR-33):** `ObservedGeminiClient(telemetry,
+  genai.Client(vertexai=False, ...), provenance=...)` and `GeminiTextAdapter` (same
+  `TextGenerationAdapter` protocol). One non-streaming single-turn text
+  `models.generate_content` request = one CLIENT span (`gcp.gemini`, `generate_content`).
+  Only `max_output_tokens`, `temperature` and `top_p` are accepted; tools, grounding, code
+  execution, files, history, cached content, thinking/safety settings, structured output and
+  `http_options` are refused before sending. Automatic continuation and automatic function
+  calling are always disabled (google-genai 2.30.1 follows continuations by default). Usage:
+  input = prompt + tool-use prompt, output = candidates + thoughts, cache read = cached
+  content, reasoning = thoughts; unknown when the counts do not add up to the reported total.
+  Outcome statuses include `blocked` (a blocked prompt or a safety-type finish reason).
+- **Endpoint boundary (ADR-34):** `live_gemini_client_problems(client)` accepts only the
+  Developer API at `https://generativelanguage.googleapis.com/` `v1beta`, the key in
+  `x-goog-api-key` only, an `httpx.Client` without redirects, environment proxies/CA,
+  mounts, hooks or auth, verified TLS, one library attempt, and the audited library
+  versions. `require_live_endpoint=True` re-checks it immediately before the send.
+- **Free Tier guard (`llm_insight_sdk.gemini_live`, ADR-35):** `evaluate_free_tier_policy`
+  needs `LLMI_PROVIDER_MODE=real`, `LLMI_GEMINI_MODE=free-tier`, `LLMI_LIVE_CONSENT=
+  gemini-free-tier-single-call`, a `GEMINI_API_KEY` (presence only), no google-genai routing
+  variable, the operator attestation `LLMI_GEMINI_BILLING_TIER=free` +
+  `LLMI_GEMINI_TIER_CHECKED_ON` (≤ 1 day; an operator check, not proof from Google billing),
+  the verified model allowlist and the hard caps (1 request, concurrency 1, 0 retries).
+  `FreeTierSession` admits the one request. There is no paid mode; cost stays `unknown`.
+- **Runner (ADR-36):** `python -m demo_app.live_gemini` prints a dry-run plan by default;
+  `--execute` sends one SYNTHETIC request only when every gate passes. Phase 6C-A tests
+  never contact a provider.
 
 ## What is recorded
 

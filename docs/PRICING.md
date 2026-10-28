@@ -59,6 +59,8 @@ Not representable, therefore `price_missing` by construction (no matching row): 
 
 A provider without an entry in `APPLICABILITY` has no billing mode beyond its stored price; today that is only the synthetic test providers. Adding a real provider requires adding its rule.
 
+**Gemini (`gen_ai.provider.name = gcp.gemini`, Phase 6C-A, ADR-35):** the rule **never** applies a stored price. A Gemini Developer API project is billed on the Free Tier (no charge) or on a paid tier (Standard, Batch, Flex, Priority), and no span attribute shows which; a paid-tier list price applied to a Free Tier call would be a false claim of spend, and a 0 would be a false claim of no spend. Every Gemini usage row is therefore `cost_status = unknown` with `cost_unknown_reason = price_missing` (or `usage_missing` / `usage_inconsistent` when rule 1 decides first), even if Gemini rows were ever seeded; OpenAI rows never match because selection is by exact provider. No Gemini catalogue is seeded, the SDK carries no Gemini price mirror, and the Gemini runner prints `billed_amount_usd: null` and `paid_tier_list_price_estimate_usd: null` with the operator-attested tier. Pricing a Gemini call needs a tier-aware rule, a verified catalogue and a new ADR.
+
 ## 4. Cost equation, selection and rounding
 
 For one usage row (`app.services.pricing.assess`), in this order:

@@ -24,7 +24,8 @@ function required(name: string): string {
 
 export const ENV = serverEnv();
 export const TOKEN = ENV.LLMI_API_TOKEN ?? "";
-export const API = ENV.LLMI_API_BASE_URL ?? "http://127.0.0.1:8000";
+// Process env first, as in Next.js (the dashboards started by playwright.config.ts inherit it).
+export const API = process.env.LLMI_API_BASE_URL ?? ENV.LLMI_API_BASE_URL ?? "http://127.0.0.1:8000";
 /** The run's main project (edge-case + Phase 3C traces). */
 export const PROJECT = required("LLMI_E2E_PROJECT");
 /** The run's second project (one isolation trace). */

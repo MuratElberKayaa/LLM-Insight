@@ -7,20 +7,31 @@
 # all identical to backend/requirements.lock (no new version enters the project).
 # Phase 5B (2026-10-26): certifi 2026.10.19, the same security exception as backend/requirements.lock
 # (PYSEC-2026-4320; SOURCES_AND_RISKS.md R74).
+# Phase 6C-A (2026-10-28): google-genai 2.30.1 (2026-10-13; 2.31.0 of 2026-10-14T23:52Z is newer than the two-week rule)
+# and its new transitives google-auth 2.62.0, httpx 0.28.1 / httpcore 1.0.9 (= backend/requirements.lock), tenacity 9.1.4
+# (google-genai requires <9.2.0), websockets 16.1.1 (<17.0), distro 1.9.0, cryptography 50.0.2, cffi 2.1.1, pycparser 3.11,
+# pyasn1 0.6.4, pyasn1_modules 0.4.2; every one first uploaded on or before 2026-10-14 (ARCHITECTURE.md §6).
 # Install: python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 ast_serialize==0.12.1
 certifi==2026.10.19
+cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
 colorama==0.4.6
+cryptography==50.0.2
+distro==1.9.0
 fastapi==0.143.0
+google-auth==2.62.0
+google-genai==2.30.1
 googleapis-common-protos==1.75.5
 h11==0.16.0
 httpcore2==2.13.1
+httpcore==1.0.9
 httpx2==2.13.1
+httpx==0.28.1
 idna==3.20
 iniconfig==2.3.1
 jiter==0.17.0
@@ -40,8 +51,11 @@ packaging==26.3
 pathspec==1.1.1
 pluggy==1.6.0
 protobuf==7.36.2
-psycopg==3.3.6
 psycopg-binary==3.3.6
+psycopg==3.3.6
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pycparser==3.11
 pydantic==2.14.0
 pydantic_core==2.50.0
 Pygments==2.21.0
@@ -50,9 +64,11 @@ requests==2.34.2
 ruff==0.17.0
 sniffio==1.3.1
 starlette==1.7.0
+tenacity==9.1.4
 truststore==0.10.4
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.5
 urllib3==2.8.0
 uvicorn==0.54.0
+websockets==16.1.1

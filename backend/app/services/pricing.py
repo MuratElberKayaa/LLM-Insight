@@ -12,7 +12,8 @@ decides. The rules, in the order they are applied to one usage row:
    whether the call was billed that way; if it cannot be shown, the price is inapplicable.
    OpenAI: `openai.response.service_tier` must be `default` and `server.address` must be
    `api.openai.com` (Flex / Batch / Fast tiers and regional endpoints differ) → else
-   `price_missing`.
+   `price_missing`. Gemini (`gcp.gemini`): never, because the Free/paid billing tier cannot
+   be shown from telemetry (ADR-35) → always `price_missing`.
 3. Price selection. Exact model: `response_model`, or `requested_model` only when the
    response model is absent. No alias, prefix or fuzzy matching. Of that model's rows, the
    one with the latest `effective_from <= started_at` (event time). None → `price_missing`.
@@ -143,9 +144,19 @@ def _openai_standard(attributes: Mapping[str, Any]) -> bool:
     )
 
 
+def _gemini_tier_unprovable(attributes: Mapping[str, Any]) -> bool:
+    """Gemini Developer API (ADR-35): a project is billed on the Free Tier (no charge) or a
+    paid tier (Standard, Batch, Flex, Priority), and no span attribute shows which. A stored
+    price therefore never applies: a Free Tier call is never shown as a paid-tier cost."""
+    return False
+
+
 # Providers with billing modes beyond the stored standard-tier price. A provider without an
 # entry has no such mode in the catalogue; adding a real provider requires adding its rule.
-APPLICABILITY: dict[str, Callable[[Mapping[str, Any]], bool]] = {"openai": _openai_standard}
+APPLICABILITY: dict[str, Callable[[Mapping[str, Any]], bool]] = {
+    "openai": _openai_standard,
+    "gcp.gemini": _gemini_tier_unprovable,
+}
 
 
 def price_applicable(provider: str, attributes: Mapping[str, Any]) -> bool:
