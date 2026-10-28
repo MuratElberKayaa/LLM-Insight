@@ -206,6 +206,17 @@ def test_incomplete_response_records_the_provider_reason(telemetry, stub):
     assert span["attributes"]["gen_ai.response.finish_reasons"] == ["max_output_tokens"]
     assert span["status"] == "UNSET"  # a returned, billed response, not an error
     assert outcome.status == "incomplete" and outcome.error_category is None
+    assert outcome.incomplete_reason == "max_output_tokens"  # Phase 6B: never "completed"
+
+
+def test_completed_and_failed_responses_have_no_incomplete_reason(telemetry, stub):
+    fake = FakeOpenAI(
+        [response_ok(), response_ok(status="failed", incomplete_reason="max_output_tokens")]
+    )
+    adapter = OpenAIResponsesTextAdapter(observed(telemetry, fake))
+    assert adapter.generate_text(text_request()).incomplete_reason is None
+    failed = adapter.generate_text(text_request())
+    assert failed.status == "failed" and failed.incomplete_reason is None
 
 
 @pytest.mark.parametrize(
@@ -372,6 +383,19 @@ def test_retry_predicate_and_categories():
         {"tool_choice": "auto"},
         {"store": True},
         {"store": None},
+        # Phase 6B allowlist: arguments that could add unpriced charges or bypass a refusal.
+        {"extra_body": {"tools": [{"type": "web_search"}]}},
+        {"extra_body": {}},
+        {"extra_headers": {"OpenAI-Project": "proj_SYNTHETIC"}},
+        {"extra_query": {"x": "1"}},
+        {"prompt": {"id": "pmpt_SYNTHETIC"}},
+        {"moderation": {"model": "omni-moderation-latest"}},
+        {"context_management": [{"type": "compaction"}]},
+        {"access_programs": {"cyber": "standard"}},
+        {"max_tool_calls": 1},
+        {"parallel_tool_calls": False},
+        {"include": ["reasoning.encrypted_content"]},
+        {"a_future_parameter": True},
     ],
 )
 def test_unsupported_requests_are_refused_before_sending(telemetry, stub, kwargs):
@@ -380,6 +404,22 @@ def test_unsupported_requests_are_refused_before_sending(telemetry, stub, kwargs
         respond(observed(telemetry, fake), **kwargs)
     assert fake.requests == []
     assert clients(exported(telemetry, stub)) == []
+
+
+def test_allowlisted_text_settings_are_sent(telemetry, stub):
+    fake = FakeOpenAI([response_ok()])
+    respond(
+        observed(telemetry, fake),
+        instructions=SYSTEM_SENTINEL,
+        max_output_tokens=32,
+        reasoning={"effort": "none"},
+        truncation="disabled",
+        metadata={"suite": "SYNTHETIC"},
+        timeout=5.0,
+    )
+    sent = fake.request_json(0)
+    assert sent["reasoning"] == {"effort": "none"} and sent["store"] is False
+    assert "tools" not in sent and "prompt" not in sent
 
 
 # ---------------------------------------------------------------- privacy and robustness

@@ -66,9 +66,11 @@ with status ERROR (`openai.response.failed`, `openai.response.unexpected_status`
 `openai` 3.28.0 does not validate response bodies.
 
 Refused before sending: `stream`, `stream_options`, `background`, `conversation`,
-`previous_response_id`, `tools`, `tool_choice` and `store` other than False. `store=False`
-is always sent. Tool calls are refused because built-in tool charges are not representable
-in the price catalogue (docs/PRICING.md §3), so a token-only cost would understate them.
+`previous_response_id`, `tools`, `tool_choice`, `store` other than False, and (Phase 6B)
+every argument outside `RESPONSES_ALLOWED` (`extra_body`, `prompt`, `moderation`, ...).
+`store=False` is always sent. Tool calls are refused because built-in tool charges are not
+representable in the price catalogue (docs/PRICING.md §3), so a token-only cost would
+understate them.
 
 Retries differ from Chat Completions: one attempt by default, and only an **unambiguous**
 failure is retried (`is_unambiguously_retryable`: a 429 that is not `insufficient_quota`).
@@ -120,6 +122,28 @@ RESPONSES_REFUSED = (
     "previous_response_id",
     "tools",
     "tool_choice",
+)
+# Phase 6B: an allowlist, not only the refusals above. `extra_body` could carry `tools`,
+# `prompt` a stored template (model, tools), `moderation` a second model, and
+# `context_management` or `access_programs` change processing; none of these charges is in
+# the catalogue. Any argument outside this set is refused before sending.
+RESPONSES_ALLOWED = frozenset(
+    {
+        "instructions",
+        "max_output_tokens",
+        "metadata",
+        "prompt_cache_key",
+        "reasoning",
+        "safety_identifier",
+        "service_tier",
+        "store",
+        "temperature",
+        "text",
+        "timeout",
+        "top_p",
+        "truncation",
+        "user",
+    }
 )
 OPENAI_HOST = "api.openai.com"
 RETRYABLE_STATUS = frozenset({408, 409, 429})
@@ -292,8 +316,8 @@ def responses_request_params(kwargs: Mapping[str, Any]) -> RequestParams:
 
 
 def _refuse_unsupported_responses(kwargs: Mapping[str, Any]) -> None:
-    for name in RESPONSES_REFUSED:
-        if name in kwargs:
+    for name in kwargs:
+        if name in RESPONSES_REFUSED or name not in RESPONSES_ALLOWED:
             raise UnsupportedRequestError(f"{name} is not supported by the Responses adapter")
     if "store" in kwargs and kwargs["store"] is not False:
         raise UnsupportedRequestError("store must be False: the adapter never stores responses")
@@ -641,6 +665,11 @@ class OpenAIResponsesTextAdapter:
             error_category=category,
             duration_ms=round((time.monotonic() - started) * 1000, 1),
             provider_response=response,
+            incomplete_reason=(
+                _text(getattr(getattr(response, "incomplete_details", None), "reason", None))
+                if status == "incomplete"
+                else None
+            ),
         )
 
 

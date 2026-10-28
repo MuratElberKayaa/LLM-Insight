@@ -73,7 +73,9 @@ class AttemptRecord:
 @dataclass(frozen=True)
 class TextOutcome:
     """Metadata of one logical call. `usage` is the last attempt's provider-reported usage
-    or None (unknown, never 0)."""
+    or None (unknown, never 0). `incomplete_reason` is the provider's own reason for an
+    `incomplete` status (e.g. `max_output_tokens`): an incomplete answer is not a completed
+    one."""
 
     provider: str
     status: OutcomeStatus
@@ -86,6 +88,7 @@ class TextOutcome:
     error_category: str | None
     duration_ms: float
     provider_response: object | None = field(default=None, repr=False, compare=False)
+    incomplete_reason: str | None = None
 
 
 class TextGenerationAdapter(Protocol):

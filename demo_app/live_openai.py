@@ -20,7 +20,8 @@ line is printed: the trace ID, status, models, token counts, duration, the estim
 project key, the input or the output.
 
 Exit codes: 0 dry run printed, or the request completed (status `completed`/`incomplete`);
-1 the provider call failed; 2 refused (nothing was sent).
+1 the provider call failed; 2 refused (nothing was sent). An `incomplete` answer is never
+shown as `completed`: its status stays `incomplete` with the provider's `incomplete_reason`.
 """
 
 from __future__ import annotations
@@ -264,6 +265,7 @@ def main(
             "provider_request_sent": settlement.attempts > 0,
             "trace_id": trace_id,
             "status": outcome.status,
+            "incomplete_reason": outcome.incomplete_reason,
             "error_category": outcome.error_category,
             "provenance": provenance,
             "request_model": outcome.request_model,
