@@ -43,6 +43,11 @@ from llm_insight_sdk.providers import AttemptRecord
 
 CONSENT_PHRASE = "openai-paid-calls"
 SUPPORTED_PROVIDERS = frozenset({"openai"})
+# Read by `openai` 3.28.0 from the process environment, never by this guard (Phase 6B):
+# OPENAI_CUSTOM_HEADERS can replace the `Authorization` header (another credential than the
+# OPENAI_API_KEY checked here) and, like the other two, route billing to another
+# organization or project than the dedicated project key's.
+CLIENT_ENV_OVERRIDES = ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID")
 PRICED_SERVICE_TIER = "default"
 
 # One token covers at least one UTF-8 byte under byte-level BPE; the allowance covers the
@@ -268,6 +273,12 @@ def evaluate_policy(env: Mapping[str, str] | None = None, *, now: datetime) -> P
         r.refuse("api_key_missing", "OPENAI_API_KEY is not set in the environment")
     if r.raw("OPENAI_BASE_URL"):
         r.refuse("base_url_override", "OPENAI_BASE_URL must not be set (api.openai.com only)")
+    for var in CLIENT_ENV_OVERRIDES:
+        if r.raw(var):
+            r.refuse(
+                "client_env_override",
+                f"{var} must not be set (credential and billing come from the project key only)",
+            )
 
     providers = r.names("LLMI_LIVE_PROVIDERS")
     for provider in providers:
@@ -509,8 +520,8 @@ class LiveSession:
             return {
                 "requests_started": led.requests_started,
                 "max_requests": self.policy.max_requests,
-                "booked_usd": str(led.booked_usd),
-                "outstanding_usd": str(led.outstanding_usd),
+                "booked_usd": format(led.booked_usd, "f"),  # never "0E-10"
+                "outstanding_usd": format(led.outstanding_usd, "f"),
                 "session_budget_usd": str(self.policy.session_budget_usd),
                 "halted": led.halted,
             }

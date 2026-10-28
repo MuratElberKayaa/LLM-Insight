@@ -279,3 +279,57 @@ def test_live_runner_trace_reaches_the_database_and_the_read_api(priced_backend,
     log = priced_backend.log_text()
     for secret in (FAKE_API_KEY, COMPLETION_SENTINEL, live_openai.INPUT_TEXT):
         assert secret not in log
+
+
+def test_incomplete_runner_response_is_stored_as_incomplete_and_priced_once(
+    priced_backend, project
+):
+    """Phase 6B: a `max_output_tokens` cut-off is billed and stored, and is never shown as a
+    completed answer: the runner says `incomplete`, the span keeps the provider's reason."""
+    pid, key = project
+    env = live_env()
+    env.update(
+        {
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": priced_backend.ingest_endpoint,
+            "OTEL_EXPORTER_OTLP_TRACES_HEADERS": f"X-Project-Key={key}",
+            "OTEL_SERVICE_NAME": "live-runner-it",
+            "LLMI_SDK_SCHEDULE_DELAY_MILLIS": "100",
+        }
+    )
+    usage = {
+        "input_tokens": 41,
+        "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+        "output_tokens": 64,
+        "output_tokens_details": {"reasoning_tokens": 0},
+        "total_tokens": 105,
+    }
+    step = response_ok(usage=usage, status="incomplete", incomplete_reason="max_output_tokens")
+    fake = FakeOpenAI([step])
+    out = io.StringIO()
+    code = live_openai.main(
+        ["--execute"],
+        env,
+        now=NOW,
+        client_factory=lambda policy: fake.client(),
+        provenance="synthetic",
+        out=out,
+    )
+    doc = json.loads(out.getvalue())
+    assert code == 0 and len(fake.requests) == 1
+    assert (doc["status"], doc["incomplete_reason"]) == ("incomplete", "max_output_tokens")
+    assert doc["estimated_cost_usd"] == "0.0003187500"  # (41 * 0.75 + 64 * 4.50) / 1e6
+    tid = doc["trace_id"]
+
+    (span,) = priced_backend.query(
+        "SELECT status, error_type, attributes FROM spans"
+        " WHERE project_id = %s AND trace_id = %s AND kind = 'CLIENT'",
+        (pid, tid),
+    )
+    status, error_type, attrs = span
+    assert status != "ERROR" and error_type is None
+    assert attrs["gen_ai.response.finish_reasons"] == ["max_output_tokens"]
+    (u,) = usage_rows(priced_backend, pid, tid)
+    assert (u["output_tokens"], u["cost_status"]) == (64, "computed")
+    assert Decimal(str(u["cost_usd"])) == Decimal(doc["estimated_cost_usd"])
+    detail = priced_backend.api(f"/api/v1/traces/{tid}?project={pid}")
+    assert [x["cost_usd"] for x in detail["usage"]] == ["0.0003187500"]

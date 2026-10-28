@@ -231,7 +231,11 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
   `openai.api.type = responses`; the backend contract (`llminsight.attrmap.v1`) is
   unchanged. `stream`, `stream_options`, `background`, `conversation`,
   `previous_response_id`, `tools`, `tool_choice` and `store` other than `False` are refused
-  before sending.
+  before sending, and so is (Phase 6B, ADR-31) every argument outside
+  `openai_adapter.RESPONSES_ALLOWED` (for example `extra_body`, `prompt`, `moderation`).
+- **Live guard environment (ADR-31):** besides `OPENAI_BASE_URL`, the guard refuses
+  `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`: the `openai` library
+  reads them itself, and a custom `Authorization` header would replace the checked key.
 - **Usage:** `usage.input_tokens` / `output_tokens`, `input_tokens_details.cached_tokens` /
   `cache_write_tokens`, `output_tokens_details.reasoning_tokens`, type-checked (the `openai`
   library does not validate bodies); anything missing or mistyped stays unknown.

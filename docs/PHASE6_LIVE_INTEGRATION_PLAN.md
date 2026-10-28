@@ -1,6 +1,6 @@
 # LLM Insight — Phase 6 Live Integration Plan
 
-**Status:** Phase 6A design contract (2026-10-27), recorded by ADR-28…30 (accepted within the Phase 6A instruction). Awaiting architectural review. **No real or paid provider call has been made**; Phase 6B (the first real request) is not started.
+**Status:** Phase 6A design contract (2026-10-27), recorded by ADR-28…30 (accepted within the Phase 6A instruction). Phase 6B preflight (2026-10-28, `reports/phase-6b-preflight.md`): verified offline, hardened by ADR-31 (§C, §G). **No real or paid provider call has been made**; the first real request needs architectural and explicit spending approval.
 
 **Baseline:** Phase 5 MVP, release commit `1a57d65` (annotated tag `phase-5`), 48/48 acceptance scenarios, PostgreSQL revision `0005`, local-first and mock-only.
 
@@ -36,7 +36,7 @@
 `ObservedOpenAIClient.create_response(model=, input=, ...)` wraps `client.responses.create` (openai 3.28.0, pinned) with the existing per-attempt span machinery. The client's own retries stay disabled (`max_retries=0`); only `https://api.openai.com` is accepted (existing check).
 
 ### C. First scope: non-streaming text
-Refused before any request: `stream` (any value), `stream_options`, `background`, `conversation`, `previous_response_id`, `tools`, `tool_choice`, `store` other than `False`. `store=False` is always sent. Tools are refused because built-in tool charges are not representable in the catalogue (`PRICING.md` §3): a token-only cost would understate them while being labelled `computed`.
+Refused before any request: `stream` (any value), `stream_options`, `background`, `conversation`, `previous_response_id`, `tools`, `tool_choice`, `store` other than `False`, and (Phase 6B preflight, ADR-31) every argument outside the allowlist `RESPONSES_ALLOWED` (`instructions`, `max_output_tokens`, `metadata`, `prompt_cache_key`, `reasoning`, `safety_identifier`, `service_tier`, `store`, `temperature`, `text`, `timeout`, `top_p`, `truncation`, `user`): `extra_body` could carry `tools`, `prompt` a stored template with its own model and tools, `moderation` a second model, and `context_management` or `access_programs` change processing. `store=False` is always sent. Tools are refused because built-in tool charges are not representable in the catalogue (`PRICING.md` §3): a token-only cost would understate them while being labelled `computed`.
 
 ### D. Streaming (later enhancement, not implemented)
 Needs: usage from the final `response.completed` event only (never summed from deltas), a span that ends on the terminal event or on abandonment, abandonment marked as an error with unknown usage, and time-to-first-token as an additive attribute (an `attrmap.v2` decision, ADR-15). Until then streaming is refused.
@@ -91,6 +91,7 @@ The Chat Completions path keeps its Phase 2B retry rule (timeouts, 408/409/429/5
 | `LLMI_LIVE_CONSENT` | yes | exactly `openai-paid-calls` |
 | `OPENAI_API_KEY` | yes | presence only; never read into a log, output, span or exception |
 | `OPENAI_BASE_URL` | must be **unset** | refused if set; the runner pins `https://api.openai.com/v1` |
+| `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` | must be **unset** | Phase 6B preflight (ADR-31): refused if set (`client_env_override`); `openai` 3.28.0 reads them from the process environment, a custom `Authorization` header replaces the checked key, and all three can route billing away from the dedicated project key |
 | `LLMI_LIVE_PROVIDERS` | yes | allowlist; only `openai` |
 | `LLMI_LIVE_MODELS` | yes | allowlist; each model needs a verified price |
 | `LLMI_LIVE_MAX_REQUESTS` | yes | 1–20 per session |
