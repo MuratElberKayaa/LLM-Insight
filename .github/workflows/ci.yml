@@ -9,6 +9,11 @@
 #   seeded live backend and the installed Microsoft Edge; run locally with `npm run test:e2e`)
 #   and the compose `app` image build (run locally with `docker compose --profile app build`).
 # - Actions are pinned to full commit SHAs of releases at least two weeks old (CR-09).
+# - npm audit (Phase 6, R102): production dependencies must have zero advisories at every
+#   severity (no exceptions); the full audit is printed and must contain nothing but advisories
+#   accepted in frontend/security/npm-audit-policy.json, in their recorded dev-only chain and
+#   before their review deadline (frontend/scripts/audit-policy.mjs; fails closed on anything
+#   else, including npm/registry errors). An accepted exception is not a clean audit.
 name: ci
 
 on:
@@ -124,7 +129,18 @@ jobs:
           python3 -I scripts/dev/init_env.py
           python3 -I scripts/dev/init_frontend_env.py --project-id 1
       - run: npm ci --no-audit --no-fund
-      - run: npm audit
+      - name: Production dependency audit (mandatory, every severity, no exceptions)
+        run: npm audit --omit=dev --audit-level=info
+      - name: Audit policy self-tests (fail-closed decision logic, offline)
+        run: npm run test:audit-policy
+      - name: Full dependency audit (complete report printed) and exception policy
+        run: |
+          status=0
+          npm audit --json > "$RUNNER_TEMP/npm-audit-full.json" || status=$?
+          echo "::group::Full npm audit report (npm audit --json, exit status $status)"
+          cat "$RUNNER_TEMP/npm-audit-full.json"
+          echo "::endgroup::"
+          node scripts/audit-policy.mjs --report "$RUNNER_TEMP/npm-audit-full.json" --npm-exit-code "$status"
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
