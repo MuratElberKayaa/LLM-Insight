@@ -11,7 +11,10 @@ time, at most 31 days, default the last 31 days); `model` (exact `response_model
 `requested_model`); `status` (`ok` | `error`, applied to traces for trace-level metrics and
 to inference attempts for usage-level metrics); `prompt_version`; `provenance` (`real` |
 `synthetic` | `mixed` | `unknown`, applied at each metric's own level: no usage row is
-`mixed`). `models/compare` adds `limit` (1–200, default 50 groups).
+`mixed`); `provider` (Phase 6C-C: exact `usage_records.provider` in the stored identifier
+format; usage-level metrics use the row's provider, trace-level metrics "any usage row with
+that provider", one row matching `model` too when both are given). `models/compare` adds
+`limit` (1–200, default 50 groups).
 """
 
 from datetime import UTC, datetime
@@ -23,7 +26,13 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.api.admin import NO_STORE, not_found, require_admin
-from app.api.traces import ProjectParam, iso_from_datetime, read_snapshot, resolve_window
+from app.api.traces import (
+    ProjectParam,
+    ProviderParam,
+    iso_from_datetime,
+    read_snapshot,
+    resolve_window,
+)
 from app.repositories import traces as trace_repo
 from app.repositories.metrics import MetricsFilter
 from app.services import metrics
@@ -49,9 +58,10 @@ def _filter(
     status: str | None,
     prompt_version: str | None,
     provenance: str | None,
+    provider: str | None = None,
 ) -> MetricsFilter:
     start, end = resolve_window(from_, to, datetime.now(UTC))
-    return MetricsFilter(project, start, end, model, status, prompt_version, provenance)
+    return MetricsFilter(project, start, end, model, status, prompt_version, provenance, provider)
 
 
 async def _respond(request: Request, f: MetricsFilter, build) -> JSONResponse:
@@ -85,9 +95,10 @@ async def overview(
     status: StatusParam = None,
     prompt_version: PromptVersionParam = None,
     provenance: ProvenanceParam = None,
+    provider: ProviderParam = None,
 ) -> JSONResponse:
     """KPIs M01–M14 with `n`, the provenance split and null status, plus a trend."""
-    f = _filter(project, from_, to, model, status, prompt_version, provenance)
+    f = _filter(project, from_, to, model, status, prompt_version, provenance, provider)
     return await _respond(request, f, lambda session: metrics.overview(session, f))
 
 
@@ -102,7 +113,8 @@ async def models_compare(
     prompt_version: PromptVersionParam = None,
     provenance: ProvenanceParam = None,
     limit: Annotated[int, Query(ge=1, le=MAX_GROUPS)] = DEFAULT_GROUPS,
+    provider: ProviderParam = None,
 ) -> JSONResponse:
     """M15: per provider / requested model / response model / prompt version."""
-    f = _filter(project, from_, to, model, status, prompt_version, provenance)
+    f = _filter(project, from_, to, model, status, prompt_version, provenance, provider)
     return await _respond(request, f, lambda session: metrics.compare(session, f, limit))

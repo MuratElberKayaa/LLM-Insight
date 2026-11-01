@@ -1,16 +1,20 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { AutoRefresh } from "../../components/auto-refresh";
+import { LiveRegion } from "../../components/live-region";
 import { FilterGroup, ProvenanceLinks, RangeLinks } from "../../components/filter-bar";
 import { ComparisonCharts, ComparisonNotices, ComparisonTable } from "../../components/models/model-comparison";
 import { NavigationTransition, PendingRegion, FilterLink, RefreshButton } from "../../components/navigation-transition";
 import { PageHeader } from "../../components/page-header";
 import { ProjectSelector } from "../../components/project-selector";
 import { RangeForm } from "../../components/range-form";
+import { ScopeFilterForm } from "../../components/scope-filter-form";
 import { EmptyState, ErrorState, Notice } from "../../components/states";
+import { renderOutcome } from "../../lib/auto-refresh";
 import { formatUtcMinute, formatUtcTime } from "../../lib/format";
 import { ATTEMPT_STATUS_FILTERS, GROUP_LIMITS, modelHref, modelSearch, modelStateOf, parseModelQuery, withModelFilter } from "../../lib/model-query";
 import { hiddenFields } from "../../lib/project";
+import { hasScope } from "../../lib/scope-filters";
 import { loadModels } from "../../lib/server/models";
 import { WINDOW_PROBLEM_TEXT, windowLabel } from "../../lib/time-range";
 
@@ -29,9 +33,12 @@ export default async function ModelsPage({ searchParams }: PageProps) {
   const data = compare.ok ? compare.data : null;
   const linkState = state;
   const search = modelSearch(linkState);
+  const unscoped = withModelFilter(linkState, { provider: null, model: null });
+  const filtered = state.provenance !== "all" || state.status !== "all" || hasScope(query);
+  const outcome = renderOutcome(fetchedAt, ctx.settledAt, [compare, ctx.options, ctx.projects]);
 
   return (
-    <NavigationTransition>
+    <NavigationTransition outcome={outcome}>
       <PageHeader
         title="Model comparison"
         description="Inference attempts, errors, latency, tokens and estimated cost per provider, requested model, response model and prompt version (M15), computed by the backend."
@@ -42,7 +49,9 @@ export default async function ModelsPage({ searchParams }: PageProps) {
                 Window {formatUtcMinute(data.window.from)} → {formatUtcMinute(data.window.to)} ({windowLabel(state.window)}, attempt start time)
               </span>
             ) : null}
-            <span>Fetched {formatUtcTime(fetchedAt)}</span>
+            <span data-testid="fetched-at" data-fetched-at={fetchedAt.toISOString()}>
+              Fetched {formatUtcTime(fetchedAt)} · not live; refresh to update
+            </span>
           </>
         }
         actions={
@@ -52,7 +61,8 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           </>
         }
       />
-      <ProjectSelector context={ctx} action="/models" hidden={hiddenFields(search, ["project"])} />
+      {/* Provider and model are values of one project: a project switch resets them (Phase 6C-C). */}
+      <ProjectSelector context={ctx} action="/models" hidden={hiddenFields(search, ["project", "provider", "model"])} />
       <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-3" data-testid="model-filters">
         <RangeLinks id="m-range-label" window={state.window} hrefFor={(window) => modelHref(withModelFilter(linkState, { window }))} />
         <ProvenanceLinks id="m-prov-label" current={state.provenance} hrefFor={(provenance) => modelHref(withModelFilter(linkState, { provenance }))} />
@@ -71,6 +81,16 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           ))}
         </FilterGroup>
       </div>
+      <div className="mb-3">
+        <ScopeFilterForm
+          action="/models"
+          hidden={hiddenFields(modelSearch(unscoped), ["provider", "model"])}
+          scope={{ provider: query.provider, model: query.model }}
+          options={ctx.options}
+          clearHref={modelHref(unscoped)}
+          idPrefix="models"
+        />
+      </div>
       <div className="mb-5">
         <RangeForm action="/models" hidden={hiddenFields(search, ["range", "from", "to"])} window={state.window} shown={data?.window ?? null} />
       </div>
@@ -82,14 +102,22 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           </Notice>
         </div>
       )}
+      {state.provenance === "mixed" && (
+        <div className="mb-5">
+          <Notice tone="info" title="Mixed is a trace-level value" testId="mixed-notice">
+            The comparison groups inference attempts, and no single attempt is mixed, so this filter always gives an empty comparison.
+          </Notice>
+        </div>
+      )}
       <PendingRegion>
+        <LiveRegion viewKey={`${ctx.projectId ?? "-"}?${search}`} fetchedAt={fetchedAt.toISOString()} failure={compare.ok ? null : compare.error}>
         {!compare.ok ? (
           <ErrorState error={compare.error} resource="the model comparison" />
         ) : data !== null && data.groups.length === 0 ? (
           <EmptyState title="No inference attempts in this window">
             <p>
               The backend has no inference attempts for project {ctx.projectId} between {formatUtcMinute(data.window.from)} and {formatUtcMinute(data.window.to)}
-              {state.provenance !== "all" || state.status !== "all" ? " with the selected filters" : ""}.
+              {filtered ? " with the selected filters" : ""}.
             </p>
             <p className="mt-2 text-ink-3">
               To generate synthetic telemetry locally, run the mock demo: <code className="font-mono text-xs">sdk/.venv/Scripts/python -m demo_app</code> (see docs/PHASE_STATUS.md).
@@ -102,6 +130,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             <ComparisonTable data={data} />
           </>
         ) : null}
+        </LiveRegion>
       </PendingRegion>
     </NavigationTransition>
   );

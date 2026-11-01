@@ -80,6 +80,7 @@ browser ──GET──▶ proxy.ts (loopback Host only, GET/HEAD, CSP nonce; PO
 - Phase 4B: `components/reviews/` (review section, review and decision forms, diagnostics panel), `components/datasets/` (dataset and test-case forms, case list), `app/datasets/`, `app/traces/[traceId]/reviews/[reviewId]/test-case/`; `lib/actions/{reviews,datasets}.ts` (the only `"use server"` modules: four Server Actions, each re-validating its form and calling one allowlisted write), `lib/server/{reviews,datasets,review-page}.ts`, `lib/review-forms.ts` (form parsing), `lib/action-state.ts`, `lib/api/{review-types,review-schema,diagnostics,ids}.ts`. Writes go through `sendJson` in `lib/server/backend.ts` (method + path allowlist).
 - Phase 4D: `app/experiments/`, `components/experiments/` (setup form, report sections, value renderers), `components/charts/outcome-chart.tsx`; `lib/actions/experiments.ts` (the fifth Server Action, ADR-26: mode always `mock`), `lib/experiment-form.ts`, `lib/server/experiments.ts`, `lib/api/experiment-{types,schema}.ts` (strict report decoding with the report's own invariants).
 - `lib/api/` — response types mirroring `backend/app/services/metrics.py`, decoders, failure kinds and copy.
+- Phase 6C-C: `components/live-region.tsx` (client: last good content of the same view, labelled stale after a transient or 429 failure), `components/scope-filter-form.tsx` (provider select + model field with observed values), `components/overview/latest-trace.tsx`; `lib/auto-refresh.ts` now holds the `RefreshController` (timers, cooldown, backoff, stop on fatal failures) and `renderOutcome`; `lib/scope-filters.ts` (provider/model URL state, suggestions, echo check); `lib/server/filter-options.ts`.
 - `lib/` — pure helpers: `validate.ts`, `decimal.ts` (BigInt money), `format.ts` (UTC, en-US), `time-range.ts`, `trend.ts`, `provenance.ts`, `request-guard.ts`; Phase 3B: `json.ts` (lossless JSON: integers above 2^53 keep their digits), `nanos.ts` (BigInt nanosecond math), `trace-query.ts` (trace-list URL state), `span-tree.ts` (span hierarchy, waterfall geometry, logical calls), `api/trace-types.ts` and `api/trace-schema.ts`.
 
 **Data rules:** the frontend never computes an alternative metric. Counts, rates,
@@ -108,15 +109,27 @@ counts and estimated usage flagged, latency with `n` and low-sample flags, prove
 SYNTHETIC banner. Charts: attempts (not failed / failed) and p95 latency per group, each with a
 table view; no cost chart (a partial known cost must not look comparable).
 
-**Auto-refresh (optional, off by default):** 30 s / 1 min / 5 min, re-renders the same URL,
-never while a request is pending, postponed while the tab is hidden, stops after 30 minutes,
-disabled on later cursor pages. Polling, not live data.
+**Auto-refresh (optional, off by default; Phase 6C-C, ADR-38):** 30 s / 1 min / 5 min (never
+below 15 s), re-renders the same URL with the same filters, one refresh in flight at most
+(Next.js discards an unfinished refresh when a navigation starts), counted from the completed
+one, paused with no timer while the tab is hidden, stopped after 30 minutes, disabled on later
+cursor pages. Every server render reports the outcome of its backend reads: a `429` (or `503`
+with `Retry-After`) starts a cooldown from `Retry-After` (seconds or HTTP-date; 60 s if absent)
+that the timer and the Refresh button both respect ("Retry in N s"); outages, timeouts and 5xx
+double the interval up to 5 minutes; a rejected token, an invalid or unknown project, a refused
+query or a contract mismatch stop polling with the reason. After a transient or 429 failure the
+last good content of the same view stays below the error, dimmed and labelled with its load
+time; never for another view or project. The status line shows the last successful load. This
+re-reads stored telemetry; it is not a live stream.
 
 **Trace explorer:** only the filters `GET /api/v1/traces` implements (UTC window ≤ 31 days as
 a preset or a fixed `from`/`to`, `status`, `provenance`, exact `model`, page size). Phase 3C
 (R40): a "Providers · models (calls)" column lists every provider/model combination of a trace
-from the additive `usage.models` (up to 3 shown, the rest counted); there is still no provider
-filter. Paging follows the opaque
+from the additive `usage.models` (up to 3 shown, the rest counted). Phase 6C-C (ADR-37): an exact
+`provider` filter, on Overview and Models too (with `model`), applied by the backend to all stored
+data of the window; with both, one call must match provider and model. Suggested values are the
+providers and models the backend observed in the project and window; a project switch resets
+provider and model. Paging follows the opaque
 cursor and freezes the backend-echoed window. Detail links carry the list state (`?list=`),
 which the back link re-parses so only canonical list parameters survive. Nanosecond values stay
 strings/BigInt end to end; the span tree tolerates several roots, orphans, truncated parents and

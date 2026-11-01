@@ -7,7 +7,7 @@
 import type { TraceProvenance, UsageProvenance } from "./api/types";
 
 export const PROVENANCE_LABEL: Record<TraceProvenance, string> = {
-  real: "Real",
+  real: "Real (asserted)",
   synthetic: "Synthetic",
   mixed: "Mixed",
   unknown: "Unknown",

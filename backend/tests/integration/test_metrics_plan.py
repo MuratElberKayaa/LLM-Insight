@@ -79,10 +79,20 @@ def _window_filter(**kw) -> repo.MetricsFilter:
     return repo.MetricsFilter(1, start, start + timedelta(days=1), **kw)
 
 
-def test_usage_aggregates_use_the_event_time_index(generated):
+# Phase 6C-C: the `provider` filter (alone and with `model`) keeps the same plans.
+FILTERS = [
+    {},
+    {"provider": "synthetic.plan"},
+    {"provider": "synthetic.plan", "model": "synthetic-model"},
+]
+FILTER_IDS = ["plain", "provider", "provider+model"]
+
+
+@pytest.mark.parametrize("kw", FILTERS, ids=FILTER_IDS)
+def test_usage_aggregates_use_the_event_time_index(generated, kw):
     with generated.connect() as c:
         assert c.exec_driver_sql("SELECT count(*) FROM usage_records").scalar_one() == 36000
-        plan = _plan(c, repo.usage_summary_stmt(_window_filter()))
+        plan = _plan(c, repo.usage_summary_stmt(_window_filter(**kw)))
     scans = _scans(plan)
     assert any(r == "usage_records" and i == "ix_usage_records_project_id_started_at"
                for _, r, i in scans), scans  # fmt: skip
@@ -91,12 +101,13 @@ def test_usage_aggregates_use_the_event_time_index(generated):
     assert not any(t == "Seq Scan" for t, _, _ in scans), scans
 
 
-def test_trace_aggregates_use_the_trace_window_index(generated):
+@pytest.mark.parametrize("kw", FILTERS, ids=FILTER_IDS)
+def test_trace_aggregates_use_the_trace_window_index(generated, kw):
     from sqlalchemy import func, select
 
     from app.models import Trace
 
-    f = _window_filter()
+    f = _window_filter(**kw)
     stmt = (
         select(func.count())
         .select_from(Trace)

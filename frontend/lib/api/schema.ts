@@ -55,12 +55,20 @@ function split<T, P extends string>(keys: readonly P[], decoder: Decoder<T>): De
 
 const window: Decoder<Window> = object<Window>({ from: isoUtc, to: isoUtc });
 
-const filters: Decoder<Filters> = object<Filters>({
+const baseFilters = object<Omit<Filters, "provider">>({
   model: nullable(label),
   status: nullable(literal("ok", "error")),
   prompt_version: nullable(string(64)),
   provenance: nullable(literal(...TRACE_PROVENANCES)),
 });
+
+/** `provider` is additive (Phase 6C-C): absent → null, so a backend without it decodes, and
+ * `echoMatches` then refuses a provider-filtered response that did not apply the filter. */
+const filters: Decoder<Filters> = (v, path) => {
+  const base = baseFilters(v, path);
+  const raw = typeof v === "object" && v !== null && Object.hasOwn(v, "provider") ? (v as { provider: unknown }).provider : null;
+  return { ...base, provider: nullable(string(64))(raw, `${path}.provider`) };
+};
 
 const latency: Decoder<Latency> = object<Latency>({
   n: count,

@@ -39,6 +39,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session, aliased
 
 from app.models import ModelPrice, Span, Trace, UsageRecord
+from app.repositories.traces import usage_match
 
 PERCENTILES = (0.5, 0.95, 0.99)
 MAX_ERROR_TYPES = 50
@@ -61,6 +62,7 @@ class MetricsFilter:
     status: str | None = None  # "ok" | "error", applied to each metric's own unit
     prompt_version: str | None = None
     provenance: str | None = None  # applied at each metric's own provenance level
+    provider: str | None = None  # Phase 6C-C: exact `usage_records.provider`
 
 
 def _span_of_usage():
@@ -84,6 +86,8 @@ def _usage_conditions(f: MetricsFilter) -> list[ColumnElement[bool]]:
     ]
     if f.model is not None:
         conds.append(or_(u.response_model == f.model, u.requested_model == f.model))
+    if f.provider is not None:
+        conds.append(u.provider == f.provider)
     if f.status == "error":
         conds.append(Span.status == "ERROR")
     elif f.status == "ok":
@@ -108,15 +112,9 @@ def _trace_conditions(f: MetricsFilter) -> list[ColumnElement[bool]]:
         conds.append(Trace.prompt_version == f.prompt_version)
     if f.provenance is not None:
         conds.append(Trace.provenance == f.provenance)
-    if f.model is not None:
-        u = aliased(UsageRecord)
-        conds.append(
-            exists().where(
-                u.project_id == Trace.project_id,
-                u.trace_id == Trace.trace_id,
-                or_(u.response_model == f.model, u.requested_model == f.model),
-            )
-        )
+    match = usage_match(f)  # model and/or provider: one matching usage row of the trace
+    if match is not None:
+        conds.append(match)
     return conds
 
 

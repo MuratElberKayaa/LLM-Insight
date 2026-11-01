@@ -1,11 +1,12 @@
 /**
  * URL state of the model comparison page (`/models`, Phase 3C) and its translation into
  * `GET /api/v1/models/compare` parameters. Only filters the backend implements: a UTC window
- * of at most 31 days, `provenance`, the attempt `status`, and the group `limit` (top-N by
- * attempts; the backend caps it at 200).
+ * of at most 31 days, `provenance`, the attempt `status`, the group `limit` (top-N by
+ * attempts; the backend caps it at 200), and (Phase 6C-C) exact `provider` and `model`.
  */
 
 import { parseProjectParam, projectLinkValue, type ProjectParam } from "./project";
+import { parseScopeFilters, scopeParams, writeScope, type ScopeFilters } from "./scope-filters";
 import {
   PROVENANCE_FILTERS,
   parseWindow,
@@ -23,7 +24,7 @@ export const DEFAULT_GROUP_LIMIT: GroupLimit = 50;
 export type AttemptStatusFilter = "all" | "ok" | "error";
 export const ATTEMPT_STATUS_FILTERS: readonly AttemptStatusFilter[] = ["all", "ok", "error"];
 
-export interface ModelQuery {
+export interface ModelQuery extends ScopeFilters {
   project: ProjectParam;
   window: WindowSpec;
   provenance: ProvenanceFilter;
@@ -33,7 +34,7 @@ export interface ModelQuery {
   windowProblem: WindowProblem | null;
 }
 
-export type ModelState = Omit<ModelQuery, "project" | "ignored" | "windowProblem"> & { project: string | null };
+export type ModelState = Omit<ModelQuery, "project" | "ignored" | "windowProblem" | "provider" | "model"> & Partial<ScopeFilters> & { project: string | null };
 
 type SearchParams = Readonly<Record<string, string | string[] | undefined>>;
 
@@ -55,20 +56,21 @@ export function parseModelQuery(params: SearchParams): ModelQuery {
   const limit = GROUP_LIMITS.find((n) => String(n) === rawLimit) ?? DEFAULT_GROUP_LIMIT;
   if (rawLimit !== undefined && String(limit) !== rawLimit) ignored.push("limit");
 
-  return { project, window, provenance, status, limit, ignored, windowProblem: problem };
+  const scope = parseScopeFilters(get, ignored);
+  return { project, window, provenance, status, limit, ...scope, ignored, windowProblem: problem };
 }
 
 export function modelStateOf(query: ModelQuery): ModelState {
-  const { project, window, provenance, status, limit } = query;
-  return { project: projectLinkValue(project), window, provenance, status, limit };
+  const { project, window, provenance, status, limit, provider, model } = query;
+  return { project: projectLinkValue(project), window, provenance, status, limit, provider, model };
 }
 
 /** Backend parameters for `GET /api/v1/models/compare` (validated values only). */
-export function compareParams(query: Pick<ModelQuery, "window" | "provenance" | "status" | "limit">, now: Date): Record<string, string> {
+export function compareParams(query: Pick<ModelQuery, "window" | "provenance" | "status" | "limit"> & Partial<ScopeFilters>, now: Date): Record<string, string> {
   const params: Record<string, string> = { ...resolveWindowSpec(query.window, now), limit: String(query.limit) };
   if (query.provenance !== "all") params.provenance = query.provenance;
   if (query.status !== "all") params.status = query.status;
-  return params;
+  return { ...params, ...scopeParams({ provider: query.provider ?? null, model: query.model ?? null }) };
 }
 
 export function modelSearch(state: ModelState): string {
@@ -78,6 +80,7 @@ export function modelSearch(state: ModelState): string {
   if (state.provenance !== "all") sp.set("provenance", state.provenance);
   if (state.status !== "all") sp.set("status", state.status);
   if (state.limit !== DEFAULT_GROUP_LIMIT) sp.set("limit", String(state.limit));
+  writeScope({ provider: state.provider ?? null, model: state.model ?? null }, sp);
   return sp.toString();
 }
 

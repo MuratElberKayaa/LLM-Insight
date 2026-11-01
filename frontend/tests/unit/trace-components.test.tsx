@@ -91,8 +91,9 @@ describe("trace list", () => {
     assert.match(m, /aria-labelledby="trace-prov-label"/);
     assert.match(m, /name="model"/);
     assert.match(m, /value="gpt-5\.4-mini"/);
-    assert.doesNotMatch(m, /provider/i, "the API has no provider filter");
-    assert.match(m, /Clear model/);
+    // Phase 6C-C: the API has an exact provider filter now (ARCHITECTURE.md §5.11).
+    assert.match(m, /name="provider"/);
+    assert.match(m, /Clear provider and model/);
   });
 });
 

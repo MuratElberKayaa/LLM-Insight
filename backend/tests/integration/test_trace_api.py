@@ -656,11 +656,18 @@ _BULK = (
 )
 
 
-@pytest.mark.parametrize("with_model_and_cursor", [False, True], ids=["plain", "model+cursor"])
-def test_list_query_plan_reads_one_page_through_the_indexes(db, make_key, with_model_and_cursor):
+@pytest.mark.parametrize(
+    "with_model_and_cursor,provider",
+    [(False, None), (True, None), (True, "openai")],
+    ids=["plain", "model+cursor", "provider+model+cursor"],
+)
+def test_list_query_plan_reads_one_page_through_the_indexes(
+    db, make_key, with_model_and_cursor, provider
+):
     """EXPLAIN ANALYZE on 10,000 traces / 20,000 usage rows with fresh statistics: the list is
     an index range scan that stops after about one page, and the per-trace usage summary and
-    the model filter are index lookups by (project_id, trace_id), not scans."""
+    the model filter are index lookups by (project_id, trace_id), not scans. Phase 6C-C: the
+    `provider` filter joins the model filter's lookup (one EXISTS), so the plan is unchanged."""
     from datetime import UTC, datetime
 
     a, b = make_key("a").project_id, make_key("b").project_id
@@ -672,6 +679,7 @@ def test_list_query_plan_reads_one_page_through_the_indexes(db, make_key, with_m
         datetime(2026, 10, 1, tzinfo=UTC),
         datetime(2026, 10, 31, tzinfo=UTC),
         model="gpt-a" if with_model_and_cursor else None,
+        provider=provider,
     )
     cursor = repo.Cursor(datetime(2026, 10, 22, tzinfo=UTC), "a" * 32)
     stmt = repo.list_traces_stmt(f, cursor if with_model_and_cursor else None, 50)

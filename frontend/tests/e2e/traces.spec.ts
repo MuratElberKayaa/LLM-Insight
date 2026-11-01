@@ -138,7 +138,8 @@ test("filters re-query the backend and live in the URL", async ({ page, request 
   expect(mixed.items.some((t: any) => t.service_name === "phase3b.mixed")).toBe(true);
 
   await page.goto(u("/traces"));
-  await page.getByRole("textbox", { name: /Model \(exact\)/ }).fill("gpt-5.4-mini");
+  // Phase 6C-C: the model field suggests observed values (a datalist), so its role is combobox.
+  await page.getByRole("combobox", { name: /Model \(exact\)/ }).fill("gpt-5.4-mini");
   await page.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/model=gpt-5\.4-mini/);
   const byModel = await listApi(request, w, { limit: "25", model: "gpt-5.4-mini" });
@@ -436,7 +437,7 @@ test("accessible structure: one h1, labelled tree and regions, captioned tables,
   const { by } = await fixtures(page, request);
   await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Traces" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("group", { name: "Status" })).toBeVisible();
-  await expect(page.getByRole("search", { name: "Filter by model" })).toBeVisible();
+  await expect(page.getByRole("search", { name: "Filter by provider and model" })).toBeVisible(); // Phase 6C-C
   await page.goto(u(`/traces/${by("phase3b.nested").trace_id}`));
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();

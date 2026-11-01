@@ -15,6 +15,7 @@
 
 import { TRACE_PROVENANCES, type TraceProvenance } from "./api/types";
 import { parseProjectParam, type ProjectParam } from "./project";
+import { parseScopeFilters, scopeParams, writeScope, type ScopeFilters } from "./scope-filters";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -181,7 +182,7 @@ export function singleGetter(params: SearchParams, ignored: string[]): Getter {
   };
 }
 
-export interface OverviewQuery {
+export interface OverviewQuery extends ScopeFilters {
   project: ProjectParam;
   window: WindowSpec;
   provenance: ProvenanceFilter;
@@ -190,7 +191,7 @@ export interface OverviewQuery {
   windowProblem: WindowProblem | null;
 }
 
-/** Parse `?project=&range=|from=&to=&provenance=` strictly; anything else falls back to the defaults. */
+/** Parse `?project=&range=|from=&to=&provenance=&provider=&model=` strictly; anything else falls back to the defaults. */
 export function parseOverviewQuery(params: SearchParams): OverviewQuery {
   const ignored: string[] = [];
   const get = singleGetter(params, ignored);
@@ -199,17 +200,18 @@ export function parseOverviewQuery(params: SearchParams): OverviewQuery {
   const rawProv = get("provenance");
   const provenance = PROVENANCE_FILTERS.find((p) => p === rawProv) ?? "all";
   if (rawProv !== undefined && provenance !== rawProv) ignored.push("provenance");
-  return { project, window, provenance, ignored, windowProblem: problem };
+  const scope = parseScopeFilters(get, ignored);
+  return { project, window, provenance, ...scope, ignored, windowProblem: problem };
 }
 
 /** Backend query parameters for a parsed overview query (never raw user input). */
-export function backendParams(query: Pick<OverviewQuery, "window" | "provenance">, now: Date): Record<string, string> {
+export function backendParams(query: Pick<OverviewQuery, "window" | "provenance"> & Partial<ScopeFilters>, now: Date): Record<string, string> {
   const params: Record<string, string> = resolveWindowSpec(query.window, now);
   if (query.provenance !== "all") params.provenance = query.provenance;
-  return params;
+  return { ...params, ...scopeParams({ provider: query.provider ?? null, model: query.model ?? null }) };
 }
 
-export type OverviewState = Pick<OverviewQuery, "window" | "provenance"> & { project: string | null };
+export type OverviewState = Pick<OverviewQuery, "window" | "provenance"> & Partial<ScopeFilters> & { project: string | null };
 
 /** Canonical query string of an overview state (defaults omitted, project first). */
 export function overviewSearch(state: OverviewState): string {
@@ -217,6 +219,7 @@ export function overviewSearch(state: OverviewState): string {
   if (state.project !== null) sp.set("project", state.project);
   writeWindow(state.window, sp);
   if (state.provenance !== "all") sp.set("provenance", state.provenance);
+  writeScope({ provider: state.provider ?? null, model: state.model ?? null }, sp);
   return sp.toString();
 }
 

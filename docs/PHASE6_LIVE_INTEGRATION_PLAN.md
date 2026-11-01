@@ -221,3 +221,17 @@ PostgreSQL: spans, traces, usage_records (key resp:gcp.gemini:{id}; cost NULL, p
 3. A dedicated Google Cloud project with **no billing account linked**, its AI Studio Billing Tier read as Free on the day of the run; a key restricted to the Gemini API, set by the operator in their own shell only.
 4. Re-read the official pricing and model pages if the evidence is older than 14 days (after 2026-11-11T13:00Z the guard refuses).
 5. Operator steps: `reports/phase-6c-a.md` §10.
+
+# Part III — Phase 6B/6C-B evidence and Phase 6C-C: observing real and synthetic telemetry (2026-11-01)
+
+## 14. First real Gemini call (Phase 6C-B)
+One Free Tier `generateContent` call was executed by the operator (trace `bec4f18a3f9a29375a61290dfc62798d`, project `gemini-live` #148). Phase 6C-C read it back through `/api/v1` and the dashboard without any provider request: two spans with the right parent, `gcp.gemini` / `gemini-3.1-flash-lite`, provider-reported 18 / 1 tokens, unknown cost (`price_missing`, never 0), asserted (not verified) `real` provenance (`reports/phase-6c-b.md`). No further real call is authorized.
+
+## 15. Dashboard scope (Phase 6C-C; ADR-37, ADR-38)
+- **Filters:** project + window + provenance (`real` labelled "Real (asserted)", `synthetic`, `mixed`, `unknown`; stored values only, never inferred from provider, model, tokens or response ids) + exact `provider` + exact `model`, all applied by the backend to the whole stored dataset (`ARCHITECTURE.md` §5.11). A provider filter is the only API change: additive, read-only, optional.
+- **Refresh:** re-runs the server render; off by default, 30 s / 1 min / 5 min (≥ 15 s), one in flight, paused while hidden, 30-minute bound, 429 cooldown for timer and button, backoff after transient failures, stop after fatal ones, last good data of the same view kept and labelled stale.
+- **Times:** the page separates when the dashboard read the backend, the latest stored trace's event time (reported by the instrumentation) and its duration; nothing is pushed or streamed.
+- **Out of scope:** any provider call from the dashboard, a provider "execute" control, keys in the frontend, push delivery, verified provenance, billed cost.
+
+## 16. Tests (evidence in `reports/phase-6c-c.md`)
+Backend: provider filter semantics, isolation, validation and query plans (`test_phase6c_provider_filter.py`, plan variants). Frontend unit: the refresh controller on a fake clock, outcomes, Retry-After, stale rules, filters, labels (`tests/unit/phase6c.test.tsx`). Browser E2E on the live stack with run-owned SYNTHETIC projects, a dedicated rate-limited backend and the outage/unauthorized dashboards (`tests/e2e/phase6c.spec.ts`). No test calls a provider.

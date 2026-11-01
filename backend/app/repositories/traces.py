@@ -5,7 +5,8 @@ parameters (SECURITY.md §3: no string-built SQL). Index use:
 - list: `ix_traces_project_id_started_at` (project, started_at DESC) for the window, the
   keyset cursor and the order; ties on `started_at` are broken by `trace_id`, which is
   unique per project (and, unlike the surrogate `id`, says nothing about other projects)
-- per-trace usage summary and the `model` filter: `uq_usage_records_project_id_trace_id_span_id`
+- per-trace usage summary and the `model` / `provider` filters (Phase 6C-C):
+  `uq_usage_records_project_id_trace_id_span_id`
 - detail spans: `ix_spans_project_id_trace_id_start_ns`; parent lookup: the spans unique key
 - model/provider summary of a page of traces (Phase 3C, R40): one grouped statement over
   the usage rows of the page's trace ids, through the same usage unique key
@@ -16,9 +17,9 @@ parameters (SECURITY.md §3: no string-built SQL). Index use:
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
-from sqlalchemy import Row, Select, exists, func, or_, select, text, true
+from sqlalchemy import ColumnElement, Row, Select, exists, func, or_, select, text, true
 from sqlalchemy.orm import Session, aliased
 
 from app.models import Project, Span, Trace, UsageRecord
@@ -35,6 +36,35 @@ class TraceFilter:
     status: str | None = None
     provenance: str | None = None
     model: str | None = None
+    provider: str | None = None  # Phase 6C-C: exact `usage_records.provider`
+
+
+class UsageMatch(Protocol):
+    """The usage-row filters shared by the trace list and the trace-level metrics."""
+
+    @property
+    def model(self) -> str | None: ...
+
+    @property
+    def provider(self) -> str | None: ...
+
+
+def usage_match(f: UsageMatch) -> ColumnElement[bool] | None:
+    """The `model` / `provider` filters of a trace-level query: the trace has at least one
+    usage row matching every given filter (one row, so `provider` + `model` mean the same
+    call, not two different ones). None when neither filter is set."""
+    if f.model is None and f.provider is None:
+        return None
+    u = aliased(UsageRecord)
+    conds: list[ColumnElement[bool]] = [
+        u.project_id == Trace.project_id,
+        u.trace_id == Trace.trace_id,
+    ]
+    if f.model is not None:
+        conds.append(or_(u.response_model == f.model, u.requested_model == f.model))
+    if f.provider is not None:
+        conds.append(u.provider == f.provider)
+    return exists().where(*conds)
 
 
 @dataclass(frozen=True)
@@ -108,15 +138,9 @@ def list_traces_stmt(f: TraceFilter, cursor: Cursor | None, limit: int) -> Selec
         stmt = stmt.where(Trace.status == f.status)
     if f.provenance is not None:
         stmt = stmt.where(Trace.provenance == f.provenance)
-    if f.model is not None:
-        u = aliased(UsageRecord)
-        stmt = stmt.where(
-            exists().where(
-                u.project_id == Trace.project_id,
-                u.trace_id == Trace.trace_id,
-                or_(u.response_model == f.model, u.requested_model == f.model),
-            )
-        )
+    match = usage_match(f)
+    if match is not None:
+        stmt = stmt.where(match)
     if cursor is not None:
         # Row comparison (started_at, trace_id) < cursor, written so the started_at bound
         # is an index condition.

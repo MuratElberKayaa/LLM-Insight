@@ -46,7 +46,7 @@ export function makeOverview(): Overview {
   return {
     project: 1,
     window: { from: "2026-10-24T15:00:00.000000Z", to: "2026-10-25T15:00:00.000000Z" },
-    filters: { model: null, status: null, prompt_version: null, provenance: null },
+    filters: { model: null, status: null, prompt_version: null, provenance: null, provider: null },
     provenance_label: "all provenance",
     provenance_verified: false,
     traces: {
@@ -127,7 +127,7 @@ export function makeCompare(): ModelsCompare {
   return {
     project: 1,
     window: { from: "2026-10-24T15:00:00.000000Z", to: "2026-10-25T15:00:00.000000Z" },
-    filters: { model: null, status: null, prompt_version: null, provenance: null },
+    filters: { model: null, status: null, prompt_version: null, provenance: null, provider: null },
     provenance_label: "all provenance",
     provenance_verified: false,
     groups: [

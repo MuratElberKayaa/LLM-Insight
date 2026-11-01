@@ -1,8 +1,9 @@
 /**
  * URL state of the trace explorer (`/traces`) and its translation into backend parameters.
  * Only filters the backend implements are accepted (ARCHITECTURE.md §5.1): a UTC window of
- * at most 31 days, `status`, `provenance`, an exact `model`, `limit` and the opaque `cursor`.
- * There is no provider or service filter because the API has none.
+ * at most 31 days, `status`, `provenance`, an exact `model`, `limit` and the opaque `cursor`,
+ * plus (Phase 6C-C) an exact `provider` (one usage row matching `provider` and `model`
+ * together). There is no service filter because the API has none.
  *
  * Paging freezes the window: the "next page" link carries the backend-echoed `from`/`to`
  * plus the cursor, so every page of one listing is cut from the same window even while
@@ -11,6 +12,7 @@
 
 import { TRACE_PROVENANCES } from "./api/types";
 import { hiddenFields, parseProjectParam, projectLinkValue, type ProjectParam } from "./project";
+import { parseScopeFilters } from "./scope-filters";
 import { parseWindow, resolveWindowSpec, singleGetter, writeWindow, type ProvenanceFilter, type WindowProblem, type WindowSpec } from "./time-range";
 
 export type { WindowSpec } from "./time-range";
@@ -21,8 +23,6 @@ export const DEFAULT_PAGE_SIZE: PageSize = 25;
 export type StatusFilter = "ok" | "error" | "all";
 export const STATUS_FILTERS: readonly StatusFilter[] = ["all", "ok", "error"];
 
-/** Stored model names match this format (TELEMETRY_CONTRACT.md §3.1); nothing else can match. */
-const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$/;
 const CURSOR_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const PAGE_RE = /^[1-9]\d{0,4}$/;
 
@@ -33,6 +33,8 @@ export interface TraceListQuery {
   status: StatusFilter;
   provenance: ProvenanceFilter;
   model: string | null;
+  /** Phase 6C-C: exact `usage_records.provider`. */
+  provider: string | null;
   limit: PageSize;
   cursor: string | null;
   /** 1-based page number for display only (the cursor decides the content). */
@@ -59,12 +61,7 @@ export function parseTraceListQuery(params: SearchParams): TraceListQuery {
   const provenance: ProvenanceFilter = (["all", ...TRACE_PROVENANCES] as const).find((p) => p === rawProv) ?? "all";
   if (rawProv !== undefined && provenance !== rawProv) ignored.push("provenance");
 
-  const rawModel = get("model")?.trim();
-  let model: string | null = null;
-  if (rawModel !== undefined && rawModel !== "") {
-    if (MODEL_RE.test(rawModel)) model = rawModel;
-    else ignored.push("model");
-  }
+  const { model, provider } = parseScopeFilters(get, ignored);
 
   const rawLimit = get("limit");
   const limit = PAGE_SIZES.find((n) => String(n) === rawLimit) ?? DEFAULT_PAGE_SIZE;
@@ -81,7 +78,7 @@ export function parseTraceListQuery(params: SearchParams): TraceListQuery {
   const rawPage = get("page");
   const page = cursor !== null && rawPage !== undefined && PAGE_RE.test(rawPage) ? Number(rawPage) : 1;
 
-  return { project, window, status, provenance, model, limit, cursor, page, ignored, windowProblem: problem };
+  return { project, window, status, provenance, model, provider, limit, cursor, page, ignored, windowProblem: problem };
 }
 
 /** `[from, to)` the backend will be asked for: a preset resolved at `now`, or the custom window. */
@@ -93,6 +90,7 @@ export function traceListParams(query: TraceListQuery, now: Date): Record<string
   if (query.status !== "all") params.status = query.status;
   if (query.provenance !== "all") params.provenance = query.provenance;
   if (query.model !== null) params.model = query.model;
+  if (query.provider !== null) params.provider = query.provider;
   if (query.cursor !== null) params.cursor = query.cursor;
   return params;
 }
@@ -104,8 +102,8 @@ export type ListState = Omit<TraceListQuery, "ignored" | "windowProblem" | "proj
 
 /** A parsed query as link state (an invalid project never becomes a link). */
 export function listStateOf(query: TraceListQuery): ListState {
-  const { project, window, status, provenance, model, limit, cursor, page } = query;
-  return { project: projectLinkValue(project), window, status, provenance, model, limit, cursor, page };
+  const { project, window, status, provenance, model, provider, limit, cursor, page } = query;
+  return { project: projectLinkValue(project), window, status, provenance, model, provider, limit, cursor, page };
 }
 
 /** Canonical query string of a list state (defaults omitted, project first). */
@@ -116,6 +114,7 @@ export function traceListSearch(state: ListState, includeProject = true): string
   if (state.status !== "all") sp.set("status", state.status);
   if (state.provenance !== "all") sp.set("provenance", state.provenance);
   if (state.model !== null) sp.set("model", state.model);
+  if (state.provider !== null) sp.set("provider", state.provider);
   if (state.limit !== DEFAULT_PAGE_SIZE) sp.set("limit", String(state.limit));
   if (state.cursor !== null) {
     sp.set("cursor", state.cursor);
@@ -130,7 +129,7 @@ export function traceListHref(state: ListState): string {
 }
 
 /** The same listing with a changed filter: paging restarts, a frozen custom window is kept. */
-export function withFilter(state: ListState, change: Partial<Pick<ListState, "window" | "status" | "provenance" | "model" | "limit">>): ListState {
+export function withFilter(state: ListState, change: Partial<Pick<ListState, "window" | "status" | "provenance" | "model" | "provider" | "limit">>): ListState {
   return { ...state, ...change, cursor: null, page: 1 };
 }
 
