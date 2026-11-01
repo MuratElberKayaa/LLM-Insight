@@ -11,6 +11,9 @@
 # and its new transitives google-auth 2.62.0, httpx 0.28.1 / httpcore 1.0.9 (= backend/requirements.lock), tenacity 9.1.4
 # (google-genai requires <9.2.0), websockets 16.1.1 (<17.0), distro 1.9.0, cryptography 50.0.2, cffi 2.1.1, pycparser 3.11,
 # pyasn1 0.6.4, pyasn1_modules 0.4.2; every one first uploaded on or before 2026-10-14 (ARCHITECTURE.md §6).
+# Phase 6C-C security closure (2026-11-01): pyasn1 0.6.5 (uploaded 2026-10-27, inside the two-week rule), a security
+# exception approved by the architectural review (SOURCES_AND_RISKS.md R101: GHSA-2qm8-x737-gmw5, -9m75-vc3g-4x39,
+# -fm9c-5rcf-2q5p, -mm57-4v3p-rchx); wheel SHA-256 4017b0fc…e66587 checked against PyPI. No other pin changed.
 # Install: python -m pip install -r requirements-dev.lock && python -m pip install --no-deps .
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -53,7 +56,7 @@ pluggy==1.6.0
 protobuf==7.36.2
 psycopg-binary==3.3.6
 psycopg==3.3.6
-pyasn1==0.6.4
+pyasn1==0.6.5
 pyasn1_modules==0.4.2
 pycparser==3.11
 pydantic==2.14.0
