@@ -352,7 +352,8 @@ describe("project scope (Phase 3C)", () => {
       assert.equal(x.projects?.ok, true);
     }
     const data = calls.filter((c) => !c.url.pathname.endsWith("/projects"));
-    assert.equal(data.length, 5);
+    // Phase 6C-C: overview 4 (overview, compare, latest trace, filter values), models 2, traces 2, detail 1.
+    assert.equal(data.length, 9);
     for (const c of data) assert.equal(c.url.searchParams.get("project"), "9", c.url.pathname);
   });
 

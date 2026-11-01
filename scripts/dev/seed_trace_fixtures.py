@@ -8,7 +8,8 @@ Run with the SDK venv (it has `opentelemetry-proto` and `requests`), backend run
 - The key is read from the environment only (never argv, never printed). The endpoint must be
   loopback (`LLMI_SEED_ENDPOINT`, default http://127.0.0.1:8000/v1/traces).
 - No provider is called. Every inference span claims `synthetic`, except the spans that
-  deliberately carry no claim (provenance `unknown`, and the `mixed` trace). Nothing claims `real`.
+  deliberately carry no claim (provenance `unknown`, and the `mixed` trace). Nothing claims `real`,
+  except one span of `--set phase6c` (an asserted-real SYNTHETIC fixture, see below).
 - IDs derive from `--seed` (random by default); timestamps are anchored a few minutes before
   now with deliberate sub-microsecond digits (T26).
 - Prints one JSON line: `{service.name: trace_id}`. No key, no content.
@@ -21,6 +22,11 @@ an application-span error, hostile labels (XSS probes), and a large trace (700+ 
 `429`, attempt 2 succeeds, one `llminsight.call_id`) and a trace that calls several providers
 and models (priced, unpriced, and a failed attempt without a response model), so the E2E
 suite needs no demo-app traffic (R41).
+`--set phase6c` (Phase 6C-C, service names `phase6c.*`): one trace per provider/provenance case
+for the dashboard filters: `openai` (ok and failed), `gcp.gemini` synthetic, `gcp.gemini` with an
+asserted `real` claim and a response id, a `real` claim without a response id (stored as
+`unknown` by the server's downgrade rule), and a span with no provider, model or claim.
+`--set phase6c-new`: one more SYNTHETIC trace, sent during a browser test.
 """
 
 from __future__ import annotations
@@ -536,6 +542,111 @@ def phase3c_set(b: Builder) -> None:
     )
 
 
+def phase6c_set(b: Builder) -> None:
+    """Phase 6C-C: provider, model and provenance variety for the dashboard filters. Every
+    value is a SYNTHETIC fixture and no provider is called; the one `real` claim exercises the
+    asserted-real label (the server stores it as asserted, never verified)."""
+
+    def call(
+        key: str, provider: str | None, model: str | None, **kw: object
+    ) -> dict[str, object]:
+        a = inference(model or "unused", call_id=uuid_from(b, key), **kw)
+        if provider is None:
+            del a["gen_ai.provider.name"]  # stored as provider `unknown`
+        else:
+            a["gen_ai.provider.name"] = provider
+        if model is None:
+            del a["gen_ai.request.model"]  # no model reported
+        else:
+            a["gen_ai.response.model"] = model
+        return a
+
+    rows = (
+        # service, provider, model, provenance, response id, error
+        ("phase6c.openai", "openai", "gpt-5.4-mini", "synthetic", True, None),
+        ("phase6c.openai-error", "openai", "gpt-5.4-mini", "synthetic", False, "500"),
+        (
+            "phase6c.gemini",
+            "gcp.gemini",
+            "gemini-3.1-flash-lite",
+            "synthetic",
+            True,
+            None,
+        ),
+        (
+            "phase6c.gemini-asserted-real",
+            "gcp.gemini",
+            "gemini-3.1-flash-lite",
+            "real",
+            True,
+            None,
+        ),
+        # Claims real without a response id: the server downgrades it to unknown (never real).
+        (
+            "phase6c.claim-downgraded",
+            "gcp.gemini",
+            "gemini-3.1-flash-lite",
+            "real",
+            False,
+            None,
+        ),
+        ("phase6c.unlabelled", None, None, None, False, None),
+    )
+    for i, (service, provider, model, provenance, with_id, error) in enumerate(rows):
+        t = b.trace(service, scope="phase6c.seed")
+        t.add(
+            "root",
+            "POST /v1/run",
+            "SERVER",
+            i * MS,
+            (i + 40) * MS,
+            attrs={"http.route": "/v1/run"},
+        )
+        extra: dict[str, object] = {}
+        if with_id:
+            extra["gen_ai.response.id"] = "resp-" + letters_from(b, service)
+        t.add(
+            "llm",
+            f"chat {model or 'unknown'}",
+            "CLIENT",
+            (i + 2) * MS,
+            (i + 30) * MS,
+            parent="root",
+            attrs=call(
+                service,
+                provider,
+                model,
+                provenance=provenance,
+                usage=None if error else (18, 1),
+                **extra,
+            ),
+            error=error,
+        )
+
+
+def phase6c_new_set(b: Builder) -> None:
+    """Phase 6C-C: one new SYNTHETIC trace, sent while a browser test waits for a refresh."""
+    t = b.trace("phase6c.arrived-later", scope="phase6c.seed")
+    t.add("root", "POST /v1/run", "SERVER", 0, 25 * MS, attrs={"http.route": "/v1/run"})
+    t.add(
+        "llm",
+        "chat gpt-5.4-mini",
+        "CLIENT",
+        2 * MS,
+        20 * MS,
+        parent="root",
+        attrs=inference(
+            "gpt-5.4-mini",
+            call_id=uuid_from(b, "later"),
+            usage=(10, 2),
+            **{
+                "gen_ai.provider.name": "openai",
+                "gen_ai.response.id": "resp-" + letters_from(b, "later"),
+            },
+        ),
+    )
+
+
 def isolation_set(b: Builder) -> None:
     t = b.trace("phase3b.isolation")
     t.add("root", "POST /v1/other-project", "SERVER", 0, 20 * MS)
@@ -556,7 +667,9 @@ def main(argv: list[str]) -> int:
         "--seed", default=None, help="derive ids from this string (default: random)"
     )
     parser.add_argument(
-        "--set", choices=("edge", "isolation", "phase3c"), default="edge"
+        "--set",
+        choices=("edge", "isolation", "phase3c", "phase6c", "phase6c-new"),
+        default="edge",
     )
     args = parser.parse_args(argv)
 
@@ -577,7 +690,13 @@ def main(argv: list[str]) -> int:
         (time.time_ns() - 10 * 60 * 1_000_000_000) // 1_000_000_000 * 1_000_000_000
     )  # whole second, 10 min ago
     b = Builder(seed, anchor)
-    {"edge": edge_set, "isolation": isolation_set, "phase3c": phase3c_set}[args.set](b)
+    {
+        "edge": edge_set,
+        "isolation": isolation_set,
+        "phase3c": phase3c_set,
+        "phase6c": phase6c_set,
+        "phase6c-new": phase6c_new_set,
+    }[args.set](b)
 
     request = b.request()
     spans = sum(len(ss.spans) for rs in request.resource_spans for ss in rs.scope_spans)

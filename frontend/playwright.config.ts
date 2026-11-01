@@ -13,6 +13,9 @@ import { backendPython } from "./tests/setup/e2e-global-setup";
  * - Phase 5A (T43): a second backend on 127.0.0.1:8001 with a tiny /api/v1 bucket and a fourth
  *   dashboard on 127.0.0.1:3004 reading through it, for the live rate-limited state.
  *   Process env overrides the backend's .env too (pydantic-settings).
+ * - Phase 6C-C: a third backend on 127.0.0.1:8002 (6-token /api/v1 bucket, one more every 1000 s)
+ *   and a fifth dashboard on 127.0.0.1:3005 reading through it, for the refresh-after-429 test
+ *   (a first load succeeds, then the test drains the bucket and refreshes).
  * Uses the installed Microsoft Edge (`channel: "msedge"`), so no browser download is needed.
  * One worker: the backend's /api/v1 rate limit is per client address.
  * Test data (Phase 3C, R41): the global setup creates this run's own projects and seeds them
@@ -74,6 +77,22 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
       env: { LLMI_API_BASE_URL: "http://127.0.0.1:8001" },
+    },
+    // Phase 6C-C: own bucket, so the 429-after-success test does not depend on the Phase 5A drain.
+    {
+      command: `"${backendPython()}" -m app`,
+      cwd: path.join(__dirname, "..", "backend"),
+      url: "http://127.0.0.1:8002/health/live",
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { LLMI_PORT: "8002", LLMI_RATE_LIMIT_API_RPS: "0.001", LLMI_RATE_LIMIT_API_BURST: "6" },
+    },
+    {
+      command: "node scripts/next.mjs start --hostname 127.0.0.1 --port 3005",
+      url: "http://127.0.0.1:3005/icon.svg",
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { LLMI_API_BASE_URL: "http://127.0.0.1:8002" },
     },
   ],
 });

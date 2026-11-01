@@ -108,10 +108,27 @@ export interface SendOptions {
   timeoutMs?: number;
 }
 
+/** IMF-fixdate, the HTTP-date form senders must use (RFC 9110 §5.6.7), e.g. `Sun, 01 Nov 2026 08:30:00 GMT`. */
+const HTTP_DATE_RE = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+/** Longest wait accepted from a Retry-After (about 11.5 days, the old 6-digit bound). */
+const MAX_RETRY_AFTER_S = 999_999;
+
+/**
+ * Retry-After (RFC 9110 §10.2.3) as whole seconds from `nowMs`: delay-seconds, or an HTTP-date
+ * rounded up so a retry is never early (a date in the past is 0). Anything else is ignored.
+ */
+export function parseRetryAfter(raw: string | null, nowMs: number): number | undefined {
+  if (raw === null) return undefined;
+  const value = raw.trim();
+  if (/^\d{1,6}$/.test(value)) return Number(value);
+  if (!HTTP_DATE_RE.test(value)) return undefined;
+  const at = Date.parse(value);
+  if (Number.isNaN(at)) return undefined;
+  return Math.min(MAX_RETRY_AFTER_S, Math.max(0, Math.ceil((at - nowMs) / 1000)));
+}
+
 function retryAfter(headers: Headers): number | undefined {
-  const raw = headers.get("retry-after");
-  if (raw === null || !/^\d{1,6}$/.test(raw.trim())) return undefined;
-  return Number(raw.trim());
+  return parseRetryAfter(headers.get("retry-after"), Date.now());
 }
 
 async function readCapped(response: Response, maxBytes: number): Promise<string | null> {

@@ -32,6 +32,7 @@ describe("parseTraceListQuery", () => {
       status: "all",
       provenance: "all",
       model: null,
+      provider: null,
       limit: 25,
       cursor: null,
       page: 1,

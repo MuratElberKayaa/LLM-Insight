@@ -91,6 +91,8 @@ export interface Filters {
   status: "ok" | "error" | null;
   prompt_version: string | null;
   provenance: TraceProvenance | null;
+  /** Phase 6C-C (additive): null when no provider filter applied, or from a backend without it. */
+  provider: string | null;
 }
 
 export interface Window {

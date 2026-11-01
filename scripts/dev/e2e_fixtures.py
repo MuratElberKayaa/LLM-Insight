@@ -5,12 +5,13 @@ Run with the backend venv (it has the app, `opentelemetry-proto` and `requests`)
 
     backend/.venv/Scripts/python scripts/dev/e2e_fixtures.py setup --state <file>
     backend/.venv/Scripts/python scripts/dev/e2e_fixtures.py teardown --state <file>
+    backend/.venv/Scripts/python scripts/dev/e2e_fixtures.py add-trace --state <file>
 
-`setup` creates three projects owned by this run, named `e2e-<run>-main`, `e2e-<run>-foreign` and
-`e2e-<run>-xss <hostile label>` (12 random hex characters per run, so no existing project is
+`setup` creates four projects owned by this run, named `e2e-<run>-main`, `e2e-<run>-foreign`,
+`e2e-<run>-providers` (Phase 6C-C) and `e2e-<run>-xss <hostile label>` (12 random hex characters per run, so no existing project is
 reused), mints one ingest key per seeded project in memory, sends the SYNTHETIC sets of
 `seed_trace_fixtures.py` through the real `POST /v1/traces` (`edge` + `phase3c` to main,
-`isolation` to foreign; ids derived from the run, timestamps a few minutes before now, UTC),
+`isolation` to foreign, `phase6c` to providers; ids derived from the run, timestamps a few minutes before now, UTC),
 revokes the keys and writes the state file: run id, project ids and names. No key, token or
 password is printed or written. A failed setup removes what it created.
 
@@ -18,7 +19,13 @@ password is printed or written. A failed setup removes what it created.
 still match the recorded run (the cascade removes their keys, traces, spans and usage rows).
 Nothing else is touched: no other project, no price row, no schema object. Set
 `LLMI_E2E_KEEP=1` to keep the data (for screenshots); the state file then says so.
-No provider is called and nothing claims `real`.
+No provider is called. Nothing claims `real` except one asserted-real SYNTHETIC fixture span in
+the providers project (`seed_trace_fixtures.py --set phase6c`), which tests the label path.
+
+`add-trace` (Phase 6C-C) sends one more SYNTHETIC trace (`--set phase6c-new`) to this run's
+providers project with a key minted for that call and revoked right after, and prints its trace
+id, so a browser test can watch it appear after a controlled refresh. It refuses a state file
+whose providers entry is not owned by an e2e run.
 
 `experiment-counts --experiment <id>` (Phase 4D) is read-only: it reads one experiment's stored
 results straight from PostgreSQL, bypassing the API, so the browser test can check the counts
@@ -60,6 +67,7 @@ def names(run: str) -> dict[str, str]:
     return {
         "main": f"e2e-{run}-main",
         "foreign": f"e2e-{run}-foreign",
+        "providers": f"e2e-{run}-providers",
         "hostile": f"e2e-{run}-xss {HOSTILE}",
     }
 
@@ -127,6 +135,7 @@ def setup(state_path: Path, endpoint: str) -> int:
             ("main", "edge"),
             ("main", "phase3c"),
             ("foreign", "isolation"),
+            ("providers", "phase6c"),
         ):
             result = _seed(keys[role][0], set_name, f"e2e-{run}-{set_name}", endpoint)
             rejected += result["rejected_spans"]
@@ -142,7 +151,8 @@ def setup(state_path: Path, endpoint: str) -> int:
             "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "projects": created,
             "traces": traces,
-            "provenance": "SYNTHETIC (scripts/dev/seed_trace_fixtures.py); nothing claims real",
+            "provenance": "SYNTHETIC (scripts/dev/seed_trace_fixtures.py); one asserted-real"
+            " fixture span in the providers project, no provider call",
         }
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
@@ -280,9 +290,59 @@ def experiment_counts(state_path: Path, experiment_id: int) -> int:
     return 0
 
 
+def add_trace(state_path: Path, endpoint: str) -> int:
+    """Phase 6C-C: one more SYNTHETIC trace to this run's providers project (see the docstring)."""
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    run = state.get("run", "")
+    p = state.get("projects", {}).get("providers", {})
+    if not owned(run, "providers", p.get("name", "")) or not isinstance(
+        p.get("id"), int
+    ):
+        print(
+            "error: the providers project is not owned by an e2e run", file=sys.stderr
+        )
+        return 2
+    settings = get_settings()
+    engine = create_db_engine(settings)
+    factory = create_session_factory(engine)
+    pepper = settings.key_pepper.get_secret_value().encode("utf-8")
+    prefix = None
+    try:
+        with factory() as s, s.begin():
+            row = s.execute(
+                select(Project.id).where(
+                    Project.id == p["id"], Project.name == p["name"]
+                )
+            ).first()
+            if row is None:
+                print("error: the providers project no longer exists", file=sys.stderr)
+                return 2
+            k = api_keys.create_key(s, p["id"], pepper)
+            key, prefix = k.key, k.prefix
+        result = _seed(
+            key, "phase6c-new", f"e2e-{run}-new-{secrets.token_hex(4)}", endpoint
+        )
+        del key
+        if result["rejected_spans"]:
+            print("error: ingest rejected the new trace", file=sys.stderr)
+            return 1
+        print(json.dumps({"trace": result["traces"]["phase6c.arrived-later"]}))
+        return 0
+    except RuntimeError as exc:
+        print(f"error: add-trace failed: {str(exc)[:300]}", file=sys.stderr)
+        return 1
+    finally:
+        if prefix is not None:
+            with factory() as s, s.begin():
+                api_keys.revoke_key(s, prefix)
+        engine.dispose()
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("setup", "teardown", "experiment-counts"))
+    parser.add_argument(
+        "command", choices=("setup", "teardown", "experiment-counts", "add-trace")
+    )
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--experiment", type=int, default=None)
     args = parser.parse_args(argv)
@@ -292,6 +352,8 @@ def main(argv: list[str]) -> int:
             print("error: experiment-counts needs --experiment <id>", file=sys.stderr)
             return 2
         return experiment_counts(args.state, args.experiment)
+    if args.command == "add-trace":
+        return add_trace(args.state, endpoint)
     return (
         setup(args.state, endpoint) if args.command == "setup" else teardown(args.state)
     )

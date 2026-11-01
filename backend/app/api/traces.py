@@ -56,6 +56,10 @@ MAX_CASE_LINKS = 2000  # test-case links across those reviews (one per dataset a
 _CURSOR_RE = re.compile(r"v1:([0-9]{1,19}):([0-9a-f]{32})")
 
 ProjectParam = Annotated[int, Query(ge=1, le=BIGINT_MAX, description="Project id (required)")]
+# Phase 6C-C: exact `usage_records.provider`, in the stored identifier format (TELEMETRY_CONTRACT.md
+# §3.1: `gen_ai.provider.name`, `unknown` when absent), so no other value reaches a query.
+PROVIDER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+ProviderParam = Annotated[str | None, Query(min_length=1, max_length=64, pattern=PROVIDER_PATTERN)]
 
 
 # ---------------------------------------------------------------- formatting
@@ -292,11 +296,13 @@ async def list_traces(
     provenance: Literal["real", "synthetic", "mixed", "unknown"] | None = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     cursor: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    provider: ProviderParam = None,
 ) -> JSONResponse:
-    """Traces of one project whose start is in `[from, to)`, newest first, keyset-paginated."""
+    """Traces of one project whose start is in `[from, to)`, newest first, keyset-paginated.
+    `model` and `provider` select traces with one usage row matching both (Phase 6C-C)."""
     start, end = resolve_window(from_, to, datetime.now(UTC))
     position = decode_cursor(cursor) if cursor is not None else None
-    f = repo.TraceFilter(project, start, end, status, provenance, model)
+    f = repo.TraceFilter(project, start, end, status, provenance, model, provider)
 
     def read(
         session: Session,

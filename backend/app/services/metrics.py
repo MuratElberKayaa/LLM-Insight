@@ -222,6 +222,7 @@ def filters_echo(f: MetricsFilter) -> dict[str, Any]:
         "status": f.status,
         "prompt_version": f.prompt_version,
         "provenance": f.provenance,
+        "provider": f.provider,  # Phase 6C-C (additive)
     }
 
 

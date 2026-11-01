@@ -134,7 +134,7 @@ test("time range and provenance controls re-run the backend queries", async ({ p
     await expect(page.getByTestId("traces-value")).toHaveText(formatInt(filtered.traces.count.total));
   }
 
-  await page.getByRole("link", { name: "Real only" }).click();
+  await page.getByRole("link", { name: "Real (asserted) only" }).click(); // Phase 6C-C label
   await expect(page).toHaveURL(/provenance=real$/);
   const real = await api(request, "overview", await pageWindow(page), { provenance: "real" });
   if (real.traces.count.total === 0 && real.inference.attempts.total === 0) {

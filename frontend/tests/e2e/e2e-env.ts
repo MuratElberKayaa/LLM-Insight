@@ -32,6 +32,8 @@ export const PROJECT = required("LLMI_E2E_PROJECT");
 export const FOREIGN_PROJECT = required("LLMI_E2E_FOREIGN_PROJECT");
 /** The run's project with a hostile name and no telemetry. */
 export const HOSTILE_PROJECT = required("LLMI_E2E_HOSTILE_PROJECT");
+/** Phase 6C-C: the run's project with openai / gcp.gemini / unknown-provider traces and one asserted-real fixture span. */
+export const PROVIDERS_PROJECT = required("LLMI_E2E_PROVIDERS_PROJECT");
 export const SHOTS = process.env.LLMI_SCREENSHOT_DIR;
 
 /** A dashboard path with `project=<id>` as the first query parameter. */

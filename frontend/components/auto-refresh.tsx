@@ -1,90 +1,59 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { AUTO_REFRESH_INTERVALS_S, AUTO_REFRESH_MAX_MS, decideRefresh, intervalLabel, parseInterval, type AutoRefreshSeconds } from "../lib/auto-refresh";
-import { useNavigationState } from "./navigation-transition";
+import { useEffect, useId } from "react";
+import { AUTO_REFRESH_INTERVALS_S, AUTO_REFRESH_MAX_MS, STOP_REASON, backoffMs, intervalLabel, parseInterval, type LiveSnapshot } from "../lib/auto-refresh";
+import { formatUtcTime } from "../lib/format";
+import { useLiveSnapshot, useNavigationState } from "./navigation-transition";
+
+const MAX_MIN = AUTO_REFRESH_MAX_MS / 60_000;
+
+/** The one-line state of the control (fixed copy; the failure kind only, never a body). */
+export function autoRefreshStatus(snap: LiveSnapshot, disabledReason?: string): string {
+  if (disabledReason !== undefined) return disabledReason;
+  if (snap.intervalS === null) {
+    if (snap.stopped === "max_duration") return `Stopped after ${MAX_MIN} minutes.`;
+    if (snap.stopped === "fatal" && snap.lastFailure !== null) {
+      return `Stopped: ${STOP_REASON[snap.lastFailure.kind]}. Repeating the same request would fail again; fix the cause, then refresh manually.`;
+    }
+    return "Off. Data changes only when you refresh.";
+  }
+  const parts = [`Every ${intervalLabel(snap.intervalS)} while this tab is visible; stops after ${MAX_MIN} min. Re-reads stored telemetry; not live.`];
+  if (snap.hidden) parts.push("Paused while this tab is hidden.");
+  // An absolute time, not a countdown: this line is a polite live region and must not re-announce every second.
+  if (snap.cooldownUntil > 0) parts.push(`Waiting for the backend rate limit (429) until ${formatUtcTime(new Date(snap.cooldownUntil))}.`);
+  else if (snap.failures > 0) parts.push(`The last refresh failed; next try in ${Math.round(backoffMs(snap.intervalS * 1000, snap.failures) / 1000)} s.`);
+  return parts.join(" ");
+}
 
 /**
  * Off by default. When on, re-runs the current server render (same URL, same filters) every
- * N seconds while the tab is visible, never while another request is pending, and switches
- * itself off after 30 minutes. See lib/auto-refresh.ts.
+ * N seconds while the tab is visible, never while another request is pending or a 429 cooldown
+ * runs, backs off after failures, stops on failures a retry cannot fix, and switches itself
+ * off after 30 minutes. See lib/auto-refresh.ts.
  */
 export function AutoRefresh({ disabledReason }: { disabledReason?: string | undefined }) {
   const nav = useNavigationState();
+  const controller = nav?.controller;
+  const snap = useLiveSnapshot(controller);
   const id = useId();
-  const [seconds, setSeconds] = useState<AutoRefreshSeconds | null>(null);
-  const [stopped, setStopped] = useState(false);
-  const startedAt = useRef(0);
-  const lastAt = useRef(0);
-  const pendingRef = useRef(false);
-  const wasPending = useRef(false);
-  const pending = nav?.pending ?? false;
-  const refresh = nav?.refresh;
-
-  // A refresh counts from its completion: when a pending render settles, restart the interval.
-  useEffect(() => {
-    pendingRef.current = pending;
-    if (wasPending.current && !pending) lastAt.current = Date.now();
-    wasPending.current = pending;
-  }, [pending]);
-
-  const active = seconds !== null && disabledReason === undefined && refresh !== undefined;
 
   useEffect(() => {
-    if (!active || refresh === undefined) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = () => {
-      const d = decideRefresh({
-        intervalMs: seconds * 1000,
-        startedAt: startedAt.current,
-        lastAt: lastAt.current,
-        now: Date.now(),
-        pending: pendingRef.current,
-        hidden: document.visibilityState === "hidden",
-      });
-      if (d.action === "stop") {
-        setSeconds(null);
-        setStopped(true);
-        return;
-      }
-      if (d.action === "refresh") {
-        lastAt.current = Date.now();
-        refresh();
-        timer = setTimeout(tick, seconds * 1000);
-        return;
-      }
-      timer = setTimeout(tick, d.delayMs);
-    };
-    timer = setTimeout(tick, seconds * 1000);
-    return () => clearTimeout(timer);
-  }, [active, seconds, refresh]);
-
-  const status =
-    disabledReason !== undefined
-      ? disabledReason
-      : seconds !== null
-        ? `Every ${intervalLabel(seconds)} while this tab is visible; stops after ${AUTO_REFRESH_MAX_MS / 60_000} min. Polling, not live.`
-        : stopped
-          ? `Stopped after ${AUTO_REFRESH_MAX_MS / 60_000} minutes.`
-          : "Off. Data changes only when you refresh.";
+    if (disabledReason !== undefined) controller?.disable();
+  }, [controller, disabledReason]);
 
   return (
-    <div className="flex flex-col items-start gap-1" data-testid="auto-refresh">
+    <div className="flex flex-col items-start gap-1" data-testid="auto-refresh" data-interval={snap.intervalS ?? "off"} data-stopped={snap.stopped ?? undefined}>
       <label htmlFor={id} className="flex items-center gap-2 text-xs font-medium text-ink-2">
         Auto-refresh
         <select
           id={id}
-          value={seconds === null ? "off" : String(seconds)}
-          disabled={disabledReason !== undefined}
+          value={snap.intervalS === null ? "off" : String(snap.intervalS)}
+          disabled={disabledReason !== undefined || controller === undefined}
           aria-describedby={`${id}-status`}
           onChange={(e) => {
             const next = parseInterval(e.target.value);
-            if (next !== null) {
-              startedAt.current = Date.now();
-              lastAt.current = Date.now();
-            }
-            setStopped(false);
-            setSeconds(next);
+            if (next === null) controller?.disable();
+            else controller?.enable(next);
           }}
           className="min-h-8 rounded-md border border-line bg-surface px-2 text-sm text-ink disabled:opacity-60"
         >
@@ -96,9 +65,15 @@ export function AutoRefresh({ disabledReason }: { disabledReason?: string | unde
           ))}
         </select>
       </label>
-      <p id={`${id}-status`} className="max-w-64 text-[11px] text-ink-3" aria-live="polite">
-        {status}
+      <p id={`${id}-status`} className="max-w-72 text-[11px] text-ink-3" aria-live="polite" data-testid="auto-refresh-status">
+        {autoRefreshStatus(snap, disabledReason)}
       </p>
+      {snap.lastSuccessAt !== null && (
+        <p className="max-w-72 text-[11px] text-ink-3" data-testid="last-success">
+          Last successful load {formatUtcTime(new Date(snap.lastSuccessAt))}
+          {snap.lastFailure !== null ? " · the latest load failed" : ""}
+        </p>
+      )}
     </div>
   );
 }

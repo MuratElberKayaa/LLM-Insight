@@ -26,7 +26,7 @@ An instrumented application sends **metadata-only** OpenTelemetry GenAI spans ov
 | Step | Capability | Where |
 |---|---|---|
 | **Observe** | `POST /v1/traces` OTLP/HTTP protobuf receiver (real `opentelemetry-proto` types and protobuf responses; gzip; size, span-count and rate limits); idempotent span and usage ledger; independent Python SDK (`llm-insight-sdk`) with a deterministic mock provider and an offline-tested OpenAI adapter | `backend/app/api/otel.py`, `sdk/` |
-| | Overview KPIs (with `n`, p50/p95, error rate, known cost next to an unknown-cost count), Trace Explorer, span tree and waterfall, model comparison, project selector | dashboard `/`, `/traces`, `/models` |
+| | Overview KPIs (with `n`, p50/p95, error rate, known cost next to an unknown-cost count), Trace Explorer, span tree and waterfall, model comparison, project selector; Phase 6C-C: exact provider/model filters, Real (asserted) / Synthetic / Unknown filters, latest stored trace, controlled auto-refresh with 429 cooldown and labelled stale data | dashboard `/`, `/traces`, `/models` |
 | **Diagnose** | Evidence-based, read-only machine observations per trace, labelled "Automatic · Unverified · Not a human review" | `GET /api/v1/traces/{id}/diagnostics`, trace page |
 | **Evaluate** | Human failure review (issue type, evidence, hypothesis, decision); a failure cause is recorded as a **hypothesis**, never as a fact | trace page |
 | | Trace-to-testset: a reviewed trace becomes a test case only with explicit human approval; the input is typed by the person (telemetry never stored the prompt) and server-side redaction runs before insert | `/traces/{id}/reviews/{review_id}/test-case`, `/datasets` |
@@ -211,17 +211,18 @@ npm run test:e2e                                                                
 cd .. && python -I scripts/verify_phase0.py --quiet                             # documentation consistency
 ```
 
-The E2E suite needs the backend on `127.0.0.1:8000` with migrations at head and prices seeded, and free ports 3001–3004 and 8001; it creates and deletes its own run projects. Without `LLMI_TEST_REQUIRE_DB=1`, integration tests skip with a reason when PostgreSQL is unreachable. CI (`.github/workflows/ci.yml`, Ubuntu 24.04) runs the commands above except the Playwright suite; it also validates both compose configurations and runs `npm audit`. The compose image build, `pip-audit`, `bandit`, the history secret scan and the route probes in `scripts/qa/` are local release gates (`docs/FINAL_DELIVERY_REPORT.md` §15). The scenario-by-scenario status of the 48 acceptance tests is in `docs/TEST_MATRIX.md`.
+The E2E suite needs the backend on `127.0.0.1:8000` with migrations at head and prices seeded, and free ports 3001–3005, 8001 and 8002; it creates and deletes its own run projects. If port 8000 is taken by something else, run the backend on another loopback port and set `LLMI_API_BASE_URL=http://127.0.0.1:<port>` and `LLMI_SEED_ENDPOINT=http://127.0.0.1:<port>/v1/traces` for the Playwright run (the dashboards and the fixture script inherit them). Without `LLMI_TEST_REQUIRE_DB=1`, integration tests skip with a reason when PostgreSQL is unreachable. CI (`.github/workflows/ci.yml`, Ubuntu 24.04) runs the commands above except the Playwright suite; it also validates both compose configurations and runs `npm audit`. The compose image build, `pip-audit`, `bandit`, the history secret scan and the route probes in `scripts/qa/` are local release gates (`docs/FINAL_DELIVERY_REPORT.md` §15). The scenario-by-scenario status of the 48 acceptance tests is in `docs/TEST_MATRIX.md`.
 
 ## Known limitations
 
-- **No real-provider validation.** The OpenAI and Gemini (Phase 6C-A) adapters are tested offline only; no real OpenAI or Gemini call has ever been made by this project; real mode is disabled; experiments are mock-only and SYNTHETIC (R62).
+- **Limited real-provider validation.** The OpenAI adapter is tested offline only (no real OpenAI call has been made). Exactly one real Gemini Free Tier call was made by the operator (Phase 6C-B, `docs/reports/phase-6c-b.md`); everything else is offline-tested. Real mode stays off by default; experiments are mock-only and SYNTHETIC (R62).
 - **Gemini cost is never computed:** the Free/paid billing tier cannot be shown from telemetry, so Gemini usage rows always have `unknown` cost (ADR-35); the Free Tier is an operator attestation (R90).
 - **Costs are estimates** from provider-reported usage and a verified catalogue, not invoices; models without a verified price show `unknown` (R28, R29).
 - **Best-effort telemetry:** no persistent queue; spans can be lost when the backend is down longer than the exporter's timeout, or on a crash (R26). Not a billing-grade system.
 - **Per-process limits:** rate limits, experiment run bounds and counters live in the single backend process and reset on restart (R09, R23, R67).
 - **Experiment runs are synchronous;** a lost response followed by a resubmission creates a second, independent run (no idempotency key) (R66).
 - **Provenance is client-asserted** (R16); **redaction is heuristic** (R08, R56); **identities are self-declared** (R55).
+- **The dashboard is not live:** auto-refresh (off by default, ≥ 15 s, 30 s default choice) re-reads stored telemetry; there is no push or token streaming. After a failed refresh the last good data of the same view stays visible, labelled stale (R97); a 429 cooldown binds the timer and the Refresh button but not a browser reload (the backend still refuses, R98). Event-time windows mean an older trace (for example the first real Gemini trace) is outside the default 24-hour window; choose 7 or 31 days.
 - Local benchmark figures (`docs/reports/phase-5b.md` §6) describe one laptop, not production capacity.
 
 Full risk register: `docs/SOURCES_AND_RISKS.md`.

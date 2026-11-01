@@ -52,6 +52,8 @@ describe("parseOverviewQuery", () => {
       project: { kind: "default" },
       window: { kind: "preset", range: "7d" },
       provenance: "synthetic",
+      provider: null,
+      model: null,
       ignored: [],
       windowProblem: null,
     });

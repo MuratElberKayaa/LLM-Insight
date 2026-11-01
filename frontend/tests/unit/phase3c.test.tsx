@@ -102,7 +102,7 @@ describe("trace links keep the project and never carry it inside list", () => {
 describe("model comparison query", () => {
   it("defaults, supported values and backend parameters", () => {
     const d = parseModelQuery({});
-    assert.deepEqual(modelStateOf(d), { project: null, window: { kind: "preset", range: "24h" }, provenance: "all", status: "all", limit: 50 });
+    assert.deepEqual(modelStateOf(d), { project: null, window: { kind: "preset", range: "24h" }, provenance: "all", status: "all", limit: 50, provider: null, model: null });
     assert.deepEqual(compareParams(d, NOW), { from: "2026-10-24T15:00:00.000Z", to: "2026-10-25T15:00:00.000Z", limit: "50" });
     const q = parseModelQuery({ project: "4", range: "7d", provenance: "synthetic", status: "error", limit: "200" });
     assert.deepEqual(q.ignored, []);
@@ -110,8 +110,9 @@ describe("model comparison query", () => {
     assert.equal(modelHref(modelStateOf(q)), "/models?project=4&range=7d&provenance=synthetic&status=error&limit=200");
   });
   it("ignores hostile or unsupported values and never forwards them", () => {
-    const q = parseModelQuery({ provenance: "real'--", status: "<script>", limit: "201", model: "x", range: "1y" });
-    assert.deepEqual(q.ignored.sort(), ["limit", "provenance", "range", "status"]);
+    // Phase 6C-C: `provider` and `model` are supported now; malformed values are still refused.
+    const q = parseModelQuery({ provenance: "real'--", status: "<script>", limit: "201", model: "x y<", provider: "open:ai", range: "1y" });
+    assert.deepEqual(q.ignored.sort(), ["limit", "model", "provenance", "provider", "range", "status"]);
     assert.deepEqual(compareParams(q, NOW), { from: "2026-10-24T15:00:00.000Z", to: "2026-10-25T15:00:00.000Z", limit: "50" });
   });
   it("filter links keep the project", () => {
@@ -203,7 +204,8 @@ describe("auto-refresh decisions", () => {
     assert.deepEqual(decideRefresh({ ...base, pending: true }), { action: "wait", delayMs: PENDING_RECHECK_MS });
   });
   it("postpones while hidden and stops after the bound", () => {
-    assert.deepEqual(decideRefresh({ ...base, hidden: true }), { action: "wait", delayMs: 30_000 });
+    // Phase 6C-C: hidden means no timer at all (resumed by visibilitychange), not a re-armed wait.
+    assert.deepEqual(decideRefresh({ ...base, hidden: true }), { action: "pause" });
     assert.deepEqual(decideRefresh({ ...base, now: AUTO_REFRESH_MAX_MS }), { action: "stop" });
     assert.deepEqual(decideRefresh({ ...base, now: AUTO_REFRESH_MAX_MS, pending: true }), { action: "stop" });
   });

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { AutoRefresh } from "../../components/auto-refresh";
+import { LiveRegion } from "../../components/live-region";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../../components/navigation-transition";
 import { PageHeader } from "../../components/page-header";
 import { ProjectSelector } from "../../components/project-selector";
@@ -9,10 +10,11 @@ import { RangeForm } from "../../components/range-form";
 import { EmptyState, ErrorState, Notice } from "../../components/states";
 import { TraceFilters } from "../../components/traces/trace-filters";
 import { TraceListView } from "../../components/traces/trace-list";
+import { renderOutcome } from "../../lib/auto-refresh";
 import { formatUtcMinute, formatUtcTime } from "../../lib/format";
 import { loadTraceList } from "../../lib/server/traces";
 import { WINDOW_PROBLEM_TEXT, windowLabel } from "../../lib/time-range";
-import { firstPageState, listStateOf, parseTraceListQuery, restartFields, traceListHref } from "../../lib/trace-query";
+import { firstPageState, listStateOf, parseTraceListQuery, restartFields, traceListHref, traceListSearch } from "../../lib/trace-query";
 
 export const metadata: Metadata = { title: "Traces" };
 
@@ -25,10 +27,11 @@ export default async function TracesPage({ searchParams }: PageProps) {
   const ctx = await loadTraceList(query);
   const { fetchedAt, list } = ctx;
   const data = list.ok ? list.data : null;
-  const filtered = state.status !== "all" || state.provenance !== "all" || state.model !== null;
+  const filtered = state.status !== "all" || state.provenance !== "all" || state.model !== null || state.provider !== null;
+  const outcome = renderOutcome(fetchedAt, ctx.settledAt, [list, ctx.options, ctx.projects]);
 
   return (
-    <NavigationTransition>
+    <NavigationTransition outcome={outcome}>
       <PageHeader
         title="Traces"
         description="Stored traces of one project, newest first. Metadata only: prompts and completions are never captured or stored."
@@ -39,7 +42,9 @@ export default async function TracesPage({ searchParams }: PageProps) {
                 Window {formatUtcMinute(data.window.from)} → {formatUtcMinute(data.window.to)} ({state.cursor === null ? windowLabel(state.window) : "frozen for paging"}, trace start time)
               </span>
             ) : null}
-            <span>Fetched {formatUtcTime(fetchedAt)} · not live; refresh to update</span>
+            <span data-testid="fetched-at" data-fetched-at={fetchedAt.toISOString()}>
+              Fetched {formatUtcTime(fetchedAt)} · not live; refresh to update
+            </span>
           </>
         }
         actions={
@@ -49,8 +54,9 @@ export default async function TracesPage({ searchParams }: PageProps) {
           </>
         }
       />
-      <ProjectSelector context={ctx} action="/traces" hidden={restartFields(state, ["project"])} />
-      <TraceFilters state={state} />
+      {/* Provider and model are values of one project: a project switch resets them (Phase 6C-C). */}
+      <ProjectSelector context={ctx} action="/traces" hidden={restartFields(state, ["project", "provider", "model"])} />
+      <TraceFilters state={state} options={ctx.options} />
       <div className="mb-5">
         <RangeForm action="/traces" hidden={restartFields(state, ["range", "from", "to"])} window={state.window} shown={data?.window ?? null} />
       </div>
@@ -63,6 +69,7 @@ export default async function TracesPage({ searchParams }: PageProps) {
         </div>
       )}
       <PendingRegion>
+        <LiveRegion viewKey={`${ctx.projectId ?? "-"}?${traceListSearch(state)}`} fetchedAt={fetchedAt.toISOString()} failure={list.ok ? null : list.error}>
         {!list.ok ? (
           <>
             <ErrorState error={list.error} resource="the trace list" />
@@ -87,6 +94,7 @@ export default async function TracesPage({ searchParams }: PageProps) {
         ) : data !== null ? (
           <TraceListView data={data} state={state} />
         ) : null}
+        </LiveRegion>
       </PendingRegion>
     </NavigationTransition>
   );
