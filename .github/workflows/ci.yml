@@ -18,7 +18,13 @@
 #   runs, no accepted advisory; pip-audit 2.10.1 from the hash-checked tool lock
 #   security/tools/requirements-audit.lock in its own venv; scripts/qa/pip_audit_gate.py fails
 #   closed on findings, service outages, invalid lockfiles and incomplete or malformed reports.
-#   Bandit, the history secret scan, Playwright E2E and the image build are still local gates.
+# - Bandit (R104-2, job security-python): Bandit 1.9.4 from the same tool venv scans
+#   backend/app sdk/src demo_app scripts with the default profile (no skips, no severity
+#   filter, no nosec); scripts/qa/bandit_baseline_check.py compares the full raw report with the
+#   reviewed per-finding baseline security/bandit-baseline.json and its register in
+#   docs/SECURITY.md section 8. Bandit's own -b is not used. Any new, changed or vanished
+#   finding, skipped file, scope change or tool failure fails; only a sanitized summary is
+#   uploaded. The history secret scan, Playwright E2E and the image build are still local gates.
 name: ci
 
 on:
@@ -166,6 +172,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Security tool environment (hash-checked lock, own venv; no project dependency)
+        id: tools
         run: |
           python -m venv "$RUNNER_TEMP/audit-venv"
           "$RUNNER_TEMP/audit-venv/bin/python" -m pip install --disable-pip-version-check \
@@ -204,5 +211,49 @@ jobs:
         with:
           name: pip-audit-reports
           path: ${{ runner.temp }}/pip-audit
+          if-no-files-found: error
+          retention-days: 14
+      # Bandit steps run whenever the tool venv was installed, even after a pip-audit failure,
+      # so neither gate hides the other; each failure still fails the job.
+      - name: Bandit gate self-tests (real Bandit 1.9.4 on synthetic files, offline)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        env:
+          LLMI_TEST_REQUIRE_BANDIT: "1"
+        run: >-
+          "$RUNNER_TEMP/audit-venv/bin/python" -I -m unittest discover -s scripts/qa/tests
+          -p test_bandit_baseline_check.py -v
+      - name: Bandit full scan (raw JSON report, stderr and exit status recorded; no filtering)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: |
+          raw="$RUNNER_TEMP/bandit-raw"
+          mkdir -p "$raw"
+          "$RUNNER_TEMP/audit-venv/bin/bandit" --version > "$raw/version.txt"
+          test "$(head -n 1 "$raw/version.txt")" = "bandit 1.9.4"
+          status=0
+          timeout 300 "$RUNNER_TEMP/audit-venv/bin/bandit" -r backend/app sdk/src demo_app scripts \
+            -f json -o "$raw/bandit.json" -q 2> "$raw/bandit.stderr.txt" || status=$?
+          echo "$status" > "$raw/bandit.exit"
+          echo "bandit exit status $status (0 no finding, 1 findings; anything else is a tool failure)"
+      - name: Bandit baseline validation (schema, classifications, SECURITY.md register)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: >-
+          python -I scripts/qa/bandit_baseline_check.py validate-baseline
+          --baseline security/bandit-baseline.json --security-doc docs/SECURITY.md
+      - name: Bandit security gate (full raw finding set must equal the reviewed baseline)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: >-
+          python -I scripts/qa/bandit_baseline_check.py evaluate
+          --report "$RUNNER_TEMP/bandit-raw/bandit.json"
+          --exit-file "$RUNNER_TEMP/bandit-raw/bandit.exit"
+          --stderr-file "$RUNNER_TEMP/bandit-raw/bandit.stderr.txt"
+          --baseline security/bandit-baseline.json --security-doc docs/SECURITY.md --root .
+          --target backend/app --target sdk/src --target demo_app --target scripts
+          --out-dir "$RUNNER_TEMP/bandit"
+      - name: Upload Bandit summary (sanitized; no raw report, issue text or source code)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bandit-summary
+          path: ${{ runner.temp }}/bandit
           if-no-files-found: error
           retention-days: 14

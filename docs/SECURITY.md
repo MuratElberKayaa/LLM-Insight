@@ -135,3 +135,70 @@ Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env`
 - a KVKK/GDPR review of retention and deletion
 
 Retention defaults to 14 days (`LLMI_RETENTION_DAYS`). The retention job is P1; until then, deletion is a manual SQL/CLI step, documented in Phase 5.
+
+## 8. Static analysis exceptions (Bandit, R104-2)
+
+CI job `security-python` runs Bandit 1.9.4 (hash-checked tool lock) as `bandit -r backend/app sdk/src demo_app scripts -f json -o <report> -q`: the whole first-party tree of the Phase 6 assessment, including `scripts/qa/tests`, with Bandit's default profile, no `-s`/`-x`/`-l`/`-i` option, no configuration file and no `# nosec`. `scripts/qa/bandit_baseline_check.py` fails the job unless the raw report equals `security/bandit-baseline.json` exactly. Evidence and checker design: `reports/r104.md` (R104-2).
+
+- **An entry accepts one finding, not a class.** Each entry is pinned by file, test id, severity, confidence, CWE and the SHA-256 of `path|test_id|offending line`, of the whole statement and of Bandit's issue text, plus an occurrence number for identical lines. Line numbers may move; anything else that changes is a new finding.
+- **New, changed or vanished findings fail at every severity.** A finding that disappears also fails until its entry and its row below are removed in a reviewed change; a stale entry is never kept as harmless metadata.
+- **Changing the baseline is a security review.** The baseline is never regenerated in CI. A change needs the baseline, this register (the checker requires both to agree row for row) and the classification evidence in the same reviewed commit. No entry may use a class outside the list below, and each class is limited to its test ids, severity and path.
+- `backend/alembic` is outside the approved scope; scanned separately on 2026-11-04 it has 0 findings (not gated).
+
+| Class | Tests (severity) | Classification | Evidence |
+|---|---|---|---|
+| F5 | B202 (High) | False positive: the dev-only Node installer extracts an archive whose SHA-256 was checked against `SHASUMS256.txt` from the fixed `https://nodejs.org/dist/v22.23.4/`, after checking that every member stays inside the target; `zipfile` creates no links, the tar branch uses `filter="data"` | `reports/phase-5b.md` §4.2; `reports/phase-6-final-qa.md` §9 #1 |
+| F6 | B310 (Medium) | False positive: `urlopen` only on fixed `https://nodejs.org` URLs, the demo's own `http://127.0.0.1:<bound port>`, `http://127.0.0.1:<int port>`, or the validated live-runner endpoint (`http`/`https` only, plain `http` loopback-only); no `file:` or custom scheme reachable | `reports/phase-5b.md` §4.2; `reports/phase-6a.md`; `reports/phase-6-final-qa.md` §9 #2–4, #6 |
+| F7 | B608 (Medium) | False positive: the QA benchmark's table name comes from a literal tuple, never from input | `reports/phase-5b.md` §4.2; `reports/phase-6-final-qa.md` §9 #5 |
+| F8 | B101, B105, B404, B603, B607 (Low) | Accepted Low: asserts in the QA benchmark, fixed-argv `git`/`docker`/seeder calls without a shell, a diagnostics hypothesis text and a `CHANGE_ME` placeholder check mistaken for passwords | `reports/phase-5b.md` §4.2 (F8) |
+| R104-A | B106 (Low), `scripts/qa/tests/` only | False positive, new in R104-1: an offline self-test passes the synthetic keyword argument `secret="x"` to build a malformed pip-audit report that must not be uploaded; no credential | `reports/r104.md` (R104-2) |
+
+<!-- bandit-baseline:begin -->
+| ID | File | Test | Severity / confidence | Fingerprint | Class |
+|---|---|---|---|---|---|
+| BL-01 | `backend/app/services/diagnostics/catalog.py` | B105 | LOW / MEDIUM | `ae4e1727583d` | F8 |
+| BL-02 | `demo_app/live_common.py` | B310 | MEDIUM / HIGH | `085fb004b875` | F6 |
+| BL-03 | `demo_app/web.py` | B310 | MEDIUM / HIGH | `d572f779c1b8` | F6 |
+| BL-04 | `scripts/dev/e2e_fixtures.py` | B404 | LOW / HIGH | `0eb26803ffa3` | F8 |
+| BL-05 | `scripts/dev/e2e_fixtures.py` | B603 | LOW / HIGH | `e59d70766dea` | F8 |
+| BL-06 | `scripts/dev/init_frontend_env.py` | B105 | LOW / MEDIUM | `c0622f716178` | F8 |
+| BL-07 | `scripts/dev/install_node.py` | B310 | MEDIUM / HIGH | `f3c379faef32` | F6 |
+| BL-08 | `scripts/dev/install_node.py` | B202 | HIGH / HIGH | `945c03dea0c0` | F5 |
+| BL-09 | `scripts/qa/backend_probe.py` | B310 | MEDIUM / HIGH | `26557e2296ab` | F6 |
+| BL-10 | `scripts/qa/benchmark.py` | B404 | LOW / HIGH | `d587380c4fa6` | F8 |
+| BL-11 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `18cbc8ad99db` | F8 |
+| BL-12 | `scripts/qa/benchmark.py` | B603 | LOW / HIGH | `02478f6c0369` | F8 |
+| BL-13 | `scripts/qa/benchmark.py` | B603 | LOW / HIGH | `024d184779e0` | F8 |
+| BL-14 | `scripts/qa/benchmark.py` | B607 | LOW / HIGH | `688c3c43c06a` | F8 |
+| BL-15 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `33537e8d17a5` | F8 |
+| BL-16 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `fb77d1fc7b05` | F8 |
+| BL-17 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `888b9bb98327` | F8 |
+| BL-18 | `scripts/qa/benchmark.py` | B603 | LOW / HIGH | `cfa30354a074` | F8 |
+| BL-19 | `scripts/qa/benchmark.py` | B603 | LOW / HIGH | `c3ac44e4b196` | F8 |
+| BL-20 | `scripts/qa/benchmark.py` | B603 | LOW / HIGH | `cfa30354a074` | F8 |
+| BL-21 | `scripts/qa/benchmark.py` | B603 | LOW / HIGH | `bdd8a33393bb` | F8 |
+| BL-22 | `scripts/qa/benchmark.py` | B607 | LOW / HIGH | `46d70373d2a7` | F8 |
+| BL-23 | `scripts/qa/benchmark.py` | B608 | MEDIUM / MEDIUM | `884bc2e15a66` | F7 |
+| BL-24 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `d29aeecc5348` | F8 |
+| BL-25 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `d29aeecc5348` | F8 |
+| BL-26 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `d29aeecc5348` | F8 |
+| BL-27 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `d90345e4b1f6` | F8 |
+| BL-28 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `6795e02c8b50` | F8 |
+| BL-29 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `6795e02c8b50` | F8 |
+| BL-30 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `0d1bf6e37942` | F8 |
+| BL-31 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `1500e73fa24c` | F8 |
+| BL-32 | `scripts/qa/benchmark.py` | B101 | LOW / HIGH | `c48d02a384a5` | F8 |
+| BL-33 | `scripts/qa/secret_scan.py` | B404 | LOW / HIGH | `18f15e5a72a6` | F8 |
+| BL-34 | `scripts/qa/secret_scan.py` | B603 | LOW / HIGH | `1f87d2448506` | F8 |
+| BL-35 | `scripts/qa/secret_scan.py` | B607 | LOW / HIGH | `39412d3c278b` | F8 |
+| BL-36 | `scripts/qa/secret_scan.py` | B603 | LOW / HIGH | `730d21ac03dc` | F8 |
+| BL-37 | `scripts/qa/secret_scan.py` | B607 | LOW / HIGH | `a622ee9780a9` | F8 |
+| BL-38 | `scripts/qa/tests/test_pip_audit_gate.py` | B106 | LOW / MEDIUM | `1f41e94d3ab3` | R104-A |
+| BL-39 | `scripts/verify_phase0.py` | B404 | LOW / HIGH | `5fee7146ef6a` | F8 |
+| BL-40 | `scripts/verify_phase0.py` | B603 | LOW / HIGH | `4ed2502de22b` | F8 |
+| BL-41 | `scripts/verify_phase0.py` | B607 | LOW / HIGH | `57bef81899d7` | F8 |
+| BL-42 | `scripts/verify_phase0.py` | B603 | LOW / HIGH | `59ce94dc1ac2` | F8 |
+| BL-43 | `scripts/verify_phase0.py` | B607 | LOW / HIGH | `d611e2f7b809` | F8 |
+| BL-44 | `scripts/verify_phase0.py` | B603 | LOW / HIGH | `ac3d6393febd` | F8 |
+| BL-45 | `scripts/verify_phase0.py` | B607 | LOW / HIGH | `3a1f7b05d337` | F8 |
+<!-- bandit-baseline:end -->
