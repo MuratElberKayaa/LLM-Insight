@@ -14,6 +14,11 @@
 #   accepted in frontend/security/npm-audit-policy.json, in their recorded dev-only chain and
 #   before their review deadline (frontend/scripts/audit-policy.mjs; fails closed on anything
 #   else, including npm/registry errors). An accepted exception is not a clean audit.
+# - pip-audit (R104-1, job security-python): both Python lockfiles against PyPI and OSV, four
+#   runs, no accepted advisory; pip-audit 2.10.1 from the hash-checked tool lock
+#   security/tools/requirements-audit.lock in its own venv; scripts/qa/pip_audit_gate.py fails
+#   closed on findings, service outages, invalid lockfiles and incomplete or malformed reports.
+#   Bandit, the history secret scan, Playwright E2E and the image build are still local gates.
 name: ci
 
 on:
@@ -147,3 +152,57 @@ jobs:
       - run: npm run build
       - name: Client bundle secret scan (T42)
         run: npm run check:bundle
+
+  security-python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Security tool environment (hash-checked lock, own venv; no project dependency)
+        run: |
+          python -m venv "$RUNNER_TEMP/audit-venv"
+          "$RUNNER_TEMP/audit-venv/bin/python" -m pip install --disable-pip-version-check \
+            --require-hashes --no-deps --only-binary :all: -r security/tools/requirements-audit.lock
+          "$RUNNER_TEMP/audit-venv/bin/python" -m pip check
+          "$RUNNER_TEMP/audit-venv/bin/python" -I scripts/qa/pip_audit_gate.py check-env \
+            --lock security/tools/requirements-audit.lock
+          test "$("$RUNNER_TEMP/audit-venv/bin/pip-audit" --version)" = "pip-audit 2.10.1"
+      - name: Audit gate self-tests (offline)
+        run: python -I -m unittest discover -s scripts/qa/tests -v
+      - name: Python dependency audits (2 lockfiles x PyPI and OSV; every run recorded)
+        run: |
+          raw="$RUNNER_TEMP/pip-audit-raw"
+          mkdir -p "$raw"
+          for target in backend:backend/requirements.lock sdk:sdk/requirements-dev.lock; do
+            for service in pypi osv; do
+              id="${target%%:*}-$service"
+              status=0
+              timeout 240 "$RUNNER_TEMP/audit-venv/bin/pip-audit" -r "${target#*:}" --no-deps \
+                --disable-pip -s "$service" --progress-spinner off --format json \
+                -o "$raw/$id.json" --cache-dir "$RUNNER_TEMP/pip-audit-cache" \
+                2> "$raw/$id.stderr.txt" || status=$?
+              echo "$status" > "$raw/$id.exit"
+              echo "$id: pip-audit exit status $status"
+            done
+          done
+      - name: Python dependency audit gate (fails on any finding, outage, invalid lock or bad report)
+        run: >-
+          python -I scripts/qa/pip_audit_gate.py evaluate
+          --dir "$RUNNER_TEMP/pip-audit-raw" --upload-dir "$RUNNER_TEMP/pip-audit"
+          --target backend=backend/requirements.lock --target sdk=sdk/requirements-dev.lock
+          --service pypi --service osv
+      - name: Upload audit reports (validated reports, stderr, summary)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pip-audit-reports
+          path: ${{ runner.temp }}/pip-audit
+          if-no-files-found: error
+          retention-days: 14
