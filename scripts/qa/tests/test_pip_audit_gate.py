@@ -240,7 +240,7 @@ class Evaluate(unittest.TestCase):
 
     def test_malformed_report_is_not_uploaded(self):
         files = {
-            "a-pypi.json": report(secret="x"),
+            "a-pypi.json": report(unexpected_field="x"),
             "a-pypi.exit": "0\n",
             "a-osv.json": report(),
             "a-osv.exit": "0\n",

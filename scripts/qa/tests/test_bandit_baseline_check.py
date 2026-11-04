@@ -52,6 +52,8 @@ NEW_ASSERT = "def guard(flag):\n    assert flag\n    return flag\n"
 NEW_HIGH = (
     "import hashlib\n\n\ndef digest(data):\n    return hashlib.md5(data).hexdigest()\n"
 )
+# B106 (hardcoded password function argument), the class removed in R104-2A.
+NEW_B106 = "def connect(client):\n    return client.login(user='u', password='x')\n"
 # (path, line, test_id, test_name, severity, confidence, cwe, text) of the synthetic sources.
 SPEC = [
     (
@@ -167,7 +169,7 @@ class Project:
         entries = check.new_entries(found)
         for e in entries:
             e["classification"] = CLASSES[e["test_id"]]
-            e["origin"] = "phase-5b"
+            e["origin"] = "phase-5"
         self.save(entries)
         return entries
 
@@ -455,7 +457,7 @@ class Reports(GateCase):
         self.assertFails("NEW_FINDING", "MISSING_FINDING")
 
     def test_unknown_classification_fails(self):
-        for cls in ("F99", None, "F5", "R104-A"):
+        for cls in ("F99", None, "F5", "F7", "R104-A"):
             entries = self.p.entries()
             entries[0]["classification"] = cls
             self.p.save(entries)
@@ -570,6 +572,24 @@ class RealBandit(GateCase):
         self.scan()
         summary = self.assertFails("NEW_FINDING")
         self.assertEqual(summary["counts"]["HIGH"], 1)
+
+    def test_new_b106_issue_fails(self):
+        self.p.write("tools/clean.py", NEW_B106)
+        self.scan()
+        summary = self.assertFails("NEW_FINDING")
+        self.assertEqual(kinds(summary), ["NEW_FINDING"])
+        self.assertEqual(summary["problems"][0]["test_id"], "B106")
+
+    def test_stale_baseline_entry_fails(self):
+        self.p.write("app/checks.py", "def check(value):\n    return value\n")
+        self.scan()
+        summary = self.assertFails("MISSING_FINDING")
+        self.assertEqual(kinds(summary), ["MISSING_FINDING"])
+
+    def test_altered_finding_fails(self):
+        self.p.write("tools/run.py", SOURCES["tools/run.py"].replace("status", "log"))
+        self.scan()
+        self.assertFails("NEW_FINDING", "MISSING_FINDING")
 
     def test_f_missing_scan_target_fails(self):
         self.scan(targets=["app"])

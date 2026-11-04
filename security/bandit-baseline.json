@@ -17,18 +17,19 @@
     "commit": "5e773c3ac30380c9277c105e798c15cac60f17f2",
     "date": "2026-11-04",
     "environment": "python:3.12.6-slim-bookworm (linux/amd64), bandit 1.9.4 from security/tools/requirements-audit.lock",
-    "method": "bandit_baseline_check.py candidates on the raw report, classified by hand; never regenerated in CI"
+    "method": "bandit_baseline_check.py candidates on the raw report, classified by hand; never regenerated in CI",
+    "reconciled": "2026-11-04, R104-2A: BL-38 (B106, R104-1 test fixture) removed at source, ids kept stable; origin = earliest release tag (phase-1 ... phase-6) whose Bandit scan contains the identical fingerprint and occurrence"
   },
   "review": {
     "register": "docs/SECURITY.md section 8 (one row per entry)",
-    "evidence": "docs/reports/r104.md (R104-2); docs/reports/phase-6-final-qa.md section 9; docs/reports/phase-5b.md section 4.2",
+    "evidence": "docs/reports/r104.md (R104-2); docs/reports/phase-6-final-qa.md section 9; docs/reports/phase-5b.md section 4.2; docs/reports/r104.md R104-2A (per-finding origins)",
     "rule": "An entry accepts exactly one finding. Adding, changing or removing an entry needs a reviewed change to this file and the register."
   },
   "totals": {
     "HIGH": 1,
     "MEDIUM": 5,
-    "LOW": 39,
-    "total": 45
+    "LOW": 38,
+    "total": 44
   },
   "findings": [
     {
@@ -45,7 +46,7 @@
       "text_sha256": "195ea72dde93e8c3dffe59c923210eabdb502428e72767cffbd341e22a36fb05",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-4"
     },
     {
       "id": "BL-02",
@@ -61,7 +62,7 @@
       "text_sha256": "96abd31d11a743e7bb150a840fefa7f44ef903da582b4fdba5d14e120405d369",
       "occurrence": 1,
       "classification": "F6",
-      "origin": "phase-6a"
+      "origin": "phase-6"
     },
     {
       "id": "BL-03",
@@ -77,7 +78,7 @@
       "text_sha256": "96abd31d11a743e7bb150a840fefa7f44ef903da582b4fdba5d14e120405d369",
       "occurrence": 1,
       "classification": "F6",
-      "origin": "phase-5b"
+      "origin": "phase-2"
     },
     {
       "id": "BL-04",
@@ -93,7 +94,7 @@
       "text_sha256": "ec2bddb99bc03092c525f77f3ebf8eeb496dffd0427a932a9a4b4c36cbdb8ff6",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-05",
@@ -109,7 +110,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-06",
@@ -125,7 +126,7 @@
       "text_sha256": "e9d05b4301f70f8f88affb0a42acb2d12f66da821ceefc16fd0c933bcdbde322",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-07",
@@ -141,7 +142,7 @@
       "text_sha256": "96abd31d11a743e7bb150a840fefa7f44ef903da582b4fdba5d14e120405d369",
       "occurrence": 1,
       "classification": "F6",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-08",
@@ -157,7 +158,7 @@
       "text_sha256": "285681c962d506f441c841501ed666cc8fcc58f93e1d5e115351467dc88044f7",
       "occurrence": 1,
       "classification": "F5",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-09",
@@ -173,7 +174,7 @@
       "text_sha256": "96abd31d11a743e7bb150a840fefa7f44ef903da582b4fdba5d14e120405d369",
       "occurrence": 1,
       "classification": "F6",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-10",
@@ -189,7 +190,7 @@
       "text_sha256": "ec2bddb99bc03092c525f77f3ebf8eeb496dffd0427a932a9a4b4c36cbdb8ff6",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-11",
@@ -205,7 +206,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-12",
@@ -221,7 +222,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-13",
@@ -237,7 +238,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-14",
@@ -253,7 +254,7 @@
       "text_sha256": "8390c10717237cfa10aeb96266deadfa42202a645e0e3546ee4463d0dd819704",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-15",
@@ -269,7 +270,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-16",
@@ -285,7 +286,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-17",
@@ -301,7 +302,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-18",
@@ -317,7 +318,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-19",
@@ -333,7 +334,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-20",
@@ -349,7 +350,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 2,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-21",
@@ -365,7 +366,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-22",
@@ -381,7 +382,7 @@
       "text_sha256": "8390c10717237cfa10aeb96266deadfa42202a645e0e3546ee4463d0dd819704",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-23",
@@ -397,7 +398,7 @@
       "text_sha256": "4343a1d7b20a45a8db4a79988c62fd78696e784b80a649bced4162c6058818cc",
       "occurrence": 1,
       "classification": "F7",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-24",
@@ -413,7 +414,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-25",
@@ -429,7 +430,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 2,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-26",
@@ -445,7 +446,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 3,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-27",
@@ -461,7 +462,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-28",
@@ -477,7 +478,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-29",
@@ -493,7 +494,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 2,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-30",
@@ -509,7 +510,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-31",
@@ -525,7 +526,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-32",
@@ -541,7 +542,7 @@
       "text_sha256": "84f9fe8610ef80d8c4e8b998071653587b1c6af6320bac03fb6f46ba2e5b33fd",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-33",
@@ -557,7 +558,7 @@
       "text_sha256": "ec2bddb99bc03092c525f77f3ebf8eeb496dffd0427a932a9a4b4c36cbdb8ff6",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-34",
@@ -573,7 +574,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-35",
@@ -589,7 +590,7 @@
       "text_sha256": "8390c10717237cfa10aeb96266deadfa42202a645e0e3546ee4463d0dd819704",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-36",
@@ -605,7 +606,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-5"
     },
     {
       "id": "BL-37",
@@ -621,23 +622,7 @@
       "text_sha256": "8390c10717237cfa10aeb96266deadfa42202a645e0e3546ee4463d0dd819704",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
-    },
-    {
-      "id": "BL-38",
-      "path": "scripts/qa/tests/test_pip_audit_gate.py",
-      "line": 243,
-      "test_id": "B106",
-      "test_name": "hardcoded_password_funcarg",
-      "severity": "LOW",
-      "confidence": "MEDIUM",
-      "cwe": 259,
-      "fingerprint": "1f41e94d3ab348159e87f46fc55ca90975316362934a9be6a7d6ce6659fbf326",
-      "statement_sha256": "afadf8473083288a187c4b1118776127f724687f2e063796353ba37e570b2505",
-      "text_sha256": "eb3bbd2eb7f3dc4515bae6dd46bd8792309b41530914dc2c0a7dc46116884ddf",
-      "occurrence": 1,
-      "classification": "R104-A",
-      "origin": "r104-1"
+      "origin": "phase-5"
     },
     {
       "id": "BL-39",
@@ -653,7 +638,7 @@
       "text_sha256": "ec2bddb99bc03092c525f77f3ebf8eeb496dffd0427a932a9a4b4c36cbdb8ff6",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-1"
     },
     {
       "id": "BL-40",
@@ -669,7 +654,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-1"
     },
     {
       "id": "BL-41",
@@ -685,7 +670,7 @@
       "text_sha256": "8390c10717237cfa10aeb96266deadfa42202a645e0e3546ee4463d0dd819704",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-1"
     },
     {
       "id": "BL-42",
@@ -701,7 +686,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-43",
@@ -717,7 +702,7 @@
       "text_sha256": "8390c10717237cfa10aeb96266deadfa42202a645e0e3546ee4463d0dd819704",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-44",
@@ -733,7 +718,7 @@
       "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     },
     {
       "id": "BL-45",
@@ -749,7 +734,7 @@
       "text_sha256": "8390c10717237cfa10aeb96266deadfa42202a645e0e3546ee4463d0dd819704",
       "occurrence": 1,
       "classification": "F8",
-      "origin": "phase-5b"
+      "origin": "phase-3"
     }
   ]
 }

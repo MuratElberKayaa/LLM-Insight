@@ -96,14 +96,14 @@ COMPARED = (
     "statement_sha256",
     "text_sha256",
 )
-ORIGINS = {"phase-5b", "phase-6a", "r104-1"}
+# Earliest release tag whose tree contains the identical finding (absent from the tag before).
+ORIGINS = {f"phase-{n}" for n in range(1, 7)} | {"UNVERIFIED HISTORICAL ORIGIN"}
 # Closed set: a baseline cannot invent a class. (test ids, severities, required path prefix)
 CLASSIFICATIONS = {
     "F5": ({"B202"}, {"HIGH"}, ""),
     "F6": ({"B310"}, {"MEDIUM"}, ""),
     "F7": ({"B608"}, {"MEDIUM"}, ""),
     "F8": ({"B101", "B105", "B404", "B603", "B607"}, {"LOW"}, ""),
-    "R104-A": ({"B106"}, {"LOW"}, "scripts/qa/tests/"),
 }
 ENTRY_ID = re.compile(r"^BL-\d{2,3}$")
 TEST_ID = re.compile(r"^B\d{3}$")

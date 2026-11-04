@@ -144,6 +144,7 @@ CI job `security-python` runs Bandit 1.9.4 (hash-checked tool lock) as `bandit -
 - **New, changed or vanished findings fail at every severity.** A finding that disappears also fails until its entry and its row below are removed in a reviewed change; a stale entry is never kept as harmless metadata.
 - **Changing the baseline is a security review.** The baseline is never regenerated in CI. A change needs the baseline, this register (the checker requires both to agree row for row) and the classification evidence in the same reviewed commit. No entry may use a class outside the list below, and each class is limited to its test ids, severity and path.
 - `backend/alembic` is outside the approved scope; scanned separately on 2026-11-04 it has 0 findings (not gated).
+- The baseline holds the 44 findings of the released Phase 6 tree (High 1, Medium 5, Low 38), each with the earliest release tag that contains it (`reports/r104.md`, R104-2A). A B106 false positive introduced by an R104-1 self-test (`secret="x"` as a synthetic report key) was **not accepted** as an exception: the test now uses a neutral key and the entry BL-38 and its class were removed (R104-2A). Entry ids are not renumbered.
 
 | Class | Tests (severity) | Classification | Evidence |
 |---|---|---|---|
@@ -151,7 +152,6 @@ CI job `security-python` runs Bandit 1.9.4 (hash-checked tool lock) as `bandit -
 | F6 | B310 (Medium) | False positive: `urlopen` only on fixed `https://nodejs.org` URLs, the demo's own `http://127.0.0.1:<bound port>`, `http://127.0.0.1:<int port>`, or the validated live-runner endpoint (`http`/`https` only, plain `http` loopback-only); no `file:` or custom scheme reachable | `reports/phase-5b.md` §4.2; `reports/phase-6a.md`; `reports/phase-6-final-qa.md` §9 #2–4, #6 |
 | F7 | B608 (Medium) | False positive: the QA benchmark's table name comes from a literal tuple, never from input | `reports/phase-5b.md` §4.2; `reports/phase-6-final-qa.md` §9 #5 |
 | F8 | B101, B105, B404, B603, B607 (Low) | Accepted Low: asserts in the QA benchmark, fixed-argv `git`/`docker`/seeder calls without a shell, a diagnostics hypothesis text and a `CHANGE_ME` placeholder check mistaken for passwords | `reports/phase-5b.md` §4.2 (F8) |
-| R104-A | B106 (Low), `scripts/qa/tests/` only | False positive, new in R104-1: an offline self-test passes the synthetic keyword argument `secret="x"` to build a malformed pip-audit report that must not be uploaded; no credential | `reports/r104.md` (R104-2) |
 
 <!-- bandit-baseline:begin -->
 | ID | File | Test | Severity / confidence | Fingerprint | Class |
@@ -193,7 +193,6 @@ CI job `security-python` runs Bandit 1.9.4 (hash-checked tool lock) as `bandit -
 | BL-35 | `scripts/qa/secret_scan.py` | B607 | LOW / HIGH | `39412d3c278b` | F8 |
 | BL-36 | `scripts/qa/secret_scan.py` | B603 | LOW / HIGH | `730d21ac03dc` | F8 |
 | BL-37 | `scripts/qa/secret_scan.py` | B607 | LOW / HIGH | `a622ee9780a9` | F8 |
-| BL-38 | `scripts/qa/tests/test_pip_audit_gate.py` | B106 | LOW / MEDIUM | `1f41e94d3ab3` | R104-A |
 | BL-39 | `scripts/verify_phase0.py` | B404 | LOW / HIGH | `5fee7146ef6a` | F8 |
 | BL-40 | `scripts/verify_phase0.py` | B603 | LOW / HIGH | `4ed2502de22b` | F8 |
 | BL-41 | `scripts/verify_phase0.py` | B607 | LOW / HIGH | `57bef81899d7` | F8 |
