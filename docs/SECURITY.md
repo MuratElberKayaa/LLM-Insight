@@ -38,11 +38,11 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 - Error responses use generic messages, and missing, unknown and revoked keys get the same `401`. `/api/v1` errors carry a fixed code and message; a `422` names the invalid parameters but never echoes their values (FastAPI's default body would).
 - The uvicorn access log records the request line, including query strings (`project`, `model`, `cursor`). The query string never carries credentials; the token travels only in the `Authorization` header, which is not logged.
 
-**Test output (Phase 2C, R33):** a failing test must never print a local credential. Fixtures hand out credential-bearing database URLs as `RedactedUrl` (repr hidden), and report hooks in both suites (`backend/tests/redaction.py`, an identical copy in `sdk/tests/`) replace every local secret (from `.env` and the environment) and the password of any `scheme://user:password@` URL in failure text, skip reasons and captured stdout/stderr/log. This does not cover `pytest -s` or live logging. Never run `docker compose config` without `--quiet`: it prints the resolved `POSTGRES_PASSWORD`.
+**Test output (Phase 2C, R33):** a failing test must never print a local credential. Fixtures hand out credential-bearing database URLs as `RedactedUrl` (repr hidden), and report hooks in both suites (`backend/tests/redaction.py`, an identical copy in `sdk/tests/`) replace every local secret (from `.env` and the environment) and the password of any `scheme://user:<password>@` URL in failure text, skip reasons and captured stdout/stderr/log. This does not cover `pytest -s` or live logging. Never run `docker compose config` without `--quiet`: it prints the resolved `POSTGRES_PASSWORD`.
 
 **Rotating the local PostgreSQL password** (done in Phase 2C after the R33 exposure): generate a new value, stage the new `.env` (git-ignored), set the role password with `ALTER ROLE … PASSWORD '<SCRAM-SHA-256 verifier>'` (computed client-side, so the plaintext never reaches the server or its logs), check that the new login works and the old one fails, then replace `.env` atomically and recreate the container with `docker compose up -d --wait postgres` (same named volume, so no data is lost). `POSTGRES_PASSWORD` itself only matters when the volume is first initialised. Never print the value.
 
-Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env` and `.env.*`. **Secret scan (Phase 5B):** `scripts/qa/secret_scan.py` searches every blob reachable from every ref, every commit and tag message and the working files for the exact local secret values (read from the git-ignored env files, never printed) and for credential patterns; a control repository with planted values must be detected first (`reports/phase-5b.md` §4). The dashboard build is scanned by `npm run check:bundle` (T42).
+Only `.env.example` with placeholders is committed. `.gitignore` excludes `.env` and `.env.*`. **Secret scan (Phase 5B):** `scripts/qa/secret_scan.py` searches every blob reachable from every ref, every commit and tag message and the working files for the exact local secret values (read from the git-ignored env files, never printed) and for credential patterns; a control repository with planted values must be detected first (`reports/phase-5b.md` §4). CI runs the pattern part as a fail-closed history gate without local values (§9). The dashboard build is scanned by `npm run check:bundle` (T42).
 
 ## 3. Request limits
 
@@ -201,3 +201,63 @@ CI job `security-python` runs Bandit 1.9.4 (hash-checked tool lock) as `bandit -
 | BL-44 | `scripts/verify_phase0.py` | B603 | LOW / HIGH | `ac3d6393febd` | F8 |
 | BL-45 | `scripts/verify_phase0.py` | B607 | LOW / HIGH | `3a1f7b05d337` | F8 |
 <!-- bandit-baseline:end -->
+
+## 9. History secret-scan exceptions (R104-3)
+
+CI job `security-history` checks out the full history and runs `scripts/qa/secret_history_gate.py`. It applies the detectors of `scripts/qa/secret_scan.py` raw, **without that scanner's `ALLOW` list**, so no global regular expression can accept a match. Evidence and design: `reports/r104.md` (R104-3).
+
+- **Scanned:** every object reachable from every ref of the checkout (blobs, commit objects, annotated tag objects including nested tags, tree entry names) and the ref names. On a pull request the refs are `refs/remotes/origin/*`, `refs/tags/*` and `refs/remotes/pull/<n>/merge`.
+- **Not scanned, and not claimed:** GitHub-managed refs of other pull requests (for example `refs/pull/1/head`, R105), unreachable objects, content inside archives or encoded data, and the exact local secret values of `secret_scan.py` (those need the git-ignored env files, so they remain a local check).
+- **An entry accepts one occurrence, not a class or a count.** Each is pinned by detector, object type, full Git object id, occurrence number, byte offset, length and, for a blob, the exact set of repository paths. The object id pins the bytes, so the matched value is never stored. A new, changed, moved or vanished occurrence fails, and so does the same blob at a new path.
+- **Coverage is verified, not assumed.** A shallow or partial checkout, a grafts file, a ref outside the allowed namespaces, a missing or moved release tag, a different root commit, a submodule entry, an unreachable expected commit or a difference between `git rev-list` and the gate's own object walk fails the job.
+- **Changing the baseline is a security review.** CI never regenerates it. A change needs `security/secret-history-baseline.json`, the register below and the `REVIEWED_BASELINE_SHA256` constant of the gate in the same reviewed commit, with the classification evidence. Any new or edited file containing a match needs such a review before it can pass, including a future edit of an already listed fixture file.
+- **Only sanitized metadata is reported:** verdict, ref categories, object counts, finding counts, entry ids, detector names, object id prefixes and error categories. Raw reports stay on the runner.
+
+| Class | Detector, object | Paths | Classification | Evidence |
+|---|---|---|---|---|
+| F9-DOC-EXAMPLE | `url_userinfo`, blob | `docs/SECURITY.md`, `docs/reports/phase-2c.md`, `backend/tests/redaction.py`, `sdk/tests/redaction.py` | False positive: the literal placeholder URL that documents the redaction rule | `reports/phase-5b.md` §4 F9; `reports/r104.md` R104-3 |
+| F9-TEST-FIXTURE | `url_userinfo`, blob | `backend/tests/unit/test_config.py`, `backend/tests/unit/test_output_redaction.py`, `sdk/tests/unit/test_redaction.py` | False positive: synthetic password or f-string template in a redaction or settings test, aimed at loopback port 1, a `.invalid` host or a rejected input | `reports/phase-5b.md` §4 F9; `reports/r104.md` R104-3 |
+| F9-CHANGE-ME-VALUE | `url_userinfo`, blob | `.env.example`, `backend/tests/unit/test_config.py` | False positive: the `CHANGE_ME` placeholder; hidden by the local scanner's `ALLOW` list, listed here individually | `reports/r104.md` R104-3 |
+
+<!-- secret-history-baseline:begin -->
+| ID | Detector | Object | Id | Occurrence | Offset / length | Paths | Class |
+|---|---|---|---|---|---|---|---|
+| SH-01 | url_userinfo | blob | `1524786ba290` | 0 | 330 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-02 | url_userinfo | blob | `2919f41adf84` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-03 | url_userinfo | blob | `5df5016c0771` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-04 | url_userinfo | blob | `69e82d1b859b` | 0 | 330 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-05 | url_userinfo | blob | `71789f6dd7e3` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-06 | url_userinfo | blob | `90b13a683cdc` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-07 | url_userinfo | blob | `b4fb5e196fbd` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-08 | url_userinfo | blob | `db2801ff3e48` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-09 | url_userinfo | blob | `e0d1d9db2167` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
+| SH-10 | url_userinfo | blob | `74c8ed1e1eaa` | 0 | 825 / 23 | `backend/tests/redaction.py`, `sdk/tests/redaction.py` | F9-DOC-EXAMPLE |
+| SH-11 | url_userinfo | blob | `74c8ed1e1eaa` | 1 | 1959 / 23 | `backend/tests/redaction.py`, `sdk/tests/redaction.py` | F9-DOC-EXAMPLE |
+| SH-12 | url_userinfo | blob | `c849be72bedf` | 0 | 2247 / 33 | `backend/tests/unit/test_config.py` | F9-CHANGE-ME-VALUE |
+| SH-13 | url_userinfo | blob | `c849be72bedf` | 1 | 2807 / 36 | `backend/tests/unit/test_config.py` | F9-TEST-FIXTURE |
+| SH-14 | url_userinfo | blob | `c849be72bedf` | 2 | 3228 / 19 | `backend/tests/unit/test_config.py` | F9-TEST-FIXTURE |
+| SH-15 | url_userinfo | blob | `3eabac464c0e` | 0 | 2175 / 43 | `backend/tests/unit/test_output_redaction.py` | F9-TEST-FIXTURE |
+| SH-16 | url_userinfo | blob | `3eabac464c0e` | 1 | 4698 / 39 | `backend/tests/unit/test_output_redaction.py` | F9-TEST-FIXTURE |
+| SH-17 | url_userinfo | blob | `3eabac464c0e` | 2 | 5182 / 43 | `backend/tests/unit/test_output_redaction.py` | F9-TEST-FIXTURE |
+| SH-18 | url_userinfo | blob | `3eabac464c0e` | 3 | 5769 / 39 | `backend/tests/unit/test_output_redaction.py` | F9-TEST-FIXTURE |
+| SH-19 | url_userinfo | blob | `0494c7529b00` | 0 | 8593 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-20 | url_userinfo | blob | `0f331f2f3d09` | 0 | 8304 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-21 | url_userinfo | blob | `13acc1e1c3cb` | 0 | 8304 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-22 | url_userinfo | blob | `24a57520e662` | 0 | 8304 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-23 | url_userinfo | blob | `2ae4d3455269` | 0 | 8304 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-24 | url_userinfo | blob | `2db4e58e9701` | 0 | 5581 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-25 | url_userinfo | blob | `36c1db4d7151` | 0 | 8593 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-26 | url_userinfo | blob | `3e9542aa56f9` | 0 | 5581 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-27 | url_userinfo | blob | `4d81bddac680` | 0 | 6153 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-28 | url_userinfo | blob | `61f121f494f8` | 0 | 8593 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-29 | url_userinfo | blob | `6693735684ff` | 0 | 5581 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-30 | url_userinfo | blob | `82f955dcccd0` | 0 | 8304 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-31 | url_userinfo | blob | `889f2841f5ca` | 0 | 8593 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-32 | url_userinfo | blob | `92bc7483281e` | 0 | 8593 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-33 | url_userinfo | blob | `a532d374b327` | 0 | 8593 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-34 | url_userinfo | blob | `cfcaccc3167b` | 0 | 5581 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-35 | url_userinfo | blob | `f24f27ddb357` | 0 | 7088 / 23 | `docs/SECURITY.md` | F9-DOC-EXAMPLE |
+| SH-36 | url_userinfo | blob | `b1e2f7d85360` | 0 | 4903 / 23 | `docs/reports/phase-2c.md` | F9-DOC-EXAMPLE |
+| SH-37 | url_userinfo | blob | `41dd64be03d2` | 0 | 1161 / 34 | `sdk/tests/unit/test_redaction.py` | F9-TEST-FIXTURE |
+| SH-38 | url_userinfo | blob | `41dd64be03d2` | 1 | 2551 / 35 | `sdk/tests/unit/test_redaction.py` | F9-TEST-FIXTURE |
+<!-- secret-history-baseline:end -->

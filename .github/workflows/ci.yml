@@ -24,7 +24,14 @@
 #   reviewed per-finding baseline security/bandit-baseline.json and its register in
 #   docs/SECURITY.md section 8. Bandit's own -b is not used. Any new, changed or vanished
 #   finding, skipped file, scope change or tool failure fails; only a sanitized summary is
-#   uploaded. The history secret scan, Playwright E2E and the image build are still local gates.
+#   uploaded. Playwright E2E and the image build are still local gates.
+# - History secret scan (R104-3, job security-history): full-history checkout with no persisted
+#   credential; scripts/qa/secret_history_gate.py verifies the actual ref coverage independently,
+#   scans every object reachable from the fetched refs and compares every raw match with the
+#   reviewed per-occurrence baseline security/secret-history-baseline.json and its register in
+#   docs/SECURITY.md section 9. Scope: refs/remotes/origin/*, tags and the pull request merge ref;
+#   GitHub-managed refs of other pull requests are not fetched and not claimed as scanned.
+#   Only a sanitized summary is uploaded; no secret, no .env, no network service.
 name: ci
 
 on:
@@ -255,5 +262,60 @@ jobs:
         with:
           name: bandit-summary
           path: ${{ runner.temp }}/bandit
+          if-no-files-found: error
+          retention-days: 14
+
+  security-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # fetch-depth 0 fetches refs/heads/* as refs/remotes/origin/*, refs/tags/* and, for a pull
+      # request, the merge ref as refs/remotes/pull/<n>/merge (checkout src/ref-helper.ts).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: History gate self-tests (offline, temporary Git repositories, synthetic tokens)
+        run: python -I -m unittest discover -s scripts/qa/tests -p test_secret_history_gate.py -v
+      - name: History baseline validation (schema, closed classes, SECURITY.md register, digest)
+        run: >-
+          python -I scripts/qa/secret_history_gate.py validate-baseline
+          --baseline security/secret-history-baseline.json --security-doc docs/SECURITY.md
+      - name: History coverage validation (independent of the checkout settings)
+        if: ${{ !cancelled() }}
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          expect=(--expect-head "$GITHUB_SHA" --expect-commit "$GITHUB_SHA")
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            expect+=(--expect-commit "$PR_HEAD_SHA")
+          fi
+          timeout 300 python -I scripts/qa/secret_history_gate.py coverage --repo . \
+            --baseline security/secret-history-baseline.json --security-doc docs/SECURITY.md \
+            --out "$RUNNER_TEMP/secret-history-raw/coverage.json" "${expect[@]}"
+      - name: Full reachable-history scan (metadata only; no matched value is stored)
+        if: ${{ !cancelled() }}
+        run: >-
+          timeout 300 python -I scripts/qa/secret_history_gate.py scan --repo .
+          --out "$RUNNER_TEMP/secret-history-raw/scan.json"
+      - name: Strict baseline evaluation and sanitized report
+        if: ${{ !cancelled() }}
+        run: >-
+          python -I scripts/qa/secret_history_gate.py evaluate
+          --coverage "$RUNNER_TEMP/secret-history-raw/coverage.json"
+          --scan "$RUNNER_TEMP/secret-history-raw/scan.json"
+          --baseline security/secret-history-baseline.json --security-doc docs/SECURITY.md
+          --out-dir "$RUNNER_TEMP/secret-history"
+      - name: Upload history scan summary (sanitized; raw reports are not uploaded)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: secret-history-summary
+          path: ${{ runner.temp }}/secret-history
           if-no-files-found: error
           retention-days: 14

@@ -7,10 +7,15 @@ Two detectors:
   2. credential patterns (OpenAI, GitHub, AWS, Slack, Google, private keys, JWT, ingest keys,
      long Bearer values, URL user-info).
 Output: counts and locations only. Exit 1 on any hit.
-Usage: python -I scripts/qa/secret_scan.py --repo <dir> --env <file> [--env <file> ...] [--self-test]
+Usage: python -I scripts/qa/secret_scan.py --repo <dir> --env <file> [--env <file> ...]
+
+CI does not run this command: scripts/qa/secret_history_gate.py (R104-3) reuses PATTERNS and git()
+without the ALLOW list and compares every match with a reviewed per-occurrence baseline.
 """
 
 import argparse
+import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -74,6 +79,22 @@ def load_secrets(env_files):
                 if len(part) >= 16 and part != v:
                     values[f"{p.name}:{k}[part]"] = part.encode()
     return values
+
+
+def iter_matches(data):
+    """Every raw detector match, before ALLOW: (detector, occurrence, offset, length), no value."""
+    for name, rx in PATTERNS.items():
+        for occurrence, match in enumerate(rx.finditer(data)):
+            yield name, occurrence, match.start(), match.end() - match.start()
+
+
+def detector_digest():
+    """SHA-256 of the detector names, regexes and flags: a changed detector changes this value."""
+    spec = [
+        [n, rx.pattern.decode("latin-1"), rx.flags]
+        for n, rx in sorted(PATTERNS.items())
+    ]
+    return hashlib.sha256(json.dumps(spec, separators=(",", ":")).encode()).hexdigest()
 
 
 def scan_bytes(data, secrets):
