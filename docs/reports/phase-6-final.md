@@ -2,6 +2,8 @@
 
 **Date:** 2026-11-01 (UTC). **Branch:** `feature/phase-6c-gemini-free`, pushed to `origin`; draft PR #1 into `main`, not merged; no `phase-6` tag; no GitHub Release.
 
+> **Post-release note (2026-11-03):** the line above and §4, §5 and §10 record the state *at the closure commit* and are kept as historical evidence. The release steps of §10 were completed afterwards, and the GitHub history was later rewritten with identical trees; commit SHAs in this report are historical identifiers. Current facts: §12.
+
 **Decision recorded:** the architectural review **accepted Phase 6 for a local-only release** after the final release review and the first GitHub Linux CI run (§5). This closure commit changes documentation only: this report and `docs/PHASE_STATUS.md`.
 
 **No Gemini or OpenAI request was made for the closure, the push, the PR or the review. No provider key or secret value was read or printed. The developer database, the live trace and the user's `:8010` backend were not modified.** The only credential used was the GitHub token already held by Git Credential Manager, once, with the user's explicit approval, to create the draft PR (§4); it was never printed, logged or stored.
@@ -151,3 +153,38 @@ Run IDs of steps 1 and 3 cannot be written into the commit they test; as for `ph
 - Updated `docs/PHASE_STATUS.md`: status line, Phase 6 table row, the Phase 6 final section, and review checkboxes of the earlier Phase 6 sections that this evidence now settles.
 
 No feature code, test, dependency, lock file, workflow, policy file or `.env.example` change.
+
+## 12. Post-release addendum: release completion and history rewrite (2026-11-03, R104-0)
+
+Added by the R104-0 documentation reconciliation. Sections 1–11 are unchanged historical evidence of the closure commit.
+
+**Release steps of §10, completed 2026-11-01** (recorded in the `phase-6` tag annotation):
+
+1. The closure commit's `pull_request` run on PR #1: run 41352727469, head `7e40604`, docs, python and frontend success.
+2. Fast-forward of `main` to the closure commit: PR #1 is shown as merged on 2026-11-01T21:48:18Z with merge commit `7e40604` (fast-forward, no merge commit; GitHub still displays the PR's original `draft` flag).
+3. The `push` run on `main`: run 41353876030, head `7e40604`, all three jobs success.
+4. Annotated tag `phase-6` recording both runs, R102's conditional status and the local-only scope.
+5. No GitHub Release (none exists; not authorized).
+
+**History rewrite after the release.** After 2026-11-01 the history on GitHub was rewritten outside the project sessions (observed 2026-11-03). All commits and the tags `phase-0` … `phase-6` received new SHAs. Messages, author dates and authors are unchanged; the only difference is that the `Co-Authored-By: Claude …` trailers were removed. Every rewritten commit checked has the **same Git tree** as its original:
+
+| Commit | Historical SHA (cited in reports) | Current SHA | Tree (identical) |
+|---|---|---|---|
+| Phase 6 final closure (release commit) | `7e40604f2a861aa38c04f79dc8afc097f780f280` | `237e4e169aaa22a0106b6f7ffaf073bdf4294ca9` | `826f7db` |
+| Phase 6 CI security policy | `1930f8d` | `f3e0fc7` | `c77bb9a` |
+| Phase 6 final QA | `3584085` | `1ef3a64` | `f721b31` |
+| Phase 6C-C security closure | `5f77c94` | `ff9a7e9` | `4103240` |
+| Phase 6C-C dashboard | `e109846` | `065c664` | `9a07ca1` |
+| Phase 5 final (`phase-5` target) | `1a57d65` | `26f733a` | `aa0248f` |
+
+(Trees of the historical commits read from the public GitHub API, of the current ones from the local repository, 2026-11-03.)
+
+**Current release facts (verified 2026-11-03):**
+
+- `main` = `237e4e169aaa22a0106b6f7ffaf073bdf4294ca9`, tree `826f7db0f6e763e9080f5fe2f68177f176dd78e9`, identical locally and on `origin`.
+- `phase-6` = annotated tag object `35cd43c` → `237e4e1`. Its annotation was carried over and still names the historical release commit `7e40604` and the runs on it, and says "no rewritten history", which was true when the tag was first written. The tag is deliberately **not** re-created or edited; read its SHAs as historical identifiers of the same tree.
+- `phase-5` = annotated tag object `0d6f349` → `26f733a`; its annotation names the historical `1a57d65` and run 40403041389.
+- Current Linux CI: run **41663913648** (`push`, `main`, head `237e4e1`, attempt 1): docs, python and frontend **success**. Runs 41350036376, 41352727469 and 41353876030 tested the historical SHAs (identical trees).
+- The reachable history of `main` contains no `Co-Authored-By` trailer.
+
+**Historical references that stay public.** The rewrite did not remove the original commits from GitHub. `refs/pull/1/head` is a GitHub-managed reference that still points to `7e40604`; that commit and its ancestors remain readable through the PR #1 page, the API and the Actions run records, including their `Co-Authored-By: Claude …` trailers. This is recorded as risk R105 (`SOURCES_AND_RISKS.md`), open and awaiting a risk-acceptance decision. No content difference follows from it, because the trees are identical; this review established no additional secret-value exposure.

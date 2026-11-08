@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "description": "Approved npm audit exceptions, evaluated by scripts/audit-policy.mjs (CI frontend job, step 'Full dependency audit'). Each exception accepts exactly one advisory in exactly the recorded dev-only dependency chain until its review deadline; anything else in the full audit fails the gate. A passing evaluation is a policy-based acceptance, NOT a clean npm audit: the full report keeps listing the accepted advisory. Production dependencies are audited separately with no exceptions (npm audit --omit=dev). See docs/reports/phase-6-ci-security-policy.md.",
   "exceptions": [
     {
@@ -7,47 +7,36 @@
       "advisory": "GHSA-g3hv-75wg-m249",
       "advisoryUrl": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
       "cve": "CVE-2026-118764",
-      "npmSource": 1244012,
+      "npmSource": 1244623,
       "title": "minimatch has potential denial of service via globparts amplification",
       "package": "minimatch",
-      "vulnerableRange": "<11.0.1",
+      "vulnerableRange": ">=7.0.0 <11.0.1",
+      "npmReportedRange": "7.0.0 - 11.0.0",
       "severity": "moderate",
       "cwe": ["CWE-405"],
       "scope": "dev",
       "installed": {
-        "node_modules/minimatch": "3.1.5",
         "node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch": "10.2.6"
       },
       "chain": {
-        "@eslint-community/eslint-utils": {
-          "isDirect": false,
-          "nodes": ["node_modules/@eslint-community/eslint-utils", "node_modules/@next/eslint-plugin-next/node_modules/@eslint-community/eslint-utils"]
-        },
-        "@eslint/config-array": { "isDirect": false, "nodes": ["node_modules/@eslint/config-array"] },
-        "@eslint/eslintrc": { "isDirect": false, "nodes": ["node_modules/@eslint/eslintrc"] },
-        "@next/eslint-plugin-next": { "isDirect": false, "nodes": ["node_modules/@next/eslint-plugin-next"] },
         "@typescript-eslint/eslint-plugin": { "isDirect": false, "nodes": ["node_modules/@typescript-eslint/eslint-plugin"] },
         "@typescript-eslint/parser": { "isDirect": false, "nodes": ["node_modules/@typescript-eslint/parser"] },
         "@typescript-eslint/type-utils": { "isDirect": false, "nodes": ["node_modules/@typescript-eslint/type-utils"] },
         "@typescript-eslint/typescript-estree": { "isDirect": false, "nodes": ["node_modules/@typescript-eslint/typescript-estree"] },
         "@typescript-eslint/utils": { "isDirect": false, "nodes": ["node_modules/@typescript-eslint/utils"] },
-        "eslint": { "isDirect": true, "nodes": ["node_modules/eslint"] },
         "eslint-config-next": { "isDirect": true, "nodes": ["node_modules/eslint-config-next"] },
-        "eslint-plugin-import": { "isDirect": false, "nodes": ["node_modules/eslint-plugin-import"] },
-        "eslint-plugin-jsx-a11y": { "isDirect": false, "nodes": ["node_modules/eslint-plugin-jsx-a11y"] },
-        "eslint-plugin-react": { "isDirect": false, "nodes": ["node_modules/eslint-plugin-react"] },
         "typescript-eslint": { "isDirect": false, "nodes": ["node_modules/typescript-eslint"] }
       },
-      "justification": "Development tooling only: both vulnerable copies (minimatch 3.1.5 and 10.2.6) are reached only through ESLint 9, eslint-config-next and typescript-eslint, which lint the repository's own files with the repository's own config globs and never match untrusted patterns. npm audit --omit=dev reports 0, npm ls minimatch --omit=dev is empty and no minimatch code is in the production build. The only patched line is the new major minimatch 11.x (11.0.1 of 2026-10-27), outside every consumer's declared range (^3.1.x, ^10.2.x, including eslint 10.14.0); npm's own fix downgrades to eslint 4.0.0 / eslint-config-next 0.2.4, so neither npm audit fix --force nor an override is applied.",
+      "justification": "Development tooling only: the one vulnerable copy (minimatch 10.2.6 under @typescript-eslint/typescript-estree) is reached only through typescript-eslint and eslint-config-next, which lint the repository's own files with the repository's own config globs and never match untrusted patterns. npm audit --omit=dev reports 0, npm ls minimatch --omit=dev is empty and no minimatch code is in the production build. GitHub revised this advisory on 2026-11-04: the affected range narrowed from <11.0.1 to >=7.0.0 <11.0.1 and npm's source ID changed from 1244012 to 1244623. That is a metadata revision, not a fix: minimatch 10.2.6 stays vulnerable. minimatch 3.1.5 (still installed, dev-only) is outside THIS advisory's range, which says nothing about any other vulnerability in 3.x. npm reports the same interval in two forms, so the advisory range (vulnerableRange) and the finding entry's range (npmReportedRange) are recorded and checked separately and exactly. The only patched line is the new major minimatch 11.x (11.0.1 of 2026-10-27), outside the range typescript-estree declares (^10.2.x); npm's suggested fix is a semver-major change of eslint-config-next (15.5.29), so neither npm audit fix --force nor an override is applied.",
       "approvedOn": "2026-11-01",
       "approvedBy": "Architectural review of docs/reports/phase-6-final-qa.md (temporary dev-only exception)",
       "reviewDeadline": "2026-11-30",
-      "remediation": "Upgrade eslint, eslint-config-next and typescript-eslint (and @eslint/eslintrc, eslint-plugin-import, eslint-plugin-jsx-a11y, eslint-plugin-react) to releases that depend on minimatch >= 11.0.1, then delete this exception. If no such release exists by the deadline, the exception must be re-reviewed; it is not renewed automatically.",
+      "remediation": "Eliminate every R102 finding through compatible patched upstream dependencies: upgrade typescript-eslint (@typescript-eslint/typescript-estree) and eslint-config-next to releases that depend on minimatch >= 11.0.1, confirm that the full npm audit no longer reports GHSA-g3hv-75wg-m249, then delete this exception. Until the advisory revision of 2026-11-04 the minimatch 3.1.5 copy was also in scope (through eslint, @eslint/config-array, @eslint/eslintrc, eslint-plugin-import, eslint-plugin-jsx-a11y and eslint-plugin-react); the revision narrowed the currently accepted exposure to the 10.x chain and remediated nothing. If no such release exists by the deadline, the exception must be re-reviewed; it is not renewed automatically.",
       "blockingConditions": [
         "any advisory other than GHSA-g3hv-75wg-m249, at any severity, in any dependency",
         "any finding whose underlying advisory cannot be resolved to a GitHub advisory ID",
         "any vulnerable node that is not dev-only in package-lock.json",
-        "GHSA-g3hv-75wg-m249 with a different severity, vulnerable range, CWE, npm source ID or title",
+        "GHSA-g3hv-75wg-m249 with a different severity, advisory range (vulnerableRange), npm entry range (npmReportedRange), CWE, npm source ID or title",
         "any change to the vulnerable minimatch copies (node paths or installed versions)",
         "any change to the set of dependent packages, their node paths or their direct/transitive status",
         "the review deadline (end of 2026-11-30 UTC) has passed",

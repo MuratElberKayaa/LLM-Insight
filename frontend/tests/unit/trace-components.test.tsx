@@ -85,6 +85,16 @@ describe("trace list", () => {
     assertEscaped(m);
   });
 
+  it("wraps a long unbroken service name inside the mobile card, without shortening it", () => {
+    // Regression (R104-5, GitHub run 42517706300): a 40-character unbroken part of a service name
+    // ran 4 px past a 390 px viewport with wider fonts, which widened the whole page.
+    const name = `onerror-${"x".repeat(60)}.service`;
+    const m = html(<TraceListView data={makeList([makeTrace({ service_name: name })])} state={state()} />);
+    const spans = [...m.matchAll(/<span class="([^"]*)">([^<]*)<\/span>/g)].filter((found) => found[2] === name);
+    assert.ok(spans.length > 0, "the full service name is rendered");
+    for (const found of spans) assert.match(found[1] ?? "", /\bbreak-words\b/);
+  });
+
   it("filters expose only backend-supported options and carry state", () => {
     const m = html(<TraceFilters state={state({ range: "7d", status: "error", model: "gpt-5.4-mini" })} />);
     assert.match(m, /aria-labelledby="trace-status-label"/);

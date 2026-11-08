@@ -18,6 +18,11 @@ import { fileURLToPath } from "node:url";
 const SEVERITIES = ["info", "low", "moderate", "high", "critical"];
 const GHSA_URL = /^https:\/\/github\.com\/advisories\/(GHSA(?:-[23456789cfghjmpqrvwx]{4}){3})$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+// An approved range is literal: digits, dots, comparators, spaces and hyphens. Wildcards (*, x) and
+// alternatives (||) are refused. Comparison with npm's values is exact string equality, never semantic.
+const EXACT_RANGE = /^(?=.*\d)[0-9.<>= -]+$/;
+// 2: the required npmReportedRange field was added (R102 advisory revision of 2026-11-04).
+const SCHEMA_VERSION = 2;
 const DAY_MS = 86_400_000;
 export const MAX_EXCEPTION_DAYS = 31;
 
@@ -31,6 +36,7 @@ const EXCEPTION_KEYS = [
   "title",
   "package",
   "vulnerableRange",
+  "npmReportedRange",
   "severity",
   "cwe",
   "scope",
@@ -66,7 +72,7 @@ export function validatePolicy(policy, now) {
   const errors = [];
   if (!isObject(policy)) return { errors: ["policy: missing or not a JSON object"], exceptions: [] };
   checkKeys(policy, POLICY_KEYS, "policy", errors);
-  if (policy.schemaVersion !== 1) errors.push("policy: unsupported schemaVersion (expected 1)");
+  if (policy.schemaVersion !== SCHEMA_VERSION) errors.push(`policy: unsupported schemaVersion (expected ${SCHEMA_VERSION})`);
   if (!Array.isArray(policy.exceptions)) return { errors: [...errors, "policy: exceptions must be an array"], exceptions: [] };
   const seen = new Set();
   for (const [i, exc] of policy.exceptions.entries()) {
@@ -76,8 +82,11 @@ export function validatePolicy(policy, now) {
       continue;
     }
     checkKeys(exc, EXCEPTION_KEYS, label, errors);
-    for (const key of ["riskId", "cve", "title", "package", "vulnerableRange", "justification", "approvedBy", "remediation"]) {
+    for (const key of ["riskId", "cve", "title", "package", "vulnerableRange", "npmReportedRange", "justification", "approvedBy", "remediation"]) {
       if (!isText(exc[key])) errors.push(`${label}: "${key}" must be a non-empty string`);
+    }
+    for (const key of ["vulnerableRange", "npmReportedRange"]) {
+      if (isText(exc[key]) && !EXACT_RANGE.test(exc[key])) errors.push(`${label}: "${key}" must be an exact version range (no wildcards or alternatives)`);
     }
     const urlMatch = typeof exc.advisoryUrl === "string" ? GHSA_URL.exec(exc.advisoryUrl) : null;
     if (!urlMatch || urlMatch[1] !== exc.advisory) errors.push(`${label}: advisory must be a GHSA ID matching advisoryUrl`);
@@ -219,7 +228,9 @@ function checkException(exc, keys, report, graph, packages, errors) {
         if (adv.source !== exc.npmSource) errors.push(`${label}: npm source ${adv.source}, approved ${exc.npmSource}`);
         if (adv.name !== exc.package) errors.push(`${label}: advisory package ${adv.name}, approved ${exc.package}`);
         if (adv.severity !== exc.severity) errors.push(`${label}: advisory severity ${adv.severity}, approved ${exc.severity}`);
-        if (adv.range !== exc.vulnerableRange || v.range !== exc.vulnerableRange) errors.push(`${label}: vulnerable range changed (approved ${exc.vulnerableRange})`);
+        // Two representations of one interval: the advisory's range and npm's simplified range of the finding entry.
+        if (adv.range !== exc.vulnerableRange) errors.push(`${label}: vulnerable range changed (approved ${exc.vulnerableRange})`);
+        if (v.range !== exc.npmReportedRange) errors.push(`${label}: npm reported range changed (approved ${exc.npmReportedRange})`);
         if (!sameList(adv.cwe, exc.cwe)) errors.push(`${label}: CWE changed (approved ${exc.cwe.join(", ")})`);
         if (adv.title !== exc.title) errors.push(`${label}: advisory title changed`);
       }

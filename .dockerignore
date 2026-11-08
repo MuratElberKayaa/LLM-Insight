@@ -6,3 +6,5 @@
 !backend/app/
 **/__pycache__
 **/*.pyc
+**/.env
+**/.env.*

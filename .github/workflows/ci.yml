@@ -5,15 +5,39 @@
 # - The only service is the repository's own docker compose `postgres` (127.0.0.1:55432).
 # - Required suites run with LLMI_TEST_REQUIRE_DB=1, so a missing database fails the job
 #   instead of skipping tests.
-# - Not in CI (documented in docs/reports/phase-3c.md): the Playwright E2E suite (needs a
-#   seeded live backend and the installed Microsoft Edge; run locally with `npm run test:e2e`)
-#   and the compose `app` image build (run locally with `docker compose --profile app build`).
 # - Actions are pinned to full commit SHAs of releases at least two weeks old (CR-09).
 # - npm audit (Phase 6, R102): production dependencies must have zero advisories at every
 #   severity (no exceptions); the full audit is printed and must contain nothing but advisories
 #   accepted in frontend/security/npm-audit-policy.json, in their recorded dev-only chain and
 #   before their review deadline (frontend/scripts/audit-policy.mjs; fails closed on anything
 #   else, including npm/registry errors). An accepted exception is not a clean audit.
+# - pip-audit (R104-1, job security-python): both Python lockfiles against PyPI and OSV, four
+#   runs, no accepted advisory; pip-audit 2.10.1 from the hash-checked tool lock
+#   security/tools/requirements-audit.lock in its own venv; scripts/qa/pip_audit_gate.py fails
+#   closed on findings, service outages, invalid lockfiles and incomplete or malformed reports.
+# - Bandit (R104-2, job security-python): Bandit 1.9.4 from the same tool venv scans
+#   backend/app sdk/src demo_app scripts with the default profile (no skips, no severity
+#   filter, no nosec); scripts/qa/bandit_baseline_check.py compares the full raw report with the
+#   reviewed per-finding baseline security/bandit-baseline.json and its register in
+#   docs/SECURITY.md section 8. Bandit's own -b is not used. Any new, changed or vanished
+#   finding, skipped file, scope change or tool failure fails; only a sanitized summary is
+#   uploaded.
+# - History secret scan (R104-3, job security-history): full-history checkout with no persisted
+#   credential; scripts/qa/secret_history_gate.py verifies the actual ref coverage independently,
+#   scans every object reachable from the fetched refs and compares every raw match with the
+#   reviewed per-occurrence baseline security/secret-history-baseline.json and its register in
+#   docs/SECURITY.md section 9. Scope: refs/remotes/origin/*, tags and the pull request merge ref;
+#   GitHub-managed refs of other pull requests are not fetched and not claimed as scanned.
+#   Only a sanitized summary is uploaded; no secret, no .env, no network service.
+# - Application images (R104-4, job image-build): scripts/qa/image_build_gate.sh builds the
+#   Compose `app` profile images backend and frontend on this ephemeral runner, under a
+#   run-specific project name. It starts no container and publishes no image; variables are
+#   throwaway and generated here. Building an image does not prove that the application runs.
+# - Playwright E2E (R104-5, job e2e): scripts/qa/e2e_gate.sh runs browser -> Next.js -> FastAPI
+#   -> PostgreSQL on this ephemeral runner with synthetic fixtures. PostgreSQL alone runs under
+#   a run-specific Compose project; the browser is the Chromium bundled with Playwright, which
+#   is not identical to the Microsoft Edge used locally. Every discovered test must run and
+#   pass. Raw browser evidence stays on the runner; only a sanitized summary is uploaded.
 name: ci
 
 on:
@@ -147,3 +171,222 @@ jobs:
       - run: npm run build
       - name: Client bundle secret scan (T42)
         run: npm run check:bundle
+
+  security-python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Security tool environment (hash-checked lock, own venv; no project dependency)
+        id: tools
+        run: |
+          python -m venv "$RUNNER_TEMP/audit-venv"
+          "$RUNNER_TEMP/audit-venv/bin/python" -m pip install --disable-pip-version-check \
+            --require-hashes --no-deps --only-binary :all: -r security/tools/requirements-audit.lock
+          "$RUNNER_TEMP/audit-venv/bin/python" -m pip check
+          "$RUNNER_TEMP/audit-venv/bin/python" -I scripts/qa/pip_audit_gate.py check-env \
+            --lock security/tools/requirements-audit.lock
+          test "$("$RUNNER_TEMP/audit-venv/bin/pip-audit" --version)" = "pip-audit 2.10.1"
+      - name: Audit gate self-tests (offline)
+        run: python -I -m unittest discover -s scripts/qa/tests -v
+      - name: Python dependency audits (2 lockfiles x PyPI and OSV; every run recorded)
+        run: |
+          raw="$RUNNER_TEMP/pip-audit-raw"
+          mkdir -p "$raw"
+          for target in backend:backend/requirements.lock sdk:sdk/requirements-dev.lock; do
+            for service in pypi osv; do
+              id="${target%%:*}-$service"
+              status=0
+              timeout 240 "$RUNNER_TEMP/audit-venv/bin/pip-audit" -r "${target#*:}" --no-deps \
+                --disable-pip -s "$service" --progress-spinner off --format json \
+                -o "$raw/$id.json" --cache-dir "$RUNNER_TEMP/pip-audit-cache" \
+                2> "$raw/$id.stderr.txt" || status=$?
+              echo "$status" > "$raw/$id.exit"
+              echo "$id: pip-audit exit status $status"
+            done
+          done
+      - name: Python dependency audit gate (fails on any finding, outage, invalid lock or bad report)
+        run: >-
+          python -I scripts/qa/pip_audit_gate.py evaluate
+          --dir "$RUNNER_TEMP/pip-audit-raw" --upload-dir "$RUNNER_TEMP/pip-audit"
+          --target backend=backend/requirements.lock --target sdk=sdk/requirements-dev.lock
+          --service pypi --service osv
+      - name: Upload audit reports (validated reports, stderr, summary)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pip-audit-reports
+          path: ${{ runner.temp }}/pip-audit
+          if-no-files-found: error
+          retention-days: 14
+      # Bandit steps run whenever the tool venv was installed, even after a pip-audit failure,
+      # so neither gate hides the other; each failure still fails the job.
+      - name: Bandit gate self-tests (real Bandit 1.9.4 on synthetic files, offline)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        env:
+          LLMI_TEST_REQUIRE_BANDIT: "1"
+        run: >-
+          "$RUNNER_TEMP/audit-venv/bin/python" -I -m unittest discover -s scripts/qa/tests
+          -p test_bandit_baseline_check.py -v
+      - name: Bandit full scan (raw JSON report, stderr and exit status recorded; no filtering)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: |
+          raw="$RUNNER_TEMP/bandit-raw"
+          mkdir -p "$raw"
+          "$RUNNER_TEMP/audit-venv/bin/bandit" --version > "$raw/version.txt"
+          test "$(head -n 1 "$raw/version.txt")" = "bandit 1.9.4"
+          status=0
+          timeout 300 "$RUNNER_TEMP/audit-venv/bin/bandit" -r backend/app sdk/src demo_app scripts \
+            -f json -o "$raw/bandit.json" -q 2> "$raw/bandit.stderr.txt" || status=$?
+          echo "$status" > "$raw/bandit.exit"
+          echo "bandit exit status $status (0 no finding, 1 findings; anything else is a tool failure)"
+      - name: Bandit baseline validation (schema, classifications, SECURITY.md register)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: >-
+          python -I scripts/qa/bandit_baseline_check.py validate-baseline
+          --baseline security/bandit-baseline.json --security-doc docs/SECURITY.md
+      - name: Bandit security gate (full raw finding set must equal the reviewed baseline)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: >-
+          python -I scripts/qa/bandit_baseline_check.py evaluate
+          --report "$RUNNER_TEMP/bandit-raw/bandit.json"
+          --exit-file "$RUNNER_TEMP/bandit-raw/bandit.exit"
+          --stderr-file "$RUNNER_TEMP/bandit-raw/bandit.stderr.txt"
+          --baseline security/bandit-baseline.json --security-doc docs/SECURITY.md --root .
+          --target backend/app --target sdk/src --target demo_app --target scripts
+          --out-dir "$RUNNER_TEMP/bandit"
+      - name: Upload Bandit summary (sanitized; no raw report, issue text or source code)
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bandit-summary
+          path: ${{ runner.temp }}/bandit
+          if-no-files-found: error
+          retention-days: 14
+
+  security-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # fetch-depth 0 fetches refs/heads/* as refs/remotes/origin/*, refs/tags/* and, for a pull
+      # request, the merge ref as refs/remotes/pull/<n>/merge (checkout src/ref-helper.ts).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: History gate self-tests (offline, temporary Git repositories, synthetic tokens)
+        run: python -I -m unittest discover -s scripts/qa/tests -p test_secret_history_gate.py -v
+      - name: History baseline validation (schema, closed classes, SECURITY.md register, digest)
+        run: >-
+          python -I scripts/qa/secret_history_gate.py validate-baseline
+          --baseline security/secret-history-baseline.json --security-doc docs/SECURITY.md
+      - name: History coverage validation (independent of the checkout settings)
+        if: ${{ !cancelled() }}
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          expect=(--expect-head "$GITHUB_SHA" --expect-commit "$GITHUB_SHA")
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            expect+=(--expect-commit "$PR_HEAD_SHA")
+          fi
+          timeout 300 python -I scripts/qa/secret_history_gate.py coverage --repo . \
+            --baseline security/secret-history-baseline.json --security-doc docs/SECURITY.md \
+            --out "$RUNNER_TEMP/secret-history-raw/coverage.json" "${expect[@]}"
+      - name: Full reachable-history scan (metadata only; no matched value is stored)
+        if: ${{ !cancelled() }}
+        run: >-
+          timeout 300 python -I scripts/qa/secret_history_gate.py scan --repo .
+          --out "$RUNNER_TEMP/secret-history-raw/scan.json"
+      - name: Strict baseline evaluation and sanitized report
+        if: ${{ !cancelled() }}
+        run: >-
+          python -I scripts/qa/secret_history_gate.py evaluate
+          --coverage "$RUNNER_TEMP/secret-history-raw/coverage.json"
+          --scan "$RUNNER_TEMP/secret-history-raw/scan.json"
+          --baseline security/secret-history-baseline.json --security-doc docs/SECURITY.md
+          --out-dir "$RUNNER_TEMP/secret-history"
+      - name: Upload history scan summary (sanitized; raw reports are not uploaded)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: secret-history-summary
+          path: ${{ runner.temp }}/secret-history
+          if-no-files-found: error
+          retention-days: 14
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+      - name: E2E gate self-tests (fake processes, no daemon, offline)
+        run: |
+          python -I -m unittest discover -s scripts/qa/tests -p test_e2e_check.py -v
+          bash scripts/qa/tests/test_e2e_gate.sh
+      - name: Prepare (versions, throwaway env, Compose project, free ports)
+        run: bash scripts/qa/e2e_gate.sh prepare
+      - name: Install the backend from the exact lock
+        run: bash scripts/qa/e2e_gate.sh install
+      - name: Isolated PostgreSQL, migrations and price catalogue
+        run: timeout 300 bash scripts/qa/e2e_gate.sh database
+      - name: Start the real backend and wait for readiness
+        run: bash scripts/qa/e2e_gate.sh backend
+      - name: Frontend build, bundle secret scan and Playwright Chromium
+        run: timeout 600 bash scripts/qa/e2e_gate.sh frontend
+      - name: Playwright E2E suite (every discovered test must run and pass)
+        run: bash scripts/qa/e2e_gate.sh test
+      - name: Upload E2E summary (sanitized; no raw report, trace, screenshot or log)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-summary
+          path: ${{ runner.temp }}/e2e-summary
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean up the resources of this run's Compose project only
+        if: ${{ always() }}
+        run: bash scripts/qa/e2e_gate.sh cleanup
+
+  image-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Image gate self-tests (fake docker, no daemon, offline)
+        run: |
+          python3 -I -m unittest discover -s scripts/qa/tests -p test_image_build_check.py -v
+          bash scripts/qa/tests/test_image_build_gate.sh
+      - name: Throwaway interpolation env (generated on this runner, never printed)
+        run: python3 -I scripts/dev/init_env.py
+      - name: Compose preflight (project name, configuration, environment, canary files)
+        run: bash scripts/qa/image_build_gate.sh preflight
+      - name: Build the backend and frontend images (no container is started)
+        run: timeout 1200 bash scripts/qa/image_build_gate.sh build
+      - name: Verify image outputs and the absence of runtime resources
+        run: timeout 480 bash scripts/qa/image_build_gate.sh verify

@@ -1,6 +1,7 @@
 // Fail-closed tests for scripts/audit-policy.mjs (R102 npm audit exception gate). No network:
-// the reports are fixtures captured from real `npm audit --json` runs on 2026-11-01
-// (tests/fixtures/npm-audit/) and synthetic mutations of them.
+// the reports are fixtures captured from real `npm audit --json` runs (tests/fixtures/npm-audit/):
+// 2026-11-08 for the revised advisory, 2026-11-01 kept unchanged as historical evidence, and
+// synthetic mutations of them.
 // Run: npm run test:audit-policy
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -14,14 +15,17 @@ import { MAX_EXCEPTION_DAYS, evaluate, run } from "../../scripts/audit-policy.mj
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const read = (rel) => JSON.parse(readFileSync(path.join(root, rel), "utf8"));
-const REAL_REPORT = read("tests/fixtures/npm-audit/full-r102-2026-11-01.json");
+const REAL_REPORT = read("tests/fixtures/npm-audit/full-r102-2026-11-08.json");
 // A second real run on the same tree: npm's `effects` and `fixAvailable` differ between runs.
-const REAL_REPORT_RUN2 = read("tests/fixtures/npm-audit/full-r102-2026-11-01-run2.json");
+const REAL_REPORT_RUN2 = read("tests/fixtures/npm-audit/full-r102-2026-11-08-run2.json");
+// Before the advisory revision of 2026-11-04: historical evidence, never rewritten.
+const HISTORICAL_REPORTS = ["full-r102-2026-11-01.json", "full-r102-2026-11-01-run2.json"].map((f) => read(`tests/fixtures/npm-audit/${f}`));
 const CLEAN_REPORT = read("tests/fixtures/npm-audit/omit-dev-clean-2026-11-01.json");
 const REGISTRY_ERROR = read("tests/fixtures/npm-audit/registry-error-econnrefused.json");
 const POLICY = read("security/npm-audit-policy.json");
 const LOCKFILE = read("package-lock.json");
 const R102 = POLICY.exceptions[0];
+const VULNERABLE_NODE = "node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch";
 const NOW = Date.parse("2026-11-01T12:00:00Z");
 const END_OF_DEADLINE = Date.parse("2026-12-01T00:00:00Z");
 const clone = structuredClone;
@@ -111,7 +115,7 @@ describe("2. only approved R102 dev-only findings", () => {
   test("CONDITIONAL PASS, every finding listed and resolved to GHSA-g3hv-75wg-m249", () => {
     const result = evaluate(input());
     assert.equal(result.verdict, "conditional-pass", result.errors.join("\n"));
-    assert.equal(result.findings.length, 16);
+    assert.equal(result.findings.length, 8);
     for (const f of result.findings) {
       assert.deepEqual(f.advisories, ["GHSA-g3hv-75wg-m249"], f.name);
       assert.deepEqual(f.problems, [], f.name);
@@ -119,15 +123,15 @@ describe("2. only approved R102 dev-only findings", () => {
   });
   test("the printed result says the full audit is NOT clean", () => {
     const result = run({
-      reportPath: path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-01.json"),
+      reportPath: path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-08.json"),
       npmExitCode: "1",
       policyPath: path.join(root, "security/npm-audit-policy.json"),
       lockfilePath: path.join(root, "package-lock.json"),
       now: NOW,
     });
     assert.equal(result.verdict, "conditional-pass");
-    assert.match(result.lines.at(-1), /^CONDITIONAL PASS: the full npm audit is NOT clean; all 16 finding\(s\) are accepted .*R102 GHSA-g3hv-75wg-m249 \(review by 2026-11-30 UTC\)/);
-    assert.equal(result.lines.filter((l) => l.includes("accepted by policy")).length, 16);
+    assert.match(result.lines.at(-1), /^CONDITIONAL PASS: the full npm audit is NOT clean; all 8 finding\(s\) are accepted .*R102 GHSA-g3hv-75wg-m249 \(review by 2026-11-30 UTC\)/);
+    assert.equal(result.lines.filter((l) => l.includes("accepted by policy")).length, 8);
   });
 });
 
@@ -148,21 +152,21 @@ describe("3. new unapproved dev-only advisory", () => {
   });
   test("FAIL for a new advisory reaching an approved chain package", () => {
     const i = mutated((x) => {
-      x.report.vulnerabilities.eslint.via.push(advisory({ name: "eslint", dependency: "eslint", severity: "moderate" }));
+      x.report.vulnerabilities["typescript-eslint"].via.push(advisory({ name: "typescript-eslint", dependency: "typescript-eslint", severity: "moderate" }));
     });
-    assertFails(i, /"eslint": GHSA-2222-3333-4444 is not approved/);
+    assertFails(i, /"typescript-eslint": GHSA-2222-3333-4444 is not approved/);
   });
 });
 
 describe("4. production vulnerability", () => {
   test("FAIL when a vulnerable minimatch copy is not dev-only in the lockfile", () => {
-    const i = mutated((x) => delete x.lockfile.packages["node_modules/minimatch"].dev);
-    assertFails(i, /node_modules\/minimatch is not dev-only \(production exposure\)/);
+    const i = mutated((x) => delete x.lockfile.packages[VULNERABLE_NODE].dev);
+    assertFails(i, /typescript-estree\/node_modules\/minimatch is not dev-only \(production exposure\)/);
   });
   test("FAIL for devOptional (needed outside dev) and for a missing lockfile entry", () => {
     assertFails(
-      mutated((x) => (x.lockfile.packages["node_modules/eslint"] = { version: "9.39.5", devOptional: true })),
-      /node_modules\/eslint is not dev-only/,
+      mutated((x) => (x.lockfile.packages["node_modules/eslint-config-next"] = { version: "16.4.3", devOptional: true })),
+      /node_modules\/eslint-config-next is not dev-only/,
     );
     assertFails(
       mutated((x) => delete x.lockfile.packages["node_modules/typescript-eslint"]),
@@ -194,7 +198,7 @@ describe("5. unknown advisory", () => {
       /has no GitHub advisory ID; underlying advisory unknown/,
     );
     assertFails(
-      mutated((x) => (minimatchAdvisory(x.report).url = "https://www.npmjs.com/advisories/1244012")),
+      mutated((x) => (minimatchAdvisory(x.report).url = "https://www.npmjs.com/advisories/1244623")),
       /underlying advisory unknown/,
     );
   });
@@ -250,7 +254,7 @@ describe("8. registry or network audit error", () => {
     assertFails(input({ report: { error: { code: "E500", summary: "Internal Server Error", detail: "" } } }), /failed to execute \(Internal Server Error\)/);
   });
   test("FAIL when the npm exit status contradicts the report or is not 0/1", () => {
-    assertFails(input({ npmExitCode: 0 }), /exit status 0 contradicts 16 reported findings/);
+    assertFails(input({ npmExitCode: 0 }), /exit status 0 contradicts 8 reported findings/);
     assertFails(input({ report: clone(CLEAN_REPORT), npmExitCode: 1 }), /exit status 1 contradicts 0 reported findings/);
     assertFails(input({ npmExitCode: 2 }), /exited 2/);
     assertFails(input({ npmExitCode: Number.NaN }), /exited NaN/);
@@ -272,7 +276,7 @@ describe("8. registry or network audit error", () => {
 describe("9. wrong dependency chain", () => {
   test("FAIL when a vulnerable copy moves under another package", () => {
     const i = mutated((x) => {
-      x.report.vulnerabilities.minimatch.nodes = ["node_modules/minimatch", "node_modules/next/node_modules/minimatch"];
+      x.report.vulnerabilities.minimatch.nodes = [VULNERABLE_NODE, "node_modules/next/node_modules/minimatch"];
       x.lockfile.packages["node_modules/next/node_modules/minimatch"] = { version: "10.2.6", dev: true };
     });
     assertFails(i, /vulnerable copies changed/);
@@ -286,37 +290,37 @@ describe("9. wrong dependency chain", () => {
     assertFails(i, /dependency chain changed \(new: next; gone: none\)/);
   });
   test("FAIL when a chain package becomes direct (or stops being direct)", () => {
-    assertFails(mutated((x) => (x.report.vulnerabilities["eslint-plugin-react"].isDirect = true)), /"eslint-plugin-react" direct\/transitive status changed/);
-    assertFails(mutated((x) => (x.report.vulnerabilities.eslint.isDirect = false)), /"eslint" direct\/transitive status changed/);
+    assertFails(mutated((x) => (x.report.vulnerabilities["typescript-eslint"].isDirect = true)), /"typescript-eslint" direct\/transitive status changed/);
+    assertFails(mutated((x) => (x.report.vulnerabilities["eslint-config-next"].isDirect = false)), /"eslint-config-next" direct\/transitive status changed/);
     assertFails(mutated((x) => (x.report.vulnerabilities.minimatch.isDirect = true)), /became a direct dependency/);
   });
   test("FAIL when a dependent package carries the approved advisory itself", () => {
-    const i = mutated((x) => x.report.vulnerabilities.eslint.via.push({ ...clone(minimatchAdvisory(REAL_REPORT)), dependency: "eslint" }));
-    assertFails(i, /"eslint" carries the advisory itself/);
+    const i = mutated((x) => x.report.vulnerabilities["typescript-eslint"].via.push({ ...clone(minimatchAdvisory(REAL_REPORT)), dependency: "typescript-eslint" }));
+    assertFails(i, /"typescript-eslint" carries the advisory itself/);
   });
 });
 
 describe("10. changed R102 scope", () => {
   test("FAIL for a changed vulnerable range", () => {
     assertFails(mutated((x) => (minimatchAdvisory(x.report).range = "<12.0.0")), /vulnerable range changed/);
-    assertFails(mutated((x) => (x.report.vulnerabilities.minimatch.range = "<12.0.0")), /vulnerable range changed/);
+    assertFails(mutated((x) => (x.report.vulnerabilities.minimatch.range = "<12.0.0")), /npm reported range changed/);
   });
   test("FAIL for a changed installed version of a vulnerable copy", () => {
     assertFails(
-      mutated((x) => (x.lockfile.packages["node_modules/minimatch"].version = "3.1.4")),
-      /node_modules\/minimatch is 3\.1\.4 in the lockfile, approved 3\.1\.5/,
+      mutated((x) => (x.lockfile.packages[VULNERABLE_NODE].version = "10.2.5")),
+      /typescript-estree\/node_modules\/minimatch is 10\.2\.5 in the lockfile, approved 10\.2\.6/,
     );
   });
   test("FAIL when the chain narrows (needs review, not silent acceptance)", () => {
     const i = mutated((x) => {
-      delete x.report.vulnerabilities["eslint-plugin-react"];
+      delete x.report.vulnerabilities["eslint-config-next"];
       recount(x.report);
     });
-    assertFails(i, /dependency chain changed \(new: none; gone: eslint-plugin-react\)/);
+    assertFails(i, /dependency chain changed \(new: none; gone: eslint-config-next\)/);
   });
   test("FAIL for a changed CWE, npm source or title", () => {
     assertFails(mutated((x) => (minimatchAdvisory(x.report).cwe = ["CWE-405", "CWE-1333"])), /CWE changed/);
-    assertFails(mutated((x) => (minimatchAdvisory(x.report).source = 1244013)), /npm source 1244013, approved 1244012/);
+    assertFails(mutated((x) => (minimatchAdvisory(x.report).source = 1244013)), /npm source 1244013, approved 1244623/);
     assertFails(mutated((x) => (minimatchAdvisory(x.report).title = "other")), /advisory title changed/);
   });
 });
@@ -345,7 +349,7 @@ describe("12. missing or invalid exception configuration", () => {
   test("FAIL without a policy", () => {
     assertFails(input({ policy: undefined }), /policy: missing/);
     const result = run({
-      reportPath: path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-01.json"),
+      reportPath: path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-08.json"),
       npmExitCode: "1",
       policyPath: path.join(tmp, "does-not-exist.json"),
       lockfilePath: path.join(root, "package-lock.json"),
@@ -359,7 +363,8 @@ describe("12. missing or invalid exception configuration", () => {
       assertFails(mutated((x) => delete x.policy.exceptions[0][key]), new RegExp(`missing "${key}"`));
     }
     assertFails(mutated((x) => delete x.policy.exceptions), /exceptions must be an array/);
-    assertFails(mutated((x) => (x.policy.schemaVersion = 2)), /unsupported schemaVersion/);
+    assertFails(mutated((x) => (x.policy.schemaVersion = 1)), /unsupported schemaVersion \(expected 2\)/);
+    assertFails(mutated((x) => (x.policy.schemaVersion = 3)), /unsupported schemaVersion \(expected 2\)/);
   });
   test("FAIL for unknown keys (no hidden switches such as allowAll)", () => {
     assertFails(mutated((x) => (x.policy.allowAll = true)), /unknown key "allowAll"/);
@@ -374,7 +379,7 @@ describe("12. missing or invalid exception configuration", () => {
   test("FAIL for an inconsistent advisory ID, duplicates or a malformed chain", () => {
     assertFails(mutated((x) => (x.policy.exceptions[0].advisory = "GHSA-2222-3333-4444")), /GHSA ID matching advisoryUrl/);
     assertFails(mutated((x) => x.policy.exceptions.push(clone(R102))), /duplicate exception/);
-    assertFails(mutated((x) => (x.policy.exceptions[0].chain.eslint = { isDirect: "yes", nodes: [] })), /chain entry "eslint"/);
+    assertFails(mutated((x) => (x.policy.exceptions[0].chain["typescript-eslint"] = { isDirect: "yes", nodes: [] })), /chain entry "typescript-eslint"/);
     assertFails(mutated((x) => (x.policy.exceptions[0].chain.minimatch = { isDirect: false, nodes: ["node_modules/minimatch"] })), /chain entry "minimatch"/);
     assertFails(mutated((x) => (x.policy.exceptions[0].installed = {})), /installed must map/);
     assertFails(mutated((x) => x.policy.exceptions.push(null)), /exception #2: not an object/);
@@ -387,28 +392,30 @@ describe("12. missing or invalid exception configuration", () => {
 
 describe("13. malformed or transitive advisory mappings", () => {
   test("FAIL for a reference to a finding that does not exist", () => {
-    assertFails(mutated((x) => x.report.vulnerabilities.eslint.via.push("ghost-package")), /via "ghost-package" does not reference another finding/);
+    assertFails(mutated((x) => x.report.vulnerabilities["typescript-eslint"].via.push("ghost-package")), /via "ghost-package" does not reference another finding/);
   });
   test("FAIL for a self reference, a non-string/non-object via item and an empty via", () => {
-    assertFails(mutated((x) => x.report.vulnerabilities.eslint.via.push("eslint")), /via "eslint" does not reference/);
-    assertFails(mutated((x) => x.report.vulnerabilities.eslint.via.push(42)), /malformed via item/);
-    assertFails(mutated((x) => (x.report.vulnerabilities.eslint.via = [])), /no "via"; underlying advisory unknown/);
+    assertFails(mutated((x) => x.report.vulnerabilities["typescript-eslint"].via.push("typescript-eslint")), /via "typescript-eslint" does not reference/);
+    assertFails(mutated((x) => x.report.vulnerabilities["typescript-eslint"].via.push(42)), /malformed via item/);
+    assertFails(mutated((x) => (x.report.vulnerabilities["typescript-eslint"].via = [])), /no "via"; underlying advisory unknown/);
   });
   test("FAIL for an advisory attached to the wrong dependency or missing fields", () => {
-    assertFails(mutated((x) => (minimatchAdvisory(x.report).dependency = "eslint")), /advisory GHSA-g3hv-75wg-m249 is malformed/);
+    assertFails(mutated((x) => (minimatchAdvisory(x.report).dependency = "typescript-eslint")), /advisory GHSA-g3hv-75wg-m249 is malformed/);
     assertFails(mutated((x) => delete minimatchAdvisory(x.report).source), /is malformed/);
     assertFails(mutated((x) => delete minimatchAdvisory(x.report).range), /is malformed/);
   });
   test("FAIL for an entry whose name does not match its key, or with invalid fields", () => {
-    assertFails(mutated((x) => (x.report.vulnerabilities.eslint.name = "eslint9")), /"eslint": malformed entry/);
-    assertFails(mutated((x) => (x.report.vulnerabilities.eslint.nodes = "node_modules/eslint")), /nodes must be a non-empty list/);
-    assertFails(mutated((x) => (x.report.vulnerabilities.eslint.isDirect = "true")), /isDirect must be a boolean/);
+    assertFails(mutated((x) => (x.report.vulnerabilities["typescript-eslint"].name = "typescript-eslint9")), /"typescript-eslint": malformed entry/);
+    assertFails(mutated((x) => (x.report.vulnerabilities["typescript-eslint"].nodes = "node_modules/typescript-eslint")), /nodes must be a non-empty list/);
+    assertFails(mutated((x) => (x.report.vulnerabilities["typescript-eslint"].isDirect = "true")), /isDirect must be a boolean/);
   });
-  test("transitive findings resolve through cycles to the real advisory", () => {
-    // eslint <-> @eslint-community/eslint-utils reference each other in the real report.
-    const result = evaluate(input());
-    const utils = result.findings.find((f) => f.name === "@eslint-community/eslint-utils");
-    assert.deepEqual(REAL_REPORT.vulnerabilities["@eslint-community/eslint-utils"].via, ["eslint"]);
+  test("transitive findings resolve to the real advisory, also through a reference cycle", () => {
+    // The revised report has no cycle (the 2026-11-01 report had one), so one is added: typescript-eslint <-> @typescript-eslint/utils.
+    assert.deepEqual(REAL_REPORT.vulnerabilities["@typescript-eslint/parser"].via, ["@typescript-eslint/typescript-estree"]);
+    assert.ok(HISTORICAL_REPORTS[0].vulnerabilities["@eslint-community/eslint-utils"].via.includes("eslint"));
+    const result = evaluate(mutated((x) => x.report.vulnerabilities["@typescript-eslint/utils"].via.push("typescript-eslint")));
+    assert.equal(result.verdict, "conditional-pass", result.errors.join("\n"));
+    const utils = result.findings.find((f) => f.name === "@typescript-eslint/utils");
     assert.deepEqual(utils.advisories, ["GHSA-g3hv-75wg-m249"]);
   });
 });
@@ -433,8 +440,8 @@ describe("14. empty or incomplete report", () => {
     assertFails(mutated((x) => delete x.report.vulnerabilities), /vulnerabilities must be an object/);
   });
   test("FAIL when entries and metadata disagree (truncated report)", () => {
-    assertFails(mutated((x) => delete x.report.vulnerabilities["eslint-plugin-react"]), /15 vulnerability entries but metadata total 16/);
-    assertFails(mutated((x) => (x.report.metadata.vulnerabilities.total = 17)), /do not add up to the total/);
+    assertFails(mutated((x) => delete x.report.vulnerabilities["eslint-config-next"]), /7 vulnerability entries but metadata total 8/);
+    assertFails(mutated((x) => (x.report.metadata.vulnerabilities.total = 9)), /do not add up to the total/);
     assertFails(input({ report: { ...clone(CLEAN_REPORT), vulnerabilities: {} }, npmExitCode: 1 }), /exit status 1 contradicts 0/);
   });
 });
@@ -447,7 +454,7 @@ describe("15. approved findings mixed with an unapproved one", () => {
       x.lockfile.packages["node_modules/left-pad"] = { version: "1.0.0", dev: true };
     });
     const result = assertFails(i, /"left-pad": GHSA-2222-3333-4444 is not approved/);
-    assert.equal(result.findings.length, 17);
+    assert.equal(result.findings.length, 9);
     assert.deepEqual(
       result.findings.filter((f) => f.problems.length > 0).map((f) => f.name),
       ["left-pad"],
@@ -456,7 +463,7 @@ describe("15. approved findings mixed with an unapproved one", () => {
 });
 
 describe("16. current real npm audit report", () => {
-  test("the 2026-11-01 report with the real lockfile and policy is a CONDITIONAL PASS", () => {
+  test("the 2026-11-08 report with the real lockfile and policy is a CONDITIONAL PASS", () => {
     const result = evaluate({ report: clone(REAL_REPORT), npmExitCode: 1, lockfile: clone(LOCKFILE), policy: clone(POLICY), now: NOW });
     assert.equal(result.verdict, "conditional-pass", result.errors.join("\n"));
     assert.equal(result.findings.length, REAL_REPORT.metadata.vulnerabilities.total);
@@ -487,13 +494,238 @@ describe("16. current real npm audit report", () => {
     assert.deepEqual(CLEAN_REPORT.vulnerabilities, {});
   });
   test("CLI on the real report: exit 0 before the deadline, 1 after it", () => {
-    const report = path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-01.json");
+    const report = path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-08.json");
     const cli = spawnSync(process.execPath, ["scripts/audit-policy.mjs", "--report", report, "--npm-exit-code", "1"], { cwd: root, encoding: "utf8" });
     assert.equal(cli.status, Date.now() < END_OF_DEADLINE ? 0 : 1, cli.stdout + cli.stderr);
   });
 });
 
+describe("17. revised advisory of 2026-11-04: two independent, exact range fields", () => {
+  const ADVISORY_RANGE = ">=7.0.0 <11.0.1";
+  const ENTRY_RANGE = "7.0.0 - 11.0.0";
+  const rangeErrors = (result) => result.errors.filter((e) => /range changed/.test(e));
+  const CHAIN = [
+    "@typescript-eslint/eslint-plugin",
+    "@typescript-eslint/parser",
+    "@typescript-eslint/type-utils",
+    "@typescript-eslint/typescript-estree",
+    "@typescript-eslint/utils",
+    "eslint-config-next",
+    "typescript-eslint",
+  ];
+
+  test("the policy records exactly the verified advisory (literal values, not derived from the fixture)", () => {
+    assert.equal(POLICY.schemaVersion, 2);
+    assert.equal(POLICY.exceptions.length, 1);
+    assert.equal(R102.riskId, "R102");
+    assert.equal(R102.advisory, "GHSA-g3hv-75wg-m249");
+    assert.equal(R102.cve, "CVE-2026-118764");
+    assert.equal(R102.npmSource, 1244623);
+    assert.equal(R102.package, "minimatch");
+    assert.equal(R102.severity, "moderate");
+    assert.deepEqual(R102.cwe, ["CWE-405"]);
+    assert.equal(R102.scope, "dev");
+    assert.equal(R102.vulnerableRange, ADVISORY_RANGE);
+    assert.equal(R102.npmReportedRange, ENTRY_RANGE);
+  });
+  test("exactly one vulnerable copy is accepted: minimatch 10.2.6, and 3.1.5 is not", () => {
+    assert.deepEqual(R102.installed, { [VULNERABLE_NODE]: "10.2.6" });
+    assert.equal(LOCKFILE.packages["node_modules/minimatch"].version, "3.1.5", "3.1.5 stays in the lockfile");
+    assert.ok(!("node_modules/minimatch" in R102.installed));
+  });
+  test("exactly the verified dev-only chain is accepted; only eslint-config-next is direct", () => {
+    assert.deepEqual(Object.keys(R102.chain).sort(), CHAIN);
+    assert.deepEqual(Object.entries(R102.chain).filter(([, l]) => l.isDirect).map(([n]) => n), ["eslint-config-next"]);
+    for (const name of CHAIN) assert.deepEqual(R102.chain[name].nodes, [`node_modules/${name}`], name);
+  });
+  test("approval date and review deadline are unchanged", () => {
+    assert.equal(R102.approvedOn, "2026-11-01");
+    assert.equal(R102.reviewDeadline, "2026-11-30");
+  });
+  test("the two real reports of the revised advisory are CONDITIONAL PASS with the real lockfile", () => {
+    for (const report of [REAL_REPORT, REAL_REPORT_RUN2]) {
+      assert.equal(minimatchAdvisory(report).range, ADVISORY_RANGE);
+      assert.equal(report.vulnerabilities.minimatch.range, ENTRY_RANGE);
+      assert.equal(minimatchAdvisory(report).source, 1244623);
+      const result = evaluate({ report: clone(report), npmExitCode: 1, lockfile: clone(LOCKFILE), policy: clone(POLICY), now: NOW });
+      assert.equal(result.verdict, "conditional-pass", result.errors.join("\n"));
+      assert.equal(result.findings.length, 8);
+    }
+  });
+  test("historical reports from before the revision are rejected and were not rewritten", () => {
+    for (const report of HISTORICAL_REPORTS) {
+      assert.equal(minimatchAdvisory(report).source, 1244012);
+      assert.equal(minimatchAdvisory(report).range, "<11.0.1");
+      assert.equal(report.metadata.vulnerabilities.total, 16);
+      const i = { report: clone(report), npmExitCode: 1, lockfile: clone(LOCKFILE), policy: clone(POLICY), now: NOW };
+      for (const pattern of [/npm source 1244012, approved 1244623/, /vulnerable range changed/, /npm reported range changed/, /vulnerable copies changed/, /dependency chain changed/]) assertFails(i, pattern);
+    }
+  });
+
+  test("A. a wrong advisory range fails, and only the advisory check reports it", () => {
+    for (const range of [">=7.0.0 <11.0.2", "<11.0.1", ">=7.0.0", "*", ` ${ADVISORY_RANGE}`, `${ADVISORY_RANGE} || >=12.0.0`, ENTRY_RANGE]) {
+      const result = assertFails(mutated((x) => (minimatchAdvisory(x.report).range = range)), /vulnerable range changed/);
+      assert.equal(rangeErrors(result).length, 1, range);
+    }
+  });
+  test("B. a wrong npm entry range fails, and only the entry check reports it", () => {
+    for (const range of ["7.0.0 - 11.0.1", "<11.0.1", "*", `${ENTRY_RANGE} `, ADVISORY_RANGE]) {
+      const result = assertFails(mutated((x) => (x.report.vulnerabilities.minimatch.range = range)), /npm reported range changed/);
+      assert.equal(rangeErrors(result).length, 1, range);
+    }
+    const missing = assertFails(mutated((x) => delete x.report.vulnerabilities.minimatch.range), /npm reported range changed/);
+    assert.equal(rangeErrors(missing).length, 1);
+  });
+  test("a second record of the approved advisory on minimatch fails (no first-match acceptance)", () => {
+    const i = mutated((x) => x.report.vulnerabilities.minimatch.via.push({ ...clone(minimatchAdvisory(REAL_REPORT)), range: ">=1.0.0 <11.0.1", source: 1244012 }));
+    assertFails(i, /"minimatch" must carry exactly the approved advisory/);
+  });
+  test("changing either approved range alone fails; swapping them fails on both checks", () => {
+    assert.equal(rangeErrors(assertFails(mutated((x) => (x.policy.exceptions[0].vulnerableRange = "<11.0.1")), /vulnerable range changed/)).length, 1);
+    assert.equal(rangeErrors(assertFails(mutated((x) => (x.policy.exceptions[0].npmReportedRange = "7.0.0 - 11.0.1")), /npm reported range changed/)).length, 1);
+    const swapped = evaluate(mutated((x) => {
+      x.policy.exceptions[0].vulnerableRange = ENTRY_RANGE;
+      x.policy.exceptions[0].npmReportedRange = ADVISORY_RANGE;
+    }));
+    assert.equal(swapped.verdict, "fail");
+    assert.equal(rangeErrors(swapped).length, 2);
+  });
+  test("C. a missing npmReportedRange fails, also under the previous schema version", () => {
+    assertFails(mutated((x) => delete x.policy.exceptions[0].npmReportedRange), /missing "npmReportedRange"/);
+    const previous = mutated((x) => {
+      delete x.policy.exceptions[0].npmReportedRange;
+      x.policy.schemaVersion = 1;
+    });
+    assertFails(previous, /unsupported schemaVersion/);
+    assertFails(previous, /missing "npmReportedRange"/);
+  });
+  test("D. an empty npmReportedRange fails", () => {
+    for (const value of ["", "   ", null, 7]) assertFails(mutated((x) => (x.policy.exceptions[0].npmReportedRange = value)), /"npmReportedRange" must be a non-empty string/);
+  });
+  test("wildcards and alternatives are refused in both approved ranges, before any comparison", () => {
+    for (const key of ["vulnerableRange", "npmReportedRange"]) {
+      for (const value of ["*", "x", "7.x", "7.*.*", ">=7.0.0 || <1.0.0", "latest", ">=", "- -"]) {
+        assertFails(mutated((x) => (x.policy.exceptions[0][key] = value)), new RegExp(`"${key}" must be an exact version range`));
+      }
+    }
+    const allStar = mutated((x) => {
+      x.policy.exceptions[0].npmReportedRange = "*";
+      x.report.vulnerabilities.minimatch.range = "*";
+    });
+    assertFails(allStar, /"npmReportedRange" must be an exact version range/);
+  });
+  test("E. unknown policy fields fail", () => {
+    assertFails(mutated((x) => (x.policy.exceptions[0].npmReportedRanges = [ENTRY_RANGE])), /unknown key "npmReportedRanges"/);
+    assertFails(mutated((x) => (x.policy.acceptAnyRange = true)), /unknown key "acceptAnyRange"/);
+  });
+  test("F. a changed npm source ID fails, including the pre-revision one", () => {
+    for (const source of [1244012, 1244624]) assertFails(mutated((x) => (minimatchAdvisory(x.report).source = source)), new RegExp(`npm source ${source}, approved 1244623`));
+  });
+  test("G. a new GHSA advisory fails", () => {
+    const i = mutated((x) => {
+      x.report.vulnerabilities["left-pad"] = finding("left-pad", { severity: "moderate" });
+      recount(x.report);
+      x.lockfile.packages["node_modules/left-pad"] = { version: "1.0.0", dev: true };
+    });
+    assertFails(i, /GHSA-2222-3333-4444 is not approved/);
+  });
+  test("H. a new production vulnerability fails, also when it resolves to the approved advisory", () => {
+    const i = mutated((x) => {
+      x.report.vulnerabilities.next = finding("next", { severity: "moderate", via: ["minimatch"] });
+      recount(x.report);
+      x.lockfile.packages["node_modules/next"] = { version: "16.4.3" };
+    });
+    assertFails(i, /node_modules\/next is not dev-only \(production exposure\)/);
+  });
+  test("I. an extra vulnerable node fails, including minimatch 3.1.5 coming back into this advisory", () => {
+    const i = mutated((x) => {
+      x.report.vulnerabilities.minimatch.nodes.push("node_modules/minimatch");
+      x.lockfile.packages["node_modules/minimatch"] = { version: "3.1.5", dev: true };
+    });
+    assertFails(i, /vulnerable copies changed/);
+  });
+  test("J. a changed installed version fails", () => {
+    for (const version of ["10.2.5", "10.2.7", "11.0.0"]) {
+      assertFails(mutated((x) => (x.lockfile.packages[VULNERABLE_NODE].version = version)), new RegExp(`is ${version.replaceAll(".", "\\.")} in the lockfile, approved 10\\.2\\.6`));
+    }
+    assertFails(mutated((x) => delete x.lockfile.packages[VULNERABLE_NODE]), /not in the lockfile/);
+  });
+  test("K. an unexpected dependency chain fails: an old chain package returning, or an unexpected node path", () => {
+    const i = mutated((x) => {
+      x.report.vulnerabilities.eslint = finding("eslint", { severity: "moderate", isDirect: true, via: ["minimatch"] });
+      recount(x.report);
+      x.lockfile.packages["node_modules/eslint"] = { version: "9.39.5", dev: true };
+    });
+    assertFails(i, /dependency chain changed \(new: eslint; gone: none\)/);
+    const nodes = mutated((x) => {
+      x.report.vulnerabilities["typescript-eslint"].nodes.push("node_modules/x/node_modules/typescript-eslint");
+      x.lockfile.packages["node_modules/x/node_modules/typescript-eslint"] = { version: "8.71.1", dev: true };
+    });
+    assertFails(nodes, /"typescript-eslint" node paths changed/);
+  });
+  test("L. a changed severity or CWE fails", () => {
+    assertFails(mutated((x) => (minimatchAdvisory(x.report).severity = "high")), /advisory severity high, approved moderate/);
+    assertFails(mutated((x) => (minimatchAdvisory(x.report).cwe = ["CWE-400"])), /CWE changed/);
+    assertFails(mutated((x) => (minimatchAdvisory(x.report).cwe = ["CWE-405", "CWE-1333"])), /CWE changed/);
+  });
+  test("M. malformed audit JSON fails", () => {
+    const result = run({
+      reportPath: writeTmp("malformed-revised.json", '{"auditReportVersion": 2, "vulnerabilities": {"minimatch"'),
+      npmExitCode: "1",
+      policyPath: path.join(root, "security/npm-audit-policy.json"),
+      lockfilePath: path.join(root, "package-lock.json"),
+      now: NOW,
+    });
+    assert.equal(result.verdict, "fail");
+    assert.match(result.errors.join("\n"), /malformed JSON/);
+  });
+  test("N. a failed npm audit execution fails", () => {
+    assertFails(input({ report: clone(REGISTRY_ERROR), npmExitCode: 1 }), /npm audit failed to execute/);
+    assertFails(input({ npmExitCode: 2 }), /exited 2/);
+  });
+  test("O. the R102 deadline expires at 2026-12-01T00:00:00Z", () => {
+    assert.equal(evaluate(input({ now: END_OF_DEADLINE - 1 })).verdict, "conditional-pass");
+    assertFails(input({ now: END_OF_DEADLINE }), /EXPIRED \(review deadline 2026-11-30 UTC has passed\)/);
+  });
+  test("P. a different advisory title fails", () => {
+    assertFails(mutated((x) => (minimatchAdvisory(x.report).title = `${R102.title} (updated)`)), /advisory title changed/);
+  });
+  test("Q. an unresolvable advisory ID fails", () => {
+    assertFails(mutated((x) => (minimatchAdvisory(x.report).url = "https://github.com/advisories/not-a-ghsa")), /underlying advisory unknown/);
+    assertFails(mutated((x) => delete minimatchAdvisory(x.report).url), /underlying advisory unknown/);
+  });
+  test("R. an unapproved affected package fails, even carrying the approved advisory", () => {
+    const i = mutated((x) => {
+      const via = [{ ...clone(minimatchAdvisory(REAL_REPORT)), name: "minimatch-fork", dependency: "minimatch-fork" }];
+      x.report.vulnerabilities["minimatch-fork"] = finding("minimatch-fork", { severity: "moderate", via });
+      recount(x.report);
+      x.lockfile.packages["node_modules/minimatch-fork"] = { version: "10.2.6", dev: true };
+    });
+    assertFails(i, /dependency chain changed \(new: minimatch-fork; gone: none\)/);
+    assertFails(i, /"minimatch-fork" carries the advisory itself/);
+  });
+});
+
 describe("mutation sweep", () => {
+  test("every approved policy value is load-bearing", () => {
+    const changes = {
+      npmSource: 1244012,
+      vulnerableRange: "<11.0.1",
+      npmReportedRange: "<11.0.1",
+      title: "changed",
+      package: "minimatch2",
+      severity: "low",
+      cwe: ["CWE-400"],
+      installed: { [VULNERABLE_NODE]: "10.2.5" },
+    };
+    for (const [field, value] of Object.entries(changes)) {
+      const result = evaluate(mutated((x) => (x.policy.exceptions[0][field] = value)));
+      assert.equal(result.verdict, "fail", `mutating policy.${field} must fail`);
+    }
+  });
+  test("the finding entry's range is load-bearing", () => {
+    assert.equal(evaluate(mutated((x) => (x.report.vulnerabilities.minimatch.range = "<99"))).verdict, "fail");
+  });
   test("every field of the approved advisory is load-bearing", () => {
     const changes = { source: 1, name: "minimatch2", title: "changed", url: "https://github.com/advisories/GHSA-2222-3333-4444", severity: "high", range: "<99", cwe: ["CWE-400"], dependency: "eslint" };
     for (const [field, value] of Object.entries(changes)) {
