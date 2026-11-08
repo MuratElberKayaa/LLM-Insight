@@ -1,5 +1,6 @@
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
+import { e2eBrowser } from "./tests/setup/e2e-browser";
 import { backendPython } from "./tests/setup/e2e-global-setup";
 
 /**
@@ -16,7 +17,8 @@ import { backendPython } from "./tests/setup/e2e-global-setup";
  * - Phase 6C-C: a third backend on 127.0.0.1:8002 (6-token /api/v1 bucket, one more every 1000 s)
  *   and a fifth dashboard on 127.0.0.1:3005 reading through it, for the refresh-after-429 test
  *   (a first load succeeds, then the test drains the bucket and refreshes).
- * Uses the installed Microsoft Edge (`channel: "msedge"`), so no browser download is needed.
+ * Uses the installed Microsoft Edge (`channel: "msedge"`), so no browser download is needed;
+ * CI (R104-5, `LLMI_E2E_CI=1`) uses the Chromium bundled with Playwright (tests/setup/e2e-browser.ts).
  * One worker: the backend's /api/v1 rate limit is per client address.
  * Test data (Phase 3C, R41): the global setup creates this run's own projects and seeds them
  * with SYNTHETIC traces at current UTC times (scripts/dev/e2e_fixtures.py); the teardown deletes
@@ -34,7 +36,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: "http://127.0.0.1:3001",
-    channel: "msedge",
+    ...e2eBrowser(process.env),
     headless: true,
     colorScheme: "dark",
     timezoneId: "Europe/Istanbul", // a non-UTC zone: the UI must still show UTC

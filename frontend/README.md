@@ -21,7 +21,7 @@ and the unverified machine-observation panel on Trace Detail, **Trace-to-Testset
 | Tailwind CSS (+ `@tailwindcss/postcss`) | 4.3.3 | |
 | Recharts | 3.10.1 | |
 | ESLint / eslint-config-next | 9.39.5 / 16.4.3 | includes jsx-a11y, react, react-hooks, typescript-eslint |
-| @playwright/test | 1.64.0 | drives the installed Microsoft Edge (`channel: "msedge"`); no browser download |
+| @playwright/test | 1.64.0 | drives the installed Microsoft Edge (`channel: "msedge"`); no browser download. CI (`LLMI_E2E_CI=1`, R104-5) uses the Chromium bundled with this Playwright version instead |
 | server-only | 0.0.1 | |
 
 All versions are exact (`.npmrc`: `save-exact`), and `package-lock.json` is committed. Some

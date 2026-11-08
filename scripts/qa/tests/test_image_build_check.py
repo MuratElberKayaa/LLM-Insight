@@ -659,7 +659,7 @@ class DockerInputs(unittest.TestCase):
 
     def test_workflow_job_shape(self):
         text = self.dockerfile(".github/workflows/ci.yml").replace("\r\n", "\n")
-        jobs = re.findall(r"(?m)^  ([a-z-]+):$", text.split("\njobs:\n", 1)[1])
+        jobs = re.findall(r"(?m)^  ([a-z0-9-]+):$", text.split("\njobs:\n", 1)[1])
         self.assertEqual(
             jobs,
             [
@@ -668,6 +668,7 @@ class DockerInputs(unittest.TestCase):
                 "frontend",
                 "security-python",
                 "security-history",
+                "e2e",
                 "image-build",
             ],
         )
