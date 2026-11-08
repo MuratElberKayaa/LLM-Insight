@@ -6,8 +6,7 @@
 # - Required suites run with LLMI_TEST_REQUIRE_DB=1, so a missing database fails the job
 #   instead of skipping tests.
 # - Not in CI (documented in docs/reports/phase-3c.md): the Playwright E2E suite (needs a
-#   seeded live backend and the installed Microsoft Edge; run locally with `npm run test:e2e`)
-#   and the compose `app` image build (run locally with `docker compose --profile app build`).
+#   seeded live backend and the installed Microsoft Edge; run locally with `npm run test:e2e`).
 # - Actions are pinned to full commit SHAs of releases at least two weeks old (CR-09).
 # - npm audit (Phase 6, R102): production dependencies must have zero advisories at every
 #   severity (no exceptions); the full audit is printed and must contain nothing but advisories
@@ -24,7 +23,7 @@
 #   reviewed per-finding baseline security/bandit-baseline.json and its register in
 #   docs/SECURITY.md section 8. Bandit's own -b is not used. Any new, changed or vanished
 #   finding, skipped file, scope change or tool failure fails; only a sanitized summary is
-#   uploaded. Playwright E2E and the image build are still local gates.
+#   uploaded. Playwright E2E is still a local gate.
 # - History secret scan (R104-3, job security-history): full-history checkout with no persisted
 #   credential; scripts/qa/secret_history_gate.py verifies the actual ref coverage independently,
 #   scans every object reachable from the fetched refs and compares every raw match with the
@@ -32,6 +31,10 @@
 #   docs/SECURITY.md section 9. Scope: refs/remotes/origin/*, tags and the pull request merge ref;
 #   GitHub-managed refs of other pull requests are not fetched and not claimed as scanned.
 #   Only a sanitized summary is uploaded; no secret, no .env, no network service.
+# - Application images (R104-4, job image-build): scripts/qa/image_build_gate.sh builds the
+#   Compose `app` profile images backend and frontend on this ephemeral runner, under a
+#   run-specific project name. It starts no container and publishes no image; variables are
+#   throwaway and generated here. Building an image does not prove that the application runs.
 name: ci
 
 on:
@@ -319,3 +322,25 @@ jobs:
           path: ${{ runner.temp }}/secret-history
           if-no-files-found: error
           retention-days: 14
+
+  image-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Image gate self-tests (fake docker, no daemon, offline)
+        run: |
+          python3 -I -m unittest discover -s scripts/qa/tests -p test_image_build_check.py -v
+          bash scripts/qa/tests/test_image_build_gate.sh
+      - name: Throwaway interpolation env (generated on this runner, never printed)
+        run: python3 -I scripts/dev/init_env.py
+      - name: Compose preflight (project name, configuration, environment, canary files)
+        run: bash scripts/qa/image_build_gate.sh preflight
+      - name: Build the backend and frontend images (no container is started)
+        run: timeout 1200 bash scripts/qa/image_build_gate.sh build
+      - name: Verify image outputs and the absence of runtime resources
+        run: timeout 480 bash scripts/qa/image_build_gate.sh verify

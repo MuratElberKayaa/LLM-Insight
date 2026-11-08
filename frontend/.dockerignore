@@ -5,5 +5,7 @@ test-results
 playwright-report
 .env
 .env.*
+**/.env
+**/.env.*
 *.tsbuildinfo
 next-env.d.ts
