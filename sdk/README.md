@@ -292,6 +292,14 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
 - **Runner (ADR-36):** `python -m demo_app.live_gemini` prints a dry-run plan by default;
   `--execute` sends one SYNTHETIC request only when every gate passes. Phase 6C-A tests
   never contact a provider.
+- **Content demo (ADR-39):** `python -m demo_app.live_gemini_content --scenario <id>` runs
+  one of three fixed SYNTHETIC scenarios through the same security path: dry run by default,
+  `--execute` for one request (the complete flag; abbreviations are refused), metadata-only
+  stdout, and an opt-in `--preview` on the local terminal's stderr, which terminal capture
+  can retain. An installed SDK that differs from the checkout is refused, so reinstall it
+  after changing `sdk/src`. Exit codes: 0, 1 (provider failed or blocked), 2 (refused),
+  3 (the provider answered but validation or export is not confirmed). Telemetry stays
+  metadata-only. Phase 7B tests never contact a provider.
 
 ## What is recorded
 
