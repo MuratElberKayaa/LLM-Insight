@@ -84,7 +84,7 @@ EXCLUDED_NAMES = {
     "PHASE7_LIVE_DEMO_PLAN.md",
     "OPUS_PHASE7_PROMPTS.md",
 }
-EXCLUDED_DIRS = {".git", ".venv", ".ci-canary"}
+EXCLUDED_DIRS = {".git", ".venv"}
 EXCLUDED_SUFFIXES = (".pem", ".key", ".sqlite", ".sqlite3", ".db", ".dump")
 SECRET_ENV_NAME = re.compile(r"PASSWORD|PEPPER|TOKEN|API_KEY|SECRET|DATABASE_URL")
 CHUNK = 1024 * 1024

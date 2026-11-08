@@ -269,20 +269,24 @@ class ImageChecks(Base):
         )
         self.env = self.write_env(GOOD_ENV)
 
-    def layer(self, files, compress=False):
+    def layer(self, files, compress=False, dirs=()):
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w") as tar:
+            for name in dirs:
+                info = tarfile.TarInfo(name)
+                info.type = tarfile.DIRTYPE
+                tar.addfile(info)
             for name, data in files.items():
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
         return gzip.compress(buffer.getvalue()) if compress else buffer.getvalue()
 
-    def image(self, files, compress=False, meta=b"{}"):
+    def image(self, files, compress=False, meta=b"{}", dirs=()):
         path = self.tmp / "image.tar"
         with tarfile.open(path, "w") as tar:
             for name, data in (
-                ("blobs/sha256/one", self.layer(files, compress)),
+                ("blobs/sha256/one", self.layer(files, compress, dirs)),
                 ("manifest.json", meta),
             ):
                 info = tarfile.TarInfo(name)
@@ -334,13 +338,19 @@ class ImageChecks(Base):
             "app/.venv/x",
             "app/backend/server.pem",
             "app/data.sqlite",
-            "app/.ci-canary/x",
+            "app/.ci-canary/.env",
+            "app/.ci-canary/.env.local",
         ):
             with self.subTest(path):
                 self.assertIn(
                     "IMAGE_EXCLUDED_FILE",
                     kinds(self.run_check({**self.good(), path: b"x"})),
                 )
+
+    def test_empty_canary_directory_is_not_a_leak(self):
+        # Regression, GitHub run 42505551056: .dockerignore drops the file, not its directory.
+        dirs = ["app/backend/app/.ci-canary/"]
+        self.assertEqual(self.run_check(self.good(), dirs=dirs), [])
 
     def test_third_party_env_files_are_not_application_files(self):
         self.assertEqual(
