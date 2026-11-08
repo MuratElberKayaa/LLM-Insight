@@ -17,8 +17,15 @@ mkdir -p "$FAKE_BIN"
 export FAKE_BIN WORK LLMI_PYTHON="$FAKE_BIN/py"
 
 stop_backend() {
-  local file="$WORK/temp/e2e/backend.pid"
-  if [ -s "$file" ]; then kill -9 "$(cat "$file")" > /dev/null 2>&1; fi
+  local file="$WORK/temp/e2e/backend.pid" pid attempt
+  if [ -s "$file" ]; then
+    pid="$(cat "$file")"
+    kill -9 "$pid" > /dev/null 2>&1
+    for ((attempt = 0; attempt < 100; attempt++)); do
+      kill -0 "$pid" > /dev/null 2>&1 || break
+      /usr/bin/sleep 0.05
+    done
+  fi
   return 0
 }
 
@@ -98,7 +105,7 @@ case "$1 ${2:-} ${3:-}" in
   "-m app.cli seed-prices") [ -z "${FAKE_SEED_FAIL:-}" ] || exit 26; exit 0 ;;
 esac
 if [ "$1 ${2:-}" = "-m app" ]; then
-  [ -z "${FAKE_BACKEND_DIES:-}" ] || exit 27
+  [ -z "${FAKE_BACKEND_DIES:-}${FAKE_BACKEND_EXITS:-}" ] || exit 27
   while :; do /usr/bin/sleep 0.2; done
 fi
 exit 99
@@ -147,6 +154,8 @@ cat > "$FAKE_BIN/curl" <<'SH'
 #!/usr/bin/env bash
 printf 'curl %s\n' "$*" >> "$FAKE_LOG"
 [ -z "${FAKE_NOT_READY:-}" ] || exit 22
+[ -z "${FAKE_BACKEND_DIES:-}" ] || exit 7
+[ -z "${FAKE_READY_DELAY:-}" ] || /usr/bin/sleep "$FAKE_READY_DELAY"
 printf '%s' "${FAKE_READY_BODY:-{\"status\":\"ready\"\}}"
 SH
 
@@ -212,7 +221,11 @@ passed=0
 failed=0
 PHASES=(prepare install database backend frontend test)
 
-note_fail() { echo "  FAIL: $1"; failed=$((failed + 1)); }
+note_fail() {
+  echo "  FAIL: $1"
+  printf '::error title=e2e-self-test::%s\n' "${1//[^A-Za-z0-9 ._,=-]/?}"
+  failed=$((failed + 1))
+}
 note_pass() { passed=$((passed + 1)); }
 
 setup() {
@@ -334,7 +347,8 @@ fail_at "pip check" install "" FAKE_PIP_CHECK_FAIL=1
 
 echo "== C backend health"
 fail_at "C never ready" backend "did not become ready" FAKE_NOT_READY=1
-fail_at "C backend dies" backend "" FAKE_BACKEND_DIES=1
+fail_at "C backend dies" backend "did not become ready" FAKE_BACKEND_DIES=1
+fail_at "C backend exits after answering ready" backend "the backend process exited" FAKE_BACKEND_EXITS=1 FAKE_READY_DELAY=0.5
 fail_at "C wrong body" backend "did not become ready" 'FAKE_READY_BODY={"status":"not_ready"}'
 
 echo "== D wrong origin, E missing token"
