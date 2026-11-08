@@ -30,7 +30,7 @@ function TraceLink({ t, state }: { t: TraceSummary; state: ListState }) {
       data-testid="trace-link"
       data-trace-id={t.trace_id}
     >
-      <span className="block font-medium text-ink group-hover:underline">{t.service_name}</span>
+      <span className="block break-words font-medium text-ink group-hover:underline">{t.service_name}</span>
       <Ident value={t.trace_id} className="text-ink-3" />
       <span className="sr-only">: open trace details</span>
     </Link>
