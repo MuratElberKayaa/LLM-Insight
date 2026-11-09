@@ -2,6 +2,10 @@
 
 All fixtures are **SYNTHETIC**. They don't come from a real provider call and must never be displayed as real data.
 
+## `groq_client_span.v1.json`
+
+The exact attributes of the CLIENT span `GroqTextAdapter` emits for a completed call (Phase 8A-2, ADR-42). It is a contract shared by two offline tests: `sdk/tests/unit/test_groq_adapter.py` asserts the SDK emits it, and `backend/tests/unit/test_groq_contract.py` asserts the backend keeps every attribute with no drop and never prices the call.
+
 ## `otlp_trace_3span.json`
 
 This file is an OTLP/JSON rendering of one `ExportTraceServiceRequest`, following `TELEMETRY_CONTRACT.md` §6. It is illustrative. Phase 1B parses it with `opentelemetry-proto` (hex IDs converted first, `backend/tests/otlp.py`) as part of T01.

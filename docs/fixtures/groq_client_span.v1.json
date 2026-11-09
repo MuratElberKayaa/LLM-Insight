@@ -1,0 +1,26 @@
+{
+  "schema": "llminsight.fixture.groq_client_span.v1",
+  "synthetic": true,
+  "note": "SYNTHETIC. The exact CLIENT span GroqTextAdapter emits for a completed call. The SDK test asserts it emits this, and the backend test asserts it ingests this with no dropped attribute.",
+  "span_name": "chat openai/gpt-oss-20b",
+  "span_kind": "CLIENT",
+  "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "groq",
+    "gen_ai.request.model": "openai/gpt-oss-20b",
+    "gen_ai.response.model": "openai/gpt-oss-20b",
+    "gen_ai.response.id": "chatcmpl-SYNTHETIC-groq-0001",
+    "gen_ai.response.finish_reasons": ["stop"],
+    "gen_ai.request.max_tokens": 64,
+    "gen_ai.prompt.name": "smoke",
+    "gen_ai.prompt.version": "v1",
+    "gen_ai.usage.input_tokens": 20,
+    "gen_ai.usage.output_tokens": 32,
+    "llminsight.usage_source": "provider_reported",
+    "llminsight.call_id": "5f0c6e1a-3b7d-4c2e-9a41-000000000042",
+    "llminsight.attempt": 1,
+    "llminsight.provenance": "synthetic",
+    "server.address": "api.groq.com",
+    "server.port": 443
+  }
+}
