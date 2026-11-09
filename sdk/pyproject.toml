@@ -24,6 +24,9 @@ openai = ["openai==3.28.0"]
 # The Gemini Developer API adapter (llm_insight_sdk.gemini_adapter, Phase 6C-A, ADR-33).
 # google-genai 2.30.1 was uploaded 2026-10-13 (two-week rule); its transports are httpx.
 gemini = ["google-genai==2.30.1"]
+# The Groq adapter (llm_insight_sdk.groq_adapter, Phase 8A-2, ADR-42): direct httpx. Both are
+# already in requirements-dev.lock and backend/requirements.lock, so no new package enters.
+groq = ["httpx==0.28.1", "certifi==2026.10.19"]
 dev = [
     "pytest==9.1.1",
     "ruff==0.17.0",

@@ -10,9 +10,10 @@ Adapters never raise a provider failure: a failed call is an outcome with
 `status = "error"` and an `error_category`. They raise only for a request they refuse
 before sending (`UnsupportedRequestError` in the OpenAI adapter) or invalid configuration.
 
-Implementations: `openai_adapter.OpenAIResponsesTextAdapter` (ADR-28) and, since Phase 6C-A,
-`gemini_adapter.GeminiTextAdapter` (ADR-33). Each has its own usage mapping and error
-categories and a backend pricing applicability rule (docs/PRICING.md §3).
+Implementations: `openai_adapter.OpenAIResponsesTextAdapter` (ADR-28), since Phase 6C-A
+`gemini_adapter.GeminiTextAdapter` (ADR-33), and since Phase 8A-2 `groq_adapter.GroqTextAdapter`
+(ADR-42, offline only). Each has its own usage mapping and error categories and a backend
+pricing applicability rule (docs/PRICING.md §3).
 """
 
 from __future__ import annotations

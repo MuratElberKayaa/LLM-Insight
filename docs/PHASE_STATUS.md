@@ -445,10 +445,15 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] Audit and design written; 0 provider API requests; no adapter, guard, ADR, migration or stored data changed
 - [x] Observed on GitHub: PR #3 merged, `main` at `91c4d7d`, all seven CI jobs successful on `e581dc4` and on `91c4d7d`; the 7C item above is left for the reviewer to close
 - [x] Reviewed 2026-11-09: conditional GO for offline development; decisions and renumbering recorded in §16 of the report
-- [x] Checkpoint 8A-1 offline: fail-closed Groq and OpenRouter cost (ADR-40), Groq key detection in the SDK, backend and scanners (ADR-41). Committed locally on `feature/phase-8a-free-provider-safety`, not pushed; evidence: `reports/phase-8a-1.md`; 5 database-backed tests not run
+- [x] Checkpoint 8A-1 offline: fail-closed Groq and OpenRouter cost (ADR-40), Groq key detection in the SDK, backend and scanners (ADR-41). Evidence: `reports/phase-8a-1.md`
 - [x] Review closure of ADR-41: accepted in principle, six conditions verified, explicit and narrow amendment of ADR-15 applied
-- [ ] First CI run of 8A-1, after the owner pushes
-- [ ] Offline checkpoints 8A-2 to 8A-7
+- [x] 8A-1 merged by PR #4 (`d10e16b`). Observed on GitHub: run 42612935755 on `d10e16b`, all seven CI jobs successful, including `python` with `LLMI_TEST_REQUIRE_DB=1`. Only job conclusions were read
+- [x] Checkpoint 8A-2 offline implementation: `GroqTextAdapter` (ADR-42, ADR-43). Committed locally on `feature/phase-8a-groq-adapter`, not pushed; 0 provider requests; evidence: `reports/phase-8a-2.md`
+- [x] 8A-2 offline verification, on the final code including the strict Content-Type validation: mutations 50 of 50 caught across three runs (0 survived, 0 invalid, 0 unfinished), 17 of 17 supplementary caught; SDK clean-install regression 1589 tests, 1508 passed, 0 failed, 81 skipped (database-backed); backend unit 1202 passed
+- [x] Architectural review of 8A-2, 2026-11-09: GO for commit and CI submission preparation; the Content-Type correction and offline verification accepted
+- [ ] 6 PostgreSQL integration tests of 8A-2 (`test_live_groq.py`): collected, NOT RUN
+- [ ] First CI run of 8A-2: all seven jobs NOT RUN
+- [ ] Offline checkpoints 8A-3 to 8A-7
 - [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
 
 ## Commands
