@@ -7,10 +7,12 @@ the verified catalogue values (app.services.pricing_catalog, docs/PRICING.md).""
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
 from app.services import pricing, pricing_catalog
+from app.services.ingestion import usage as usage_ledger
 from app.services.pricing import CostOutcome, Price, Tokens
 
 AT = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
@@ -403,6 +405,145 @@ def test_a_gemini_price_never_applies_because_the_billing_tier_is_unprovable(att
 def test_openai_prices_never_apply_to_a_gemini_call():
     out = assess(tokens(10, 5), CATALOGUE, provider="gcp.gemini", resp="gpt-5-mini")
     assert out == pricing.unknown("price_missing")
+
+
+FREE_PLAN_CALLS = [
+    ("groq", "openai/gpt-oss-20b", "api.groq.com"),
+    ("openrouter", "google/gemma-4-26b-a4b-it:free", "openrouter.ai"),
+]
+ZERO = Decimal("0")
+
+
+@pytest.mark.parametrize(("provider", "model", "host"), FREE_PLAN_CALLS)
+@pytest.mark.parametrize("rate", [Decimal("0.15"), ZERO], ids=["listed-price", "zero-price"])
+def test_a_stored_price_never_prices_a_free_plan_call(provider, model, host, rate):
+    """ADR-40: even a catalogue row for exactly this provider and model is not applied, and a
+    zero rate is not a way to store a computed 0. The rows here are SYNTHETIC."""
+    row = _synthetic(
+        provider=provider,
+        model=model,
+        input_per_million=rate,
+        output_per_million=rate,
+        cached_input_per_million=rate,
+        cache_write_input_per_million=rate,
+    )
+    out = assess(
+        tokens(20, 32, 4, None, 30),
+        [row],
+        provider=provider,
+        resp=model,
+        attrs={"server.address": host},
+    )
+    assert out == pricing.unknown("price_missing")
+    assert out.cost_usd is None
+    assert out.price_version is None and out.model_price_id is None
+
+
+@pytest.mark.parametrize(("provider", "model", "host"), FREE_PLAN_CALLS)
+@pytest.mark.parametrize(
+    "conflict",
+    ["paid_then_zero", "zero_then_paid", "same_date_two_rates", "other_provider_same_model"],
+)
+def test_conflicting_catalogue_entries_never_price_a_free_plan_call(
+    provider, model, host, conflict
+):
+    """ADR-40: however the catalogue disagrees with itself, no row is selected. SYNTHETIC."""
+    older = datetime(2026, 1, 1, tzinfo=UTC)
+    newer = datetime(2026, 6, 1, tzinfo=UTC)
+
+    def row(rate: str, effective_from: datetime, row_provider: str = provider) -> Price:
+        return _synthetic(
+            provider=row_provider,
+            model=model,
+            effective_from=effective_from,
+            input_per_million=Decimal(rate),
+            output_per_million=Decimal(rate),
+        )
+
+    catalogue = {
+        "paid_then_zero": [row("0.15", older), row("0", newer)],
+        "zero_then_paid": [row("0", older), row("0.15", newer)],
+        "same_date_two_rates": [row("0.15", older), row("0.60", older)],
+        "other_provider_same_model": [row("0.15", older, "openai"), row("0", older)],
+    }[conflict]
+    out = assess(
+        tokens(20, 32), catalogue, provider=provider, resp=model, attrs={"server.address": host}
+    )
+    assert out == pricing.unknown("price_missing")
+    assert out.cost_usd is None and out.model_price_id is None
+
+
+@pytest.mark.parametrize(("provider", "model", "host"), FREE_PLAN_CALLS)
+@pytest.mark.parametrize(
+    "attrs",
+    [
+        {},
+        OPENAI_STANDARD,  # OpenAI tier attributes prove nothing about these providers
+        {"openai.response.service_tier": "default", "server.address": "api.openai.com"},
+    ],
+)
+def test_no_span_attribute_can_make_a_free_plan_price_applicable(provider, model, host, attrs):
+    assert pricing.price_applicable(provider, {"server.address": host, **attrs}) is False
+    assert pricing.price_applicable(provider, attrs) is False
+
+
+@pytest.mark.parametrize(("provider", "model", "host"), FREE_PLAN_CALLS)
+def test_a_price_on_the_requested_model_does_not_apply_either(provider, model, host):
+    row = _synthetic(provider=provider, model=model)
+    out = assess(tokens(10, 5), [row], provider=provider, req=model, attrs={})
+    assert out == pricing.unknown("price_missing")
+
+
+@pytest.mark.parametrize(("provider", "model", "host"), FREE_PLAN_CALLS)
+@pytest.mark.parametrize(
+    ("usage", "source", "reason"),
+    [
+        (tokens(None, 5), "unknown", "usage_missing"),
+        (tokens(10, None), "unknown", "usage_missing"),
+        (tokens(10, 5), "estimated", "usage_missing"),
+        (tokens(10, 5, 11), "provider_reported", "usage_inconsistent"),
+        (tokens(10, 5, None, None, 6), "provider_reported", "usage_inconsistent"),
+    ],
+)
+def test_usage_problems_keep_their_own_reason(provider, model, host, usage, source, reason):
+    row = _synthetic(provider=provider, model=model)
+    out = assess(usage, [row], provider=provider, resp=model, attrs={}, source=source)
+    assert out == pricing.unknown(reason)
+
+
+@pytest.mark.parametrize(("provider", "model", "host"), FREE_PLAN_CALLS)
+def test_the_ledger_step_leaves_a_free_plan_row_unknown(provider, model, host):
+    """The same outcome through `price_rows`, the function ingest calls."""
+    row = {
+        "trace_id": "t",
+        "span_id": "s",
+        "provider": provider,
+        "requested_model": model,
+        "response_model": model,
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "cached_input_tokens": None,
+        "cache_write_input_tokens": None,
+        "reasoning_output_tokens": None,
+        "usage_source": "provider_reported",
+        "started_at": AT,
+    }
+    spans = {("t", "s"): SimpleNamespace(attributes={"server.address": host})}
+    usage_ledger.price_rows([row], spans, [_synthetic(provider=provider, model=model)])
+    assert row["cost_usd"] is None
+    assert (row["cost_status"], row["cost_unknown_reason"]) == ("unknown", "price_missing")
+    assert row["price_version"] is None and row["model_price_id"] is None
+
+
+@pytest.mark.parametrize("provider", ["groq", "openrouter"])
+def test_the_verified_catalogue_has_no_free_plan_prices(provider):
+    assert not [e for e in pricing_catalog.ENTRIES if e.provider == provider]
+
+
+def test_the_free_plan_rules_change_no_other_provider():
+    assert assess(tokens(10, 5), CATALOGUE, resp="gpt-5-mini").cost_status == "computed"
+    assert pricing.price_applicable("gcp.gemini", OPENAI_STANDARD) is False
+    assert set(pricing.APPLICABILITY) == {"openai", "gcp.gemini", "groq", "openrouter"}
 
 
 def test_providers_without_billing_modes_need_no_tier():

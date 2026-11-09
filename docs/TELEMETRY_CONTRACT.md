@@ -125,7 +125,7 @@ The request is walked as:
 
 Anything not listed below is dropped before persistence and counted in `spans.server_dropped_attributes_count`. That column is an `INT` that saturates at 2^31−1. Resource-attribute and scope-field drops count on every span of that resource or scope, and a withheld span name counts as one. Every string value must also pass the string-safety rules of §3.1. Free-text **labels** are truncated to 256 chars after those checks. **Identifiers** are dropped (and counted) rather than truncated, because a shortened identifier is a different identifier. Arrays keep at most 16 items.
 
-**v1 finalization (Phase 1C, completed by the Phase 1 final hardening):** the max-tokens, prompt-version, error-type, credential-classification and string-safety rules were settled before the `phase-1` tag, while every stored row was disposable test data (the dev database held 0 rows). They are part of `llminsight.attrmap.v1`; any change after the `phase-1` tag needs `attrmap.v2` (ADR-15). Audit against the pinned semconv (`9ffc7e00c639`, `client-inference.md`, re-read 2026-10-24): the five usage counters below and `gen_ai.request.max_tokens` match the pinned names exactly. The pin also defines modality breakdowns (`gen_ai.usage.{text,audio,image}.input_tokens` / `.output_tokens` / `.cache_read.input_tokens`); v1 does not allowlist them, so they are dropped and counted. Adding them is a Phase 2 / ADR-15 decision.
+**v1 finalization (Phase 1C, completed by the Phase 1 final hardening):** the max-tokens, prompt-version, error-type, credential-classification and string-safety rules were settled before the `phase-1` tag, while every stored row was disposable test data (the dev database held 0 rows). They are part of `llminsight.attrmap.v1`; any change after the `phase-1` tag needs `attrmap.v2` (ADR-15), **except a security-only credential-format addition under the conditions of ADR-41**. Audit against the pinned semconv (`9ffc7e00c639`, `client-inference.md`, re-read 2026-10-24): the five usage counters below and `gen_ai.request.max_tokens` match the pinned names exactly. The pin also defines modality breakdowns (`gen_ai.usage.{text,audio,image}.input_tokens` / `.output_tokens` / `.cache_read.input_tokens`); v1 does not allowlist them, so they are dropped and counted. Adding them is a Phase 2 / ADR-15 decision.
 
 **Resource:** `service.name`, `service.version`, `service.namespace`, `deployment.environment.name`, `telemetry.sdk.name`, `telemetry.sdk.language`, `telemetry.sdk.version`, `llminsight.sdk.version`.
 
@@ -182,7 +182,7 @@ The key rules above decide *which* attributes may be stored. These rules decide 
 1. **Unsafe characters:** any control, format (bidi override, zero-width, BOM), private-use, surrogate, or line/paragraph separator character (Unicode categories `Cc`, `Cf`, `Co`, `Cs`, `Zl`, `Zp`) rejects the value. That includes U+0000, which was previously replaced.
 2. **Obvious credentials** reject the value in every field:
    - `sk-…` keys and LLM Insight `lli_…` keys;
-   - AWS `AKIA`/`ASIA` IDs, GitHub `ghp_`/`github_pat_`, Slack `xox?-`, Google `AIza…`;
+   - AWS `AKIA`/`ASIA` IDs, GitHub `ghp_`/`github_pat_`, Slack `xox?-`, Google `AIza…`, Groq `gsk_…` (20 or more alphanumeric characters, added by ADR-41; the mapping stays `attrmap.v1`);
    - JWTs (`eyJ….…`) and private-key blocks;
    - `Bearer`/`Basic` followed by a credential-like value (12+ chars with a digit);
    - URL user-info (`scheme://user:pass@`);

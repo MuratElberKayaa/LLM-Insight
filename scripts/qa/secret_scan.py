@@ -4,8 +4,8 @@ message, and the working-tree files that would be committed (tracked + untracked
 Two detectors:
   1. exact local secret values, read from the git-ignored env files given with --env (values are
      held in memory only and never printed; a hit reports the variable NAME and the location);
-  2. credential patterns (OpenAI, GitHub, AWS, Slack, Google, private keys, JWT, ingest keys,
-     long Bearer values, URL user-info).
+  2. credential patterns (OpenAI, GitHub, AWS, Slack, Google, Groq, private keys, JWT, ingest
+     keys, long Bearer values, URL user-info).
 Output: counts and locations only. Exit 1 on any hit.
 Usage: python -I scripts/qa/secret_scan.py --repo <dir> --env <file> [--env <file> ...]
 
@@ -29,6 +29,8 @@ PATTERNS = {
     "aws_access_key": re.compile(rb"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     "slack_token": re.compile(rb"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
     "google_api_key": re.compile(rb"\bAIza[0-9A-Za-z_-]{35}\b"),
+    # ADR-41. The length is not documented, so a minimum is used and not an exact count.
+    "groq_key": re.compile(rb"(?<![A-Za-z0-9])gsk_[A-Za-z0-9]{20,}"),
     "private_key": re.compile(
         rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
     ),

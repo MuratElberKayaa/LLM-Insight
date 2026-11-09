@@ -4,6 +4,8 @@ Every "secret" here is SYNTHETIC and non-working, assembled at runtime so no cre
 literal sits in the source or in pytest node IDs (the doc check scans both).
 """
 
+from pathlib import Path
+
 import pytest
 from opentelemetry.proto.trace.v1.trace_pb2 import Status as SpanStatus
 
@@ -20,6 +22,7 @@ FAKE = {
     "github_pat": "github_pat_" + "P2" * 12,
     "slack": "xox" + "b-" + "1234567890-abcdef",
     "google": "AIza" + "S" * 35,
+    "groq": "gsk" + "_" + "Q7x" * 18,
     "jwt": "eyJ" + "hbGciOiJIUzI1NiJ9" + "." + "eyJzdWIiOiIxIn0" + ".sig",
     "bearer": "Bearer " + "t0ken" * 4,
     "basic": "Basic " + "dXNlcjpwYXNz" + "MTIzNDU2",
@@ -83,11 +86,24 @@ VALID_IDENTIFIERS = [
     "o1-preview",
     "risk-assessment-model",
     "task-router-v2",
+    # Phase 8A-1: free-plan model IDs and Groq-key lookalikes stay valid.
+    "openai/gpt-oss-20b",
+    "google/gemma-4-26b-a4b-it:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "gsk-model-v1",
+    "gsk_test_model_name_version_1",  # underscores break the key's alphanumeric run
+    "gsk_short",
+    "gsk" + "_" + "a" * 19,  # one character below the rule's minimum
+    "GSK_" + "A" * 24,  # the prefix is lower-case
+    "bigsk" + "_" + "a" * 24,  # inside a longer word
+    "risk_" + "a" * 24,
 ]
 VALID_OPAQUE = [
     "chatcmpl-9xYzAbCdEf0123456789",
     "resp_67ccd2bed1ec8190",
     "msg_01XFDUDYJgAACzvnptvVoYEL",
+    "chatcmpl-f51b2cd2-bef7-417e-964e-a08f0b513c22",
+    "gen-1762685000-AbCdEfGhIjKlMnOp",
 ]
 VALID_LABELS = [
     "chat gpt-4o-mini",
@@ -113,10 +129,81 @@ def test_valid_metadata_is_not_flagged(value):
         assert not sensitive.contains_personal_data(value, free_text=free_text)
 
 
+# ---------------------------------------------------------------- Groq keys (ADR-41)
+def groq_key(length: int = 52) -> str:
+    return "gsk" + "_" + ("Q7x" * length)[:length]
+
+
+# The prefix appears as a placeholder in Groq's documentation; the length is not documented
+# and third-party scanners disagree (40+, 48, 52), so the rule must not depend on one length.
+@pytest.mark.parametrize("length", [20, 40, 48, 52, 56, 80])
+def test_a_groq_key_is_detected_at_every_reported_length(length):
+    assert sensitive.contains_credential(groq_key(length))
+
+
+@pytest.mark.parametrize(
+    "carrier", ["{} suffix", "prefix {}", "GROQ_{}", "model/{}", "{}:free", "a-{}", "x={}"]
+)
+def test_a_groq_key_is_detected_when_embedded(carrier):
+    assert sensitive.contains_credential(carrier.format(groq_key()))
+
+
+def test_a_groq_key_is_dropped_from_a_span_without_reaching_the_logs(caplog):
+    key = groq_key()
+    with caplog.at_level("DEBUG"):
+        spans, _ = normalize(
+            request(
+                span(
+                    name=f"chat {key}",
+                    attrs=inference_attrs(
+                        gen_ai__request__model=f"ft:gpt-4o:acme:{key}",
+                        gen_ai__response__model=key,
+                        gen_ai__response__id=key,
+                        gen_ai__prompt__version=key,
+                    ),
+                )
+            )
+        )
+    stored = spans[0]
+    assert stored.name == "redacted_span"
+    assert key not in repr(stored.attributes)
+    assert key not in caplog.text
+    assert stored.server_dropped_attributes_count == 5  # four attributes and the span name
+
+
+def test_a_groq_key_is_refused_as_an_opaque_response_id():
+    """Opaque IDs skip the personal-data layer only, never the credential layer."""
+    m = span_map({"gen_ai.response.id": groq_key()})
+    assert m.values == {} and m.dropped == 1
+
+
+def test_security_only_detection_keeps_the_mapping_version():
+    """ADR-41: a new credential format withholds more values and changes nothing else."""
+    assert attrmap.SCHEMA_VERSION == "llminsight.attrmap.v1"
+
+
+def test_the_sdk_and_the_backend_use_the_same_groq_rule():
+    """The backend is authoritative; the SDK's copy must not drift from it (ADR-01 forbids an
+    import, so the source text is compared)."""
+    root = Path(__file__).resolve().parents[3]
+    sdk_guards = (root / "sdk/src/llm_insight_sdk/_guards.py").read_text(encoding="utf-8")
+    rules = [p.pattern for p in sensitive.CREDENTIAL_PATTERNS if "gsk_" in p.pattern]
+    assert len(rules) == 1
+    assert f'r"{rules[0]}"' in sdk_guards
+
+
 # ---------------------------------------------------------------- per-field formats
 VALID_FIELD_VALUES = {
     "gen_ai.operation.name": ["chat", "embeddings", "execute_tool", "invoke_agent"],
-    "gen_ai.provider.name": ["openai", "gcp.vertex_ai", "aws.bedrock", "azure.ai.openai", "x_ai"],
+    "gen_ai.provider.name": [
+        "openai",
+        "gcp.vertex_ai",
+        "aws.bedrock",
+        "azure.ai.openai",
+        "x_ai",
+        "groq",
+        "openrouter",
+    ],
     "gen_ai.request.model": VALID_IDENTIFIERS,
     "gen_ai.response.model": VALID_IDENTIFIERS,
     "gen_ai.response.id": VALID_OPAQUE,

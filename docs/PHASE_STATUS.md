@@ -441,6 +441,16 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [ ] Phase 7C offline integration evidence (local implementation complete, `reports/phase-7c.md`; 25 database-backed tests await the first GitHub run)
 - [ ] Phase 7D offline package; a real Gemini request needs new, explicit authorization for one request
 
+## Phase 8A-0 — Multi-provider free API integration: architecture and readiness audit (2026-11-09; evidence: `reports/phase-8a-0.md`)
+- [x] Audit and design written; 0 provider API requests; no adapter, guard, ADR, migration or stored data changed
+- [x] Observed on GitHub: PR #3 merged, `main` at `91c4d7d`, all seven CI jobs successful on `e581dc4` and on `91c4d7d`; the 7C item above is left for the reviewer to close
+- [x] Reviewed 2026-11-09: conditional GO for offline development; decisions and renumbering recorded in §16 of the report
+- [x] Checkpoint 8A-1 offline: fail-closed Groq and OpenRouter cost (ADR-40), Groq key detection in the SDK, backend and scanners (ADR-41). Committed locally on `feature/phase-8a-free-provider-safety`, not pushed; evidence: `reports/phase-8a-1.md`; 5 database-backed tests not run
+- [x] Review closure of ADR-41: accepted in principle, six conditions verified, explicit and narrow amendment of ADR-15 applied
+- [ ] First CI run of 8A-1, after the owner pushes
+- [ ] Offline checkpoints 8A-2 to 8A-7
+- [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
+
 ## Commands
 
 | Command (run from) | Exists | Purpose |

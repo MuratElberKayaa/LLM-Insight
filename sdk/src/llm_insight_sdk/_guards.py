@@ -29,6 +29,7 @@ _CREDENTIAL_PATTERNS = (
     re.compile(r"(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
     re.compile(r"(?<![A-Za-z0-9])xox[abprs]-[A-Za-z0-9-]{10,}"),
     re.compile(r"(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{30,}"),
+    re.compile(r"(?<![A-Za-z0-9])gsk_[A-Za-z0-9]{20,}"),
     re.compile(r"(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY"),
     re.compile(r"(?i)\b(?:bearer|basic)\s+(?=[A-Za-z0-9._~+/=-]*\d)[A-Za-z0-9._~+/=-]{12,}"),
