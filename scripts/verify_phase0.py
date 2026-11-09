@@ -237,7 +237,7 @@ check(n <= 60, f"CLAUDE.md lines = {n} (<= 60)")
 
 # ---------------------------------------------------------------- 8. secrets and placeholders
 SECRET = re.compile(
-    r"(sk-[A-Za-z0-9_-]{20,}|sk-proj-|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|xox[baprs]-|-----BEGIN [A-Z ]*PRIVATE KEY"
+    r"(sk-[A-Za-z0-9_-]{20,}|sk-proj-|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|xox[baprs]-|-----BEGIN [A-Z ]*PRIVATE KEY"
     r"|lli_[A-Za-z0-9]{6,}_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{20,}\.)")
 hits, scanned = [], 0
 for dp, dn, fs in os.walk(ROOT):

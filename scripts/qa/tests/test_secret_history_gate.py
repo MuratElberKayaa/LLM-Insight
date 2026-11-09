@@ -30,6 +30,7 @@ ss = gate.ss
 SYNTH_OPENAI = "sk-" + "Zq7Xw2" * 5
 SYNTH_AWS = "AKIA" + "QZ7X" * 4
 SYNTH_GITHUB = "ghp_" + "x1Y2z3" * 7
+SYNTH_GROQ = "gsk" + "_" + "x1Y2z3" * 9
 SYNTH_URL = "postgresql" + "://" + "fixture:" + "Zq7Xk2Pw9L" + "@127.0.0.1:1/x"
 SYNTH_URL_OTHER = "postgresql" + "://" + "fixture:" + "Bv4Nm8Qs3T" + "@127.0.0.1:1/x"
 SYNTH_KEY_HEADER = "-----BEGIN " + "PRIVATE KEY-----"
@@ -37,6 +38,7 @@ ALL_SYNTH = [
     SYNTH_OPENAI,
     SYNTH_AWS,
     SYNTH_GITHUB,
+    SYNTH_GROQ,
     SYNTH_URL,
     SYNTH_URL_OTHER,
     SYNTH_KEY_HEADER,
@@ -266,6 +268,15 @@ class NewFindings(GateCase):
         self.repo.commit({}, "remove the file")
         self.assert_fails("NEW_FINDING")
 
+    def test_a_groq_key_in_a_blob_fails_without_printing_it(self):
+        self.repo.commit({"app/leak.py": f"KEY = '{SYNTH_GROQ}'\n"})
+        summary = self.assert_fails("NEW_FINDING")
+        self.assertEqual(
+            [f["detector"] for f in summary["findings"] if f["status"] == "NEW"],
+            ["groq_key"],
+        )
+        self.assertNotIn(SYNTH_GROQ, json.dumps(summary))
+
     def test_b_new_secret_in_a_commit_message_fails(self):
         self.repo.commit({"app/more.py": "OTHER = 2\n"}, f"message with {SYNTH_GITHUB}")
         summary = self.assert_fails("NEW_FINDING")
@@ -476,6 +487,55 @@ class BaselineIntegrity(GateCase):
     def test_scope_with_an_exclusion_fails(self):
         baseline = self.mutated(lambda b: b["scope"].update(exclusions=["docs/"]))
         self.assert_baseline_rejected(baseline, "BASELINE_INVALID")
+
+
+class GroqDetector(unittest.TestCase):
+    """ADR-41. The key length is not documented, so no single length may be assumed."""
+
+    @staticmethod
+    def key(length=52):
+        return b"gsk" + b"_" + (b"x1Y" * length)[:length]
+
+    def names(self, data):
+        return [name for name, *_ in ss.iter_matches(data)]
+
+    def test_every_reported_length_is_matched(self):
+        for length in (20, 40, 48, 52, 56, 80):
+            with self.subTest(length=length):
+                self.assertEqual(self.names(self.key(length)), ["groq_key"])
+
+    def test_embedded_keys_are_matched(self):
+        for carrier in (b"KEY='%s'", b"GROQ_%s", b"model/%s", b"%s:free", b"a-%s"):
+            with self.subTest(carrier=carrier):
+                self.assertEqual(self.names(carrier % self.key()), ["groq_key"])
+
+    def test_lookalikes_are_not_matched(self):
+        for value in (
+            b"gsk",
+            b"gsk_",
+            b"gsk_short",
+            b"gsk" + b"_" + b"a" * 19,
+            b"gsk-model-v1",
+            b"gsk_test_model_name_version_1",
+            b"GSK_" + b"A" * 24,
+            b"bigsk" + b"_" + b"a" * 24,
+            b"risk_" + b"a" * 24,
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(self.names(value), [])
+
+    def test_the_local_scanner_names_the_detector_and_not_the_value(self):
+        self.assertEqual(ss.scan_bytes(self.key(), {}), ["pattern groq_key"])
+
+    def test_matches_carry_no_value(self):
+        for item in ss.iter_matches(self.key()):
+            self.assertFalse([part for part in item if isinstance(part, bytes)])
+
+    def test_the_detector_is_part_of_the_reviewed_digest(self):
+        without = {k: v for k, v in ss.PATTERNS.items() if k != "groq_key"}
+        reviewed = ss.detector_digest()
+        with mock.patch.object(ss, "PATTERNS", without):
+            self.assertNotEqual(ss.detector_digest(), reviewed)
 
 
 class RepositoryBaseline(unittest.TestCase):

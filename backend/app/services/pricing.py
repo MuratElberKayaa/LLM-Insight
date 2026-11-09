@@ -13,7 +13,8 @@ decides. The rules, in the order they are applied to one usage row:
    OpenAI: `openai.response.service_tier` must be `default` and `server.address` must be
    `api.openai.com` (Flex / Batch / Fast tiers and regional endpoints differ) → else
    `price_missing`. Gemini (`gcp.gemini`): never, because the Free/paid billing tier cannot
-   be shown from telemetry (ADR-35) → always `price_missing`.
+   be shown from telemetry (ADR-35) → always `price_missing`. Groq and OpenRouter: never, for
+   the same reason (ADR-40) → always `price_missing`.
 3. Price selection. Exact model: `response_model`, or `requested_model` only when the
    response model is absent. No alias, prefix or fuzzy matching. Of that model's rows, the
    one with the latest `effective_from <= started_at` (event time). None → `price_missing`.
@@ -151,11 +152,21 @@ def _gemini_tier_unprovable(attributes: Mapping[str, Any]) -> bool:
     return False
 
 
+def _free_plan_unprovable(attributes: Mapping[str, Any]) -> bool:
+    """Groq and OpenRouter (ADR-40): no span attribute shows that a call was billed at a
+    stored price. A Free Plan or `:free` call must not be shown as a paid cost, and a zero
+    rate must not record a computed 0, so a stored price never applies until a rule backed
+    by billing evidence replaces this one."""
+    return False
+
+
 # Providers with billing modes beyond the stored standard-tier price. A provider without an
 # entry has no such mode in the catalogue; adding a real provider requires adding its rule.
 APPLICABILITY: dict[str, Callable[[Mapping[str, Any]], bool]] = {
     "openai": _openai_standard,
     "gcp.gemini": _gemini_tier_unprovable,
+    "groq": _free_plan_unprovable,
+    "openrouter": _free_plan_unprovable,
 }
 
 

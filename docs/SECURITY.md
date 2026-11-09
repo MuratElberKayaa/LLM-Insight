@@ -213,6 +213,7 @@ CI job `security-history` checks out the full history and runs `scripts/qa/secre
 - **Coverage is verified, not assumed.** A shallow or partial checkout, a grafts file, a ref outside the allowed namespaces, a missing or moved release tag, a different root commit, a submodule entry, an unreachable expected commit or a difference between `git rev-list` and the gate's own object walk fails the job.
 - **Changing the baseline is a security review.** CI never regenerates it. A change needs `security/secret-history-baseline.json`, the register below and the `REVIEWED_BASELINE_SHA256` constant of the gate in the same reviewed commit, with the classification evidence. Any new or edited file containing a match needs such a review before it can pass, including a future edit of an already listed fixture file.
 - **Only sanitized metadata is reported:** verdict, ref categories, object counts, finding counts, entry ids, detector names, object id prefixes and error categories. Raw reports stay on the runner.
+- **Detector change, Phase 8A-1 (ADR-41):** `groq_key` was added to `scripts/qa/secret_scan.py`. The baseline's `detector_digest` and `REVIEWED_BASELINE_SHA256` were updated by hand in the same change. No entry was added, removed or reclassified, so the register below is unchanged. Evidence: `reports/phase-8a-1.md`.
 
 | Class | Detector, object | Paths | Classification | Evidence |
 |---|---|---|---|---|

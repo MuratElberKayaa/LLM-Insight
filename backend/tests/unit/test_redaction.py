@@ -8,6 +8,7 @@ from app.services import redaction
 # Built at runtime so no key-shaped literal sits in the source (secret scanners stay quiet).
 FAKE_OPENAI_KEY = "sk-" + "SYNTHETIC" + "a1b2c3d4e5f6g7h8"
 FAKE_LLI_KEY = "lli_" + "Ab12Cd34" + "_" + "SYNTHETICsecretvalue0123"
+FAKE_GROQ_KEY = "gsk" + "_" + "SYNTHETIC" + "a1b2c3d4e5f6g7h8i9j0k1l2"
 
 
 @pytest.mark.parametrize(
@@ -34,6 +35,14 @@ def test_sensitive_values_are_masked(text, category):
     assert out.masked.get(category, 0) >= 1
     for fragment in ("jane.doe", "532 123", "12345678901", "4111", "hunter2", FAKE_OPENAI_KEY):
         assert fragment not in out.text
+
+
+def test_a_groq_key_in_free_text_is_masked():
+    """Free-text redaction shares the ingest patterns, so ADR-41 covers it too."""
+    out = redaction.redact_free_text(f"the key {FAKE_GROQ_KEY} leaked")
+    assert FAKE_GROQ_KEY not in out.text
+    assert "[REDACTED:credential]" in out.text
+    assert out.masked == {"credential": 1}
 
 
 def test_plain_text_is_unchanged_and_reports_nothing():
