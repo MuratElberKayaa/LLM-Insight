@@ -216,6 +216,7 @@ CI job `security-history` checks out the full history and runs `scripts/qa/secre
 - **Changing the baseline is a security review.** CI never regenerates it. A change needs `security/secret-history-baseline.json`, the register below and the `REVIEWED_BASELINE_SHA256` constant of the gate in the same reviewed commit, with the classification evidence. Any new or edited file containing a match needs such a review before it can pass, including a future edit of an already listed fixture file.
 - **Only sanitized metadata is reported:** verdict, ref categories, object counts, finding counts, entry ids, detector names, object id prefixes and error categories. Raw reports stay on the runner.
 - **Detector change, Phase 8A-1 (ADR-41):** `groq_key` was added to `scripts/qa/secret_scan.py`. The baseline's `detector_digest` and `REVIEWED_BASELINE_SHA256` were updated by hand in the same change. No entry was added, removed or reclassified, so the register below is unchanged. Evidence: `reports/phase-8a-1.md`.
+- **Entry SH-39, Phase 8A-3 (2026-11-10):** the Groq block added to `.env.example` created a new blob (`9b15078560e2`). Its only match is the existing `CHANGE_ME` database URL placeholder, byte-identical to SH-05 at the same offset and length; the added lines match nothing. Classified F9-CHANGE-ME-VALUE by hand; no other entry changed. Evidence: `reports/phase-8a-3.md` §15.
 
 | Class | Detector, object | Paths | Classification | Evidence |
 |---|---|---|---|---|
@@ -264,4 +265,5 @@ CI job `security-history` checks out the full history and runs `scripts/qa/secre
 | SH-36 | url_userinfo | blob | `b1e2f7d85360` | 0 | 4903 / 23 | `docs/reports/phase-2c.md` | F9-DOC-EXAMPLE |
 | SH-37 | url_userinfo | blob | `41dd64be03d2` | 0 | 1161 / 34 | `sdk/tests/unit/test_redaction.py` | F9-TEST-FIXTURE |
 | SH-38 | url_userinfo | blob | `41dd64be03d2` | 1 | 2551 / 35 | `sdk/tests/unit/test_redaction.py` | F9-TEST-FIXTURE |
+| SH-39 | url_userinfo | blob | `9b15078560e2` | 0 | 467 / 42 | `.env.example` | F9-CHANGE-ME-VALUE |
 <!-- secret-history-baseline:end -->

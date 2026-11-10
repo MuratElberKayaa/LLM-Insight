@@ -1,6 +1,6 @@
 # Phase 8A-3 — Groq Free Plan guard and endpoint boundary (offline)
 
-**Date:** 2026-11-09 UTC, corrected 2026-11-10 UTC. **Status: implemented and verified offline. The pre-commit architecture review found a fail-open (§12). Its correction (F1, F2) is applied and verified in §13, and was approved for one local commit (§14). Committed locally, not pushed.**
+**Date:** 2026-11-09 UTC, corrected 2026-11-10 UTC. **Status: implemented and verified offline. The pre-commit architecture review found a fail-open (§12). Its correction (F1, F2) is applied and verified in §13, and was approved for one local commit (§14). Committed as `ec2bb61` and pushed by the owner (PR #6). CI's history gate found one new occurrence of a reviewed placeholder; its baseline correction is prepared in §15 and is not committed.**
 
 §1 to §11 describe the code before the correction. Their totals were produced on that code and are kept as the record of that run. §13 holds the results on the corrected code.
 
@@ -575,3 +575,27 @@ The reviewer accepted the evidence of §13 and approved F1, F2 and the four rela
 The only change after §13 is this documentation status, so no test was rerun. `verify_phase0.py` and `git diff --cached --check` were run on the staged files. The ten Phase 8A-3 files were staged one by one and committed locally with the owner's Git identity, without a co-author trailer. The commit is not pushed. Its SHA is reported to the owner and is not recorded in the commit itself.
 
 Still open: the push (by the owner), all seven CI jobs including PostgreSQL on this code, R121's same-process method replacement, R123, and real requests (NO-GO, §10). 8A-4 has not started.
+
+## 15. CI history-gate finding on PR #6 (2026-11-10)
+
+The owner pushed `ec2bb61` and opened PR #6. The reviewer reported that, in GitHub Actions run 42759696574, job `security-history` failed at step "Strict baseline evaluation and sanitized report": 39 findings against 38 reviewed entries, one `NEW_FINDING` (`url_userinfo` in blob `9b15078560e2`, occurrence 0, `.env.example`). The other jobs of that run were not read for this report.
+
+**Cause.** The Groq block of ADR-44 changed `.env.example`, which creates a new Git blob. The gate pins each accepted occurrence to its blob id, so the existing `CHANGE_ME` placeholder in the new blob is a new occurrence and needs its own review (SECURITY.md §9). The pre-commit checks of §14 ran `validate-baseline` and the working-file detectors, but not the full-history `evaluate`, so this was not caught before the push.
+
+**Classification evidence** (local scan of the reachable history, matched bytes compared, never printed):
+
+| Check | Result |
+|---|---|
+| Local reproduction, same scanner | 39 findings, 1 NEW: `url_userinfo`, blob `9b15078560e227e1dfdf6de389ddca501f30fdfe`, occurrence 0, offset 467, length 42, paths `.env.example` |
+| The blob | is `ec2bb61:.env.example`; no other commit contains it; its only match is this one |
+| Against SH-05 (`71789f6dd7e3`, `eece127:.env.example`) | matched bytes identical, same offset and length; every byte before the match identical |
+| Matched text (described, not reproduced, because any rendering of it matches the detector) | the userinfo prefix of the `LLMI_DATABASE_URL` value: an 18-character scheme with driver, a 10-character user name, the password exactly `CHANGE_ME`, ending at the `@` |
+| What the blob adds | 911 bytes, nothing removed: the Groq block, whose keys `LLMI_GROQ_MODE`, `LLMI_GROQ_PLAN`, `LLMI_GROQ_PLAN_CHECKED_ON` and `GROQ_API_KEY` are empty; no `@` or `://` |
+
+**Correction** (no scanner, detector, class or rule changed; no entry removed or edited):
+- `security/secret-history-baseline.json`: entry SH-39 for exactly that occurrence, class F9-CHANGE-ME-VALUE with the reason and review reference of SH-01 to SH-09; totals 39, F9-CHANGE-ME-VALUE 11. `generated` is left as the record of the original classification.
+- `docs/SECURITY.md` §9: register row SH-39 and a note on the entry.
+- `scripts/qa/secret_history_gate.py`: `REVIEWED_BASELINE_SHA256` set to the gate's own `digest()` of the new baseline, `80ede79f8954f899f76a3901e61dbdfea8cdbbdfd83cea87d5bfdac31dd5661a`.
+- `scripts/qa/tests/test_secret_history_gate.py`: the self-test that pins the reviewed repository totals now expects 39 and F9-CHANGE-ME-VALUE 11.
+
+**Verification** was run in a throwaway clone of the local repository holding the reachable history with this change committed there only, so the scan covers the blobs this change creates. No commit was made in the project repository. The verification commands and results are reported to the reviewer with this change. Its first run found one further new finding, in this report: a masked copy of the matched text in the table above still had the detector's shape. It was a rendering of the placeholder, not a credential. It was removed rather than accepted, and the table now describes the match in words.
