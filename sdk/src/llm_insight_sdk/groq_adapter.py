@@ -1,9 +1,11 @@
 """Groq chat completions adapter (Phase 8A-2, ADR-42, ADR-43): one CLIENT span per physical
 `POST https://api.groq.com/openai/v1/chat/completions` request.
 
-**Offline only at this checkpoint.** `provenance="real"` is refused until the free-plan guard of
-the next checkpoint exists (`REAL_EXECUTION_ENABLED`), and `synthetic` provenance runs only over
-an `httpx.MockTransport`, so nothing in this module can reach Groq yet.
+**No real request can be made yet.** `provenance="real"` is refused while
+`REAL_EXECUTION_ENABLED` is false, and `synthetic` provenance runs only over an
+`httpx.MockTransport`. Once enabled by a reviewed change, a real client must carry the Free Plan
+guard (`groq_live.FreePlanSession`, ADR-44) as its `send_gate`: the guard authorizes each send
+after the request is built, and is told whether the request left the machine.
 
 Needs the optional dependency: `pip install "llm-insight-sdk[groq]"` (httpx 0.28.1, certifi).
 
@@ -54,9 +56,10 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import certifi
+import httpcore
 import httpx
 
 from llm_insight_sdk import _guards, instrumentation
@@ -68,6 +71,7 @@ from llm_insight_sdk.instrumentation import (
     TokenUsage,
     new_call_id,
 )
+from llm_insight_sdk.live import LiveRefusal
 from llm_insight_sdk.providers import AttemptRecord, OutcomeStatus, TextOutcome, TextRequest
 from llm_insight_sdk.telemetry import Telemetry
 
@@ -79,7 +83,8 @@ GROQ_HOST = "api.groq.com"
 GROQ_PORT = 443
 ENDPOINT_URL = f"https://{GROQ_HOST}/openai/v1/chat/completions"
 
-# The free-plan guard does not exist yet. Enabling this is a reviewed code change.
+# The guard exists (`groq_live`, ADR-44), but no Free Plan evidence has been released and real
+# requests remain NO-GO. Enabling this is a reviewed code change.
 REAL_EXECUTION_ENABLED: bool = False
 
 MAX_OUTPUT_TOKENS = 1024
@@ -130,10 +135,36 @@ _STATUS_CATEGORIES = {
 }
 
 AUDITED_LIBRARY_VERSIONS = {"httpx": "0.28.1", "httpcore": "1.0.9", "certifi": "2026.10.19"}
+# Everything the audited `ConnectionPool.__init__` and `HTTPTransport.__init__` set on an instance,
+# so anything added to or removed from either object is seen. These four must exist and be None:
+# a missing one means the object is not the audited shape, which is not the same as "not set".
+_POOL_UNSET_ATTRIBUTES = ("_proxy", "_uds", "_local_address", "_socket_options")
+_POOL_INSTANCE_ATTRIBUTES = frozenset(
+    {
+        *_POOL_UNSET_ATTRIBUTES,
+        "_ssl_context",
+        "_max_connections",
+        "_max_keepalive_connections",
+        "_keepalive_expiry",
+        "_http1",
+        "_http2",
+        "_retries",
+        "_network_backend",
+        "_connections",
+        "_requests",
+        "_optional_thread_lock",
+    }
+)
+_TRANSPORT_INSTANCE_ATTRIBUTES = frozenset({"_pool"})
 
 Provenance = Literal["real", "synthetic"]
 UsageCheck = Literal["consistent", "missing", "inconsistent"]
+# Whether the request reached the provider. `not_sent` is claimed only when that is proven.
+RequestState = Literal["not_sent", "sent", "possibly_sent"]
 _MISSING = object()
+# Raised while connecting (httpcore 1.0.9, the audited version), before any request byte is
+# written. Every later failure leaves the request possibly sent.
+_NOT_TRANSMITTED_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 
 class UnsupportedRequestError(ValueError):
@@ -279,6 +310,7 @@ class GroqCompletion:
         "response_id",
         "response_model",
         "service_tier",
+        "service_tier_withheld",
         "usage",
         "verdict",
     )
@@ -293,12 +325,14 @@ class GroqCompletion:
         service_tier: str | None,
         usage: TokenUsage | None,
         verdict: GroqVerdict,
+        service_tier_withheld: bool = False,
     ) -> None:
         self._text = text
         self.response_id = response_id
         self.id_withheld = id_withheld
         self.response_model = response_model
         self.service_tier = service_tier
+        self.service_tier_withheld = service_tier_withheld
         self.usage = usage
         self.verdict = verdict
 
@@ -388,12 +422,15 @@ def parse_completion(raw: bytes, requested_model: str) -> GroqCompletion:
 
     reported_id = body.get("id")
     response_id = _guards.check(reported_id, _guards.RESPONSE_ID)
+    reported_tier = body.get("service_tier")
+    service_tier = _keyword(reported_tier)
     return GroqCompletion(
         text=text,
         response_id=response_id,
         id_withheld=isinstance(reported_id, str) and response_id is None,
         response_model=response_model,
-        service_tier=_keyword(body.get("service_tier")),
+        service_tier=service_tier,
+        service_tier_withheld=reported_tier is not None and service_tier is None,
         usage=usage_from_groq_body(body).usage,
         verdict=verdict,
     )
@@ -490,7 +527,24 @@ def build_groq_http_client() -> httpx.Client:
 
 
 def _attr(obj: object, name: str) -> Any:
-    return getattr(obj, name, _MISSING)
+    """The attribute, or `_MISSING` if it is absent or reading it fails. Never raises, so an
+    unreadable object becomes a refusal and its error text goes nowhere."""
+    try:
+        return getattr(obj, name, _MISSING)
+    except Exception:
+        return _MISSING
+
+
+def _is_exactly(value: object, expected: int) -> bool:
+    """`True == 1` and `False == 0`, so a plain comparison would accept a bool."""
+    return type(value) is int and value == expected
+
+
+def _instance_attributes(obj: object) -> frozenset[str] | None:
+    try:
+        return frozenset(vars(obj))
+    except Exception:
+        return None
 
 
 def _routing_problems(http: httpx.Client) -> list[str]:
@@ -534,6 +588,51 @@ def groq_library_problems() -> list[str]:
     return problems
 
 
+def _pool_problems(pool: object) -> list[str]:
+    """Why `pool` is not the audited pool, in its audited shape. Every check runs whatever the
+    earlier ones found, and none depends on the object's type or class name."""
+    problems = []
+    if type(pool) is not httpcore.ConnectionPool:
+        problems.append(
+            "the direct HTTPTransport must use exactly the audited httpcore.ConnectionPool"
+        )
+    if _instance_attributes(pool) != _POOL_INSTANCE_ATTRIBUTES:
+        problems.append("the connection pool must have exactly the audited attributes")
+    unset = {name: _attr(pool, name) for name in _POOL_UNSET_ATTRIBUTES}
+    problems.extend(
+        f"the connection pool attribute {name} is missing or unreadable"
+        for name, value in unset.items()
+        if value is _MISSING
+    )
+    if any(value is not _MISSING and value is not None for value in unset.values()):
+        problems.append("no proxy, Unix socket, local address or socket option may be configured")
+    # A connection already in the pool would be handed the request without being opened here.
+    for name in ("_connections", "_requests"):
+        held = _attr(pool, name)
+        if type(held) is not list or held:
+            problems.append("the connection pool must hold no connection or queued request")
+            break
+    if not _is_exactly(_attr(pool, "_retries"), 0):
+        problems.append("transport retries must be disabled")
+    tls = _attr(pool, "_ssl_context")
+    if _attr(tls, "verify_mode") != ssl.CERT_REQUIRED or _attr(tls, "check_hostname") is not True:
+        problems.append("TLS certificate and hostname verification must be enabled")
+    return problems
+
+
+def transport_problems(transport: object) -> list[str]:
+    """Why `transport` may not carry a real Groq key. Used when a client is validated and again,
+    independently, immediately before each send."""
+    problems = []
+    if (
+        type(transport) is not httpx.HTTPTransport
+        or _instance_attributes(transport) != _TRANSPORT_INSTANCE_ATTRIBUTES
+    ):
+        problems.append("the default direct HTTPTransport (no proxy, no mock) must be used")
+    problems.extend(_pool_problems(_attr(transport, "_pool")))
+    return problems
+
+
 def live_groq_client_problems(http: object) -> list[str]:
     """Every reason `http` may not carry a real Groq key; empty when it may. Reads configuration
     only, and an unreadable attribute is a problem."""
@@ -543,19 +642,7 @@ def live_groq_client_problems(http: object) -> list[str]:
     problems.extend(_routing_problems(http))
     if _attr(http, "timeout") != GROQ_TIMEOUT:
         problems.append("the HTTP client must use the bounded Groq timeouts")
-    transport = _attr(http, "_transport")
-    pool = _attr(transport, "_pool")
-    if type(transport) is not httpx.HTTPTransport or type(pool).__name__ != "ConnectionPool":
-        problems.append("the default direct HTTPTransport (no proxy, no mock) must be used")
-    else:
-        if _attr(pool, "_retries") != 0:
-            problems.append("transport retries must be disabled")
-        tls = _attr(pool, "_ssl_context")
-        if (
-            _attr(tls, "verify_mode") != ssl.CERT_REQUIRED
-            or _attr(tls, "check_hostname") is not True
-        ):
-            problems.append("TLS certificate and hostname verification must be enabled")
+    problems.extend(transport_problems(_attr(http, "_transport")))
     return problems
 
 
@@ -581,6 +668,51 @@ def _check_http_client(http: object, provenance: str) -> None:
         problems.append("synthetic provenance needs an httpx.MockTransport")
     if problems:
         raise ConfigError("http_client: " + "; ".join(problems))
+
+
+# ---------------------------------------------------------------- the send gate (ADR-44)
+class SendPermit(Protocol):
+    """Authorization for one physical send, and the record of what happened to it."""
+
+    def transmission_starting(self) -> None: ...
+
+    def connection_not_established(self) -> None: ...
+
+    def response_received(self) -> None: ...
+
+    def finish(self, outcome: object) -> None: ...
+
+
+class SendGate(Protocol):
+    def authorize_send(self, http: httpx.Client, request: httpx.Request) -> SendPermit:
+        """Return a permit for this exact request, or raise `LiveRefusal` (nothing is sent)."""
+        ...
+
+
+def _check_send_gate(gate: object, provenance: str) -> None:
+    if provenance != "real":
+        if gate is not None:
+            raise ConfigError("send_gate: applies only to real provenance")
+        return
+    # Imported here because `groq_live` imports this module.
+    from llm_insight_sdk.groq_live import FreePlanSession
+
+    if type(gate) is not FreePlanSession:
+        raise ConfigError("send_gate: a real Groq request needs exactly a FreePlanSession")
+
+
+def _finish(permit: SendPermit | None, outcome: object) -> None:
+    if permit is None:
+        return
+    try:
+        permit.finish(outcome)
+    except Exception:  # an unfinished permit keeps the session closed, which is the safe state
+        logger.debug("llm_insight_sdk: settling the Groq send failed", exc_info=False)
+
+
+def _note_connect_failure(permit: SendPermit | None, exc: Exception) -> None:
+    if permit is not None and isinstance(exc, _NOT_TRANSMITTED_ERRORS):
+        permit.connection_not_established()
 
 
 # ---------------------------------------------------------------- the instrumented client
@@ -665,7 +797,8 @@ class ObservedGroqClient:
 
     The endpoint is a constant. `http_client` is required, so no client is created implicitly,
     and it is re-checked immediately before every send. The API key is held only here and added
-    to each request; it is never set on the HTTP client."""
+    to each request; it is never set on the HTTP client. Real provenance also needs `send_gate`,
+    which authorizes each send once the request is built: only the span's creation follows."""
 
     def __init__(
         self,
@@ -674,14 +807,17 @@ class ObservedGroqClient:
         *,
         http_client: httpx.Client,
         provenance: Provenance,
+        send_gate: SendGate | None = None,
     ) -> None:
         _check_http_client(http_client, provenance)
+        _check_send_gate(send_gate, provenance)
         if not isinstance(api_key, str) or not _API_KEY.fullmatch(api_key):
             raise ConfigError("api_key: must be a non-empty string of visible ASCII characters")
         self._telemetry = telemetry
         self._api_key = api_key
         self._http = http_client
         self._provenance: Provenance = provenance
+        self._send_gate = send_gate
 
     def __repr__(self) -> str:
         return f"ObservedGroqClient(provenance={self._provenance!r})"
@@ -753,14 +889,26 @@ class ObservedGroqClient:
             raise ConfigError("http_client: the request is not the pinned Groq request")
         return request
 
-    def _exchange(self, request: httpx.Request, requested_model: str) -> GroqCompletion:
+    def _authorize_send(self, request: httpx.Request) -> SendPermit | None:
+        _check_send_gate(self._send_gate, self._provenance)
+        if self._send_gate is None:
+            return None
+        return self._send_gate.authorize_send(self._http, request)
+
+    def _exchange(
+        self, request: httpx.Request, requested_model: str, permit: SendPermit | None
+    ) -> GroqCompletion:
         """One physical exchange. Any httpx error becomes a `GroqCallError` outside its handler,
         so the exception, which holds the request and its header, does not escape."""
         deadline = time.monotonic() + TOTAL_DEADLINE_SECONDS
         failure: GroqCallError | None = None
         raw = b""
         try:
+            if permit is not None:
+                permit.transmission_starting()
             response = self._http.send(request, stream=True, follow_redirects=False, auth=None)
+            if permit is not None:
+                permit.response_received()
             try:
                 if response.status_code != 200:
                     failure = _http_failure(response, deadline)
@@ -770,9 +918,11 @@ class ObservedGroqClient:
                     raw = _read_limited(response, MAX_RESPONSE_BYTES, deadline)
             finally:
                 response.close()
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
+            _note_connect_failure(permit, exc)
             failure = GroqCallError("timeout", "timeout")
         except httpx.TransportError as exc:
+            _note_connect_failure(permit, exc)
             failure = GroqCallError(f"httpx.{type(exc).__name__}", "connection_error")
         except httpx.HTTPError as exc:
             failure = GroqCallError(f"httpx.{type(exc).__name__}", "unexpected_error")
@@ -796,17 +946,23 @@ class ObservedGroqClient:
         _refuse_unsupported(model, input_text, max_completion_tokens, unsupported)
         _check_http_client(self._http, self._provenance)  # the client that actually sends
         request = self._build_request(_request_body(model, input_text, max_completion_tokens))
-        with self._attempt_span(
-            model, new_call_id(), prompt_name, prompt_version, max_completion_tokens
-        ) as recorder:
-            try:
-                completion = self._exchange(request, model)
-            except BaseException as exc:
-                _notify(attempt_observer, 1, exc)
-                raise
-            _record_response(recorder, completion)
-            _notify(attempt_observer, 1, completion)
-            return completion
+        permit = self._authorize_send(request)
+        try:
+            with self._attempt_span(
+                model, new_call_id(), prompt_name, prompt_version, max_completion_tokens
+            ) as recorder:
+                try:
+                    completion = self._exchange(request, model, permit)
+                except BaseException as exc:
+                    _notify(attempt_observer, 1, exc)
+                    raise
+                _record_response(recorder, completion)
+                _notify(attempt_observer, 1, completion)
+        except BaseException as exc:
+            _finish(permit, exc)
+            raise
+        _finish(permit, completion)
+        return completion
 
 
 class GroqTextAdapter:
@@ -846,7 +1002,7 @@ class GroqTextAdapter:
                 prompt_version=request.prompt_version,
                 attempt_observer=observe,
             )
-        except (UnsupportedRequestError, ConfigError):
+        except (UnsupportedRequestError, ConfigError, LiveRefusal):
             raise  # refused before anything was sent
         except Exception as exc:
             return TextOutcome(

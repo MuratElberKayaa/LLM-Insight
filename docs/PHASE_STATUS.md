@@ -451,9 +451,15 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] Checkpoint 8A-2 offline implementation: `GroqTextAdapter` (ADR-42, ADR-43). Committed locally on `feature/phase-8a-groq-adapter`, not pushed; 0 provider requests; evidence: `reports/phase-8a-2.md`
 - [x] 8A-2 offline verification, on the final code including the strict Content-Type validation: mutations 50 of 50 caught across three runs (0 survived, 0 invalid, 0 unfinished), 17 of 17 supplementary caught; SDK clean-install regression 1589 tests, 1508 passed, 0 failed, 81 skipped (database-backed); backend unit 1202 passed
 - [x] Architectural review of 8A-2, 2026-11-09: GO for commit and CI submission preparation; the Content-Type correction and offline verification accepted
-- [ ] 6 PostgreSQL integration tests of 8A-2 (`test_live_groq.py`): collected, NOT RUN
-- [ ] First CI run of 8A-2: all seven jobs NOT RUN
-- [ ] Offline checkpoints 8A-3 to 8A-7
+- [x] 8A-2 merged by PR #5 (`eece127`). Observed on GitHub: run 42675227030 on `eece127`, `main`, all seven CI jobs successful, including `python`. Only job conclusions were read, so the 6 PostgreSQL tests of `test_live_groq.py` are known to have passed only through that job's result
+- [x] Checkpoint 8A-3 offline implementation: Groq Free Plan guard and endpoint boundary (ADR-44). **Execution stays disabled** (`REAL_EXECUTION_ENABLED` false, no evidence, no allowlisted model). Committed locally on `feature/phase-8a3-free-plan-guard`, not pushed; 0 provider requests; evidence: `reports/phase-8a-3.md`
+- [x] 8A-3 offline verification: SDK clean-install regression 1894 tests, 1813 passed, 0 failed, 81 skipped (database-backed); backend unit 1202 passed; mutations 112 of 112 caught across two runs (0 survived, 0 invalid, 0 unfinished)
+- [x] Architectural review of 8A-3: CONDITIONAL GO for one local commit received 2026-11-10, subject to a final architecture verification. That verification found a fail-open in the endpoint boundary (F1, `reports/phase-8a-3.md` §12). **Commit held**
+- [x] F1/F2 correction, authorized 2026-11-10 without commit authorization: the transport and pool are compared by identity and audited shape, at client validation and again before the send, with no check skipped on a wrong type. The four unset pool attributes must be present and `None`. Corrected code: SDK clean-install regression 2056 tests, 1975 passed, 0 failed, 81 skipped (database-backed); backend unit 1202 passed; mutations 142 of 142 caught across two runs (the 112 earlier ones rerun, 30 new; 0 survived); evidence: `reports/phase-8a-3.md` §13
+- [x] Architectural review of the F1/F2 correction, 2026-11-10: GO for one local commit only. Committed locally, not pushed (`reports/phase-8a-3.md` §14)
+- [ ] R123: separately reviewed security fix for the two Gemini findings. Required before any additional real Gemini call
+- [ ] First CI run of 8A-3: all seven jobs NOT RUN; PostgreSQL not run on this code
+- [ ] Offline checkpoints 8A-4 to 8A-7
 - [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
 
 ## Commands

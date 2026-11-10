@@ -38,6 +38,7 @@ from llm_insight_sdk.groq_adapter import (
     live_groq_client_problems,
     usage_from_groq_body,
 )
+from llm_insight_sdk.groq_live import FreePlanSession
 from llm_insight_sdk.instrumentation import TokenUsage
 from llm_insight_sdk.providers import ERROR_CATEGORIES, TextGenerationAdapter, TextRequest
 from tests.conftest import PROMPT_SENTINEL
@@ -1389,7 +1390,13 @@ def test_with_the_lock_lifted_a_changed_client_is_refused_before_the_send(
     telemetry, monkeypatch, live_http, stub
 ):
     monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", True)
-    llm = ObservedGroqClient(telemetry, FAKE_GROQ_KEY, http_client=live_http, provenance="real")
+    llm = ObservedGroqClient(
+        telemetry,
+        FAKE_GROQ_KEY,
+        http_client=live_http,
+        provenance="real",
+        send_gate=FreePlanSession({}),
+    )
     live_http.follow_redirects = True
     with pytest.raises(ConfigError, match="redirects"):
         GroqTextAdapter(llm).generate_text(text_request())
