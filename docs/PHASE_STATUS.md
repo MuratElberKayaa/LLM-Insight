@@ -458,8 +458,13 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] F1/F2 correction, authorized 2026-11-10 without commit authorization: the transport and pool are compared by identity and audited shape, at client validation and again before the send, with no check skipped on a wrong type. The four unset pool attributes must be present and `None`. Corrected code: SDK clean-install regression 2056 tests, 1975 passed, 0 failed, 81 skipped (database-backed); backend unit 1202 passed; mutations 142 of 142 caught across two runs (the 112 earlier ones rerun, 30 new; 0 survived); evidence: `reports/phase-8a-3.md` §13
 - [x] Architectural review of the F1/F2 correction, 2026-11-10: GO for one local commit only. Committed as `ec2bb61` (`reports/phase-8a-3.md` §14)
 - [ ] R123: separately reviewed security fix for the two Gemini findings. Required before any additional real Gemini call
-- [ ] First CI run of 8A-3 (PR #6, run 42759696574 on `ec2bb61`, reported by the reviewer): `security-history` failed with one new finding, the reviewed `CHANGE_ME` placeholder in the new `.env.example` blob. Baseline entry SH-39 prepared for review, uncommitted (`reports/phase-8a-3.md` §15). The other jobs' results were not read for this record
-- [ ] Offline checkpoints 8A-4 to 8A-7
+- [x] First CI run of 8A-3 (PR #6, run 42759696574 on `ec2bb61`, reported by the reviewer): `security-history` failed with one new finding, the reviewed `CHANGE_ME` placeholder in the new `.env.example` blob. Baseline entry SH-39 committed as `d72379a` (`reports/phase-8a-3.md` §15); PR #6 merged into `main` at `d32f3df`. The reviewer reports that the PR run and the post-merge `main` run passed all seven jobs; those runs were not read by the implementing session
+- [x] Checkpoint 8A-4 offline implementation, authorized 2026-11-10: comparison scenarios and runner `demo_app.live_compare` (ADR-45). Groq only; `gemini` (R123) and `openrouter` (no adapter) refused; the send gate now refuses a request whose credential is not the validated `GROQ_API_KEY`. **Execution stays disabled** (lock false, no evidence, empty allowlist). Committed locally on `feature/phase-8a4-comparison-runner`, not pushed; 0 provider requests; evidence: `reports/phase-8a-4.md`
+- [x] 8A-4 offline verification: SDK clean-install regression 2200 tests, 2119 passed, 0 failed, 81 skipped (database-backed); backend unit 1208 passed; mutations 48 of 48 new and 142 of 142 earlier caught on the final code; history gate 39 = 39
+- [x] Architectural review of 8A-4, 2026-11-10: conditional GO for one local commit only; the credential-binding check and the R127 deferral approved (`reports/phase-8a-4.md` §12)
+- [ ] `.env.example` Groq comment update with its reviewed history-baseline entry (R127); **required before the first real request**
+- [ ] First CI run of 8A-4: all seven jobs NOT RUN; PostgreSQL not run on this code
+- [ ] Offline checkpoints 8A-5 to 8A-7
 - [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
 
 ## Commands

@@ -8,7 +8,8 @@ environment. Releasing either is a reviewed code change.
 **How it is used.** `FreePlanSession` is the `send_gate` of a real `ObservedGroqClient`, which
 cannot be built without one. `authorize_send` runs after the request is built and only the span's
 creation follows it. Each time it re-evaluates the whole policy against the clock and environment,
-then the endpoint boundary, then the body that will actually be sent, and only then takes the
+then the endpoint boundary, then that the request carries exactly the `GROQ_API_KEY` the policy
+just validated (Phase 8A-4), then the body that will actually be sent, and only then takes the
 single request slot. Any failure raises `LiveRefusal` and nothing is sent.
 
 **What the Free Plan check is.** Groq exposes no API that tells a client which plan its account is
@@ -29,6 +30,7 @@ Messages name the setting and the rule, never a value (like `live` and `gemini_l
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -133,6 +135,13 @@ class FreePlanDecision:
 
 
 # ---------------------------------------------------------------- policy
+def api_key_value(env: Mapping[str, str]) -> str:
+    """`GROQ_API_KEY` exactly as the policy reads it (surrounding whitespace removed), or "".
+    The runner gives the client this value, and the send gate checks that the request carries
+    it, so the credential that is validated is the one that is sent."""
+    return _Reader(env).raw(API_KEY_VAR)
+
+
 def _check_api_key(r: _Reader) -> None:
     """Presence and shape only: the value is never stored, returned or quoted."""
     key = r.raw(API_KEY_VAR)
@@ -316,6 +325,16 @@ def _request_problems(request: httpx.Request) -> list[str]:
     return problems
 
 
+def _credential_bound(request: httpx.Request, env: Mapping[str, str]) -> bool:
+    """Whether the request's one `Authorization` header is exactly `Bearer` and the key the policy
+    just validated from `env`. Compared in constant time; neither value is kept or returned."""
+    key = api_key_value(env)
+    values = request.headers.get_list("authorization")
+    if not key or len(values) != 1 or not values[0].isascii() or not key.isascii():
+        return False
+    return hmac.compare_digest(values[0].encode("ascii"), f"Bearer {key}".encode("ascii"))
+
+
 def send_boundary_problems(http: object, request: httpx.Request) -> list[str]:
     """Every reason this request may not leave on this client; empty when it may. Reads
     configuration only. Adds to `live_groq_client_problems`, which it runs first. The transport
@@ -489,13 +508,25 @@ class FreePlanSession:
         return f"FreePlanSession(state={self._state!r})"
 
     def authorize_send(self, http: httpx.Client, request: httpx.Request) -> FreePlanPermit:
-        """A permit for this exact request, or `LiveRefusal`. A refusal leaves the slot free."""
-        decision = evaluate_free_plan_policy(self._env, now=self._clock())
+        """A permit for this exact request, or `LiveRefusal`. A refusal leaves the slot free.
+        One copy of the environment is read for the whole authorization, so the policy and the
+        credential check below see the same values."""
+        env = dict(self._env)
+        decision = evaluate_free_plan_policy(env, now=self._clock())
         if decision.policy is None or decision.refusals:
             raise LiveRefusal(decision.refusals)
         problems = send_boundary_problems(http, request)
         if problems:
             raise LiveRefusal([Refusal("endpoint_boundary_violation", p) for p in problems])
+        if not _credential_bound(request, env):
+            raise LiveRefusal(
+                [
+                    Refusal(
+                        "credential_not_bound",
+                        f"the request does not carry the {API_KEY_VAR} the policy validated",
+                    )
+                ]
+            )
         body = _read_body(request)
         refusals = _body_refusals(body, decision.policy)
         if refusals or body is None:

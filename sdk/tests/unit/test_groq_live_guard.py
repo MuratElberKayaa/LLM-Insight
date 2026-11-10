@@ -592,7 +592,8 @@ def one_connection() -> httpx.Limits:
 
 
 HEADERS = {
-    "Authorization": "Bearer x",
+    # The key the policy validates (ENV): since Phase 8A-4 the gate refuses any other credential.
+    "Authorization": f"Bearer {FAKE_GROQ_KEY}",
     "Content-Type": "application/json",
     "Accept": "application/json",
     "Accept-Encoding": "identity",
@@ -1898,3 +1899,104 @@ def test_a_pool_refusal_of_the_client_carries_no_key_or_content(caplog, telemetr
         with pytest.raises(ConfigError) as refused:
             llm.generate_text(text_request())
     _assert_no_leak(refused.value, gate, caplog, client_spans(telemetry, stub))
+
+
+# ---------------------------------------------------------------- 8A-4: the credential is bound
+OTHER_KEY = "synthetic" + "-groq-other-" + "1" * 24
+
+
+def test_a_client_holding_another_key_than_the_validated_one_is_refused(
+    caplog, telemetry, stub, live_http, wire
+):
+    caplog.set_level(logging.DEBUG)
+    gate = session()
+    llm = GroqTextAdapter(
+        ObservedGroqClient(
+            telemetry, OTHER_KEY, http_client=live_http, provenance="real", send_gate=gate
+        )
+    )
+    with pytest.raises(LiveRefusal) as refused:
+        llm.generate_text(text_request())
+    assert codes(refused.value) == {"credential_not_bound"}
+    assert_untouched(wire, gate)
+    assert not groq_live._PROCESS_SLOT.locked()
+    for secret in (FAKE_GROQ_KEY, OTHER_KEY):
+        assert secret not in str(refused.value) and secret not in caplog.text
+    assert client_spans(telemetry, stub) == []
+
+
+def test_the_key_validated_at_the_send_is_compared_not_the_one_at_construction(
+    telemetry, live_http, wire
+):
+    env = env_with()
+    gate = session(env)
+    llm = guarded(telemetry, live_http, gate)
+    env["GROQ_API_KEY"] = OTHER_KEY  # still a valid shape, but not the key the client holds
+    with pytest.raises(LiveRefusal) as refused:
+        llm.generate_text(text_request())
+    assert codes(refused.value) == {"credential_not_bound"}
+    assert_untouched(wire, gate)
+
+
+def test_surrounding_whitespace_is_read_as_the_policy_reads_it(telemetry, live_http, wire):
+    wire.steps.append(ok())
+    gate = session(env_with(GROQ_API_KEY=f" {FAKE_GROQ_KEY}\n"))
+    assert guarded(telemetry, live_http, gate).generate_text(text_request()).status == "completed"
+    assert wire.requests[0].headers.get_list("authorization") == [f"Bearer {FAKE_GROQ_KEY}"]
+
+
+def test_api_key_value_reads_exactly_what_the_policy_validates():
+    assert groq_live.api_key_value({"GROQ_API_KEY": f"\t{FAKE_GROQ_KEY} "}) == FAKE_GROQ_KEY
+    assert groq_live.api_key_value({}) == ""
+    assert groq_live.api_key_value({"GROQ_API_KEY": "   "}) == ""
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        pytest.param(f"Bearer  {FAKE_GROQ_KEY}", id="two-spaces"),
+        pytest.param(f"bearer {FAKE_GROQ_KEY}", id="lowercase-scheme"),
+        pytest.param(f"Bearer {FAKE_GROQ_KEY} ", id="trailing-space"),
+        pytest.param(f"Bearer {FAKE_GROQ_KEY[:-1]}", id="truncated"),
+        pytest.param(f"Bearer {FAKE_GROQ_KEY}x", id="extended"),
+        pytest.param(f"Basic {FAKE_GROQ_KEY}", id="other-scheme"),
+        pytest.param(FAKE_GROQ_KEY, id="no-scheme"),
+    ],
+)
+def test_only_the_exact_bearer_credential_is_authorized(live_http, authorization):
+    headers = {**HEADERS, "Authorization": authorization}
+    gate = session()
+    with pytest.raises(LiveRefusal) as refused:
+        gate.authorize_send(live_http, pinned_request(live_http, headers=headers))
+    assert "credential_not_bound" in codes(refused.value)
+    assert not groq_live._PROCESS_SLOT.locked()
+
+
+def test_a_non_ascii_credential_is_never_authorized(live_http):
+    headers = {**HEADERS, "Authorization": "Bearer key-é".encode("latin-1")}
+    gate = session(env_with(GROQ_API_KEY="key-é"))
+    with pytest.raises(LiveRefusal):
+        gate.authorize_send(live_http, pinned_request(live_http, headers=headers))
+    assert not groq_live._PROCESS_SLOT.locked()
+
+
+def test_the_exact_validated_credential_is_authorized(live_http):
+    assert session().authorize_send(live_http, pinned_request(live_http)) is not None
+
+
+def test_the_credential_helper_never_binds_an_empty_key(live_http):
+    """The policy refuses a missing key first; the helper must still never match `Bearer `."""
+    headers = {**HEADERS, "Authorization": "Bearer "}
+    request = pinned_request(live_http, headers=headers)
+    assert groq_live._credential_bound(request, {}) is False
+    assert groq_live._credential_bound(request, {"GROQ_API_KEY": "   "}) is False
+
+
+def test_the_credential_helper_refuses_non_ascii_without_raising(live_http):
+    request = pinned_request(
+        live_http, headers={**HEADERS, "Authorization": "Bearer kéy".encode("latin-1")}
+    )
+    assert groq_live._credential_bound(request, {"GROQ_API_KEY": "kéy"}) is False
+    request = pinned_request(live_http)
+    assert groq_live._credential_bound(request, {"GROQ_API_KEY": "kéy"}) is False
+    assert groq_live._credential_bound(request, {"GROQ_API_KEY": FAKE_GROQ_KEY}) is True

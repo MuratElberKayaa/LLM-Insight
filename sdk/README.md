@@ -301,6 +301,26 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
   3 (the provider answered but validation or export is not confirmed). Telemetry stays
   metadata-only. Phase 7B tests never contact a provider.
 
+## Groq adapter, Free Plan guard and comparison runner (Phase 8A)
+
+- **Adapter (`llm_insight_sdk.groq_adapter`, ADR-42, ADR-43):** `ObservedGroqClient` and
+  `GroqTextAdapter` over a direct `httpx` client from `build_groq_http_client()`. One chat
+  completion with one user message = one CLIENT span (`groq`, `chat`); no tools, streaming,
+  retries, redirects or fallback model. Usage is Groq's reported counts or unknown; cost is
+  always unknown (ADR-40). Extra: `pip install "llm-insight-sdk[groq]"`.
+- **Free Plan guard (`llm_insight_sdk.groq_live`, ADR-44):** a real client needs
+  `FreePlanSession` as its send gate, which re-checks the policy, the endpoint boundary, the
+  credential and the exact body immediately before the send. **Real requests are refused in this
+  version**: `REAL_EXECUTION_ENABLED` is false and no Free Plan evidence or model is released.
+  Since Phase 8A-4 the gate also refuses a request whose `Authorization` is not exactly the
+  `GROQ_API_KEY` the policy validated (`groq_live.api_key_value`).
+- **Comparison runner (ADR-45):** `python -m demo_app.live_compare --provider groq --scenario
+  <id>` runs one of three fixed SYNTHETIC scenarios (`cmp-ticket-triage`, `cmp-json-aggregate`,
+  `cmp-release-summary`, each with its own `prompt_version`): dry run by default, `--execute`
+  for at most one request, metadata-only JSON on stdout, exit codes 0/1/2/3. `gemini` and
+  `openrouter` are refused. Run it with the key and project ID of a dedicated comparison
+  project. Phase 8A tests never contact a provider.
+
 ## What is recorded
 
 One `CLIENT` span per physical attempt, named `{gen_ai.operation.name} {gen_ai.request.model}`
