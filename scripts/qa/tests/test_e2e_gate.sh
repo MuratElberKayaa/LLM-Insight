@@ -106,6 +106,14 @@ case "$1 ${2:-} ${3:-}" in
 esac
 if [ "$1 ${2:-}" = "-m app" ]; then
   [ -z "${FAKE_BACKEND_DIES:-}${FAKE_BACKEND_EXITS:-}" ] || exit 27
+  # R133: the rate-limit settings this process received, and uvicorn 0.54.0's startup lines.
+  printf 'backend-env api_rps=%s api_burst=%s authfail=%s ingest_rps=%s ingest_burst=%s\n' \
+    "${LLMI_RATE_LIMIT_API_RPS:-unset}" "${LLMI_RATE_LIMIT_API_BURST:-unset}" \
+    "${LLMI_RATE_LIMIT_AUTHFAIL_PER_MIN:-unset}" "${LLMI_RATE_LIMIT_INGEST_RPS:-unset}" \
+    "${LLMI_RATE_LIMIT_INGEST_BURST:-unset}" >> "$FAKE_LOG"
+  printf 'INFO:     Started server process [4242]\nINFO:     Waiting for application startup.\n'
+  printf 'INFO:     Application startup complete.\n'
+  printf 'INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)\n'
   while :; do /usr/bin/sleep 0.2; done
 fi
 exit 99
@@ -173,6 +181,7 @@ SH
 cat > "$FAKE_BIN/npx" <<'SH'
 #!/usr/bin/env bash
 printf 'npx LLMI_E2E_CI=%s %s\n' "${LLMI_E2E_CI:-unset}" "$*" >> "$FAKE_LOG"
+printf 'npx-env api_rps=%s api_burst=%s\n' "${LLMI_RATE_LIMIT_API_RPS:-unset}" "${LLMI_RATE_LIMIT_API_BURST:-unset}" >> "$FAKE_LOG"
 case "$*" in
   "playwright --version") echo "${FAKE_PW_VERSION:-Version 1.64.0}"; exit 0 ;;
   "playwright install --with-deps chromium") [ -z "${FAKE_INSTALL_FAIL:-}" ] || exit 41; exit 0 ;;
@@ -298,6 +307,12 @@ if [ "$(grep -c 'npx LLMI_E2E_CI=1 playwright test --reporter=list,json' "$FAKE_
 if grep -q 'venv -m app$' "$FAKE_LOG"; then note_pass; else note_fail "real backend not started"; fi
 if [ -f "$WORK/temp/e2e-summary/summary.json" ] && [ -f "$WORK/temp/e2e-summary/summary.md" ] && [ "$(find "$WORK/temp/e2e-summary" -type f | wc -l)" -eq 2 ]; then note_pass; else note_fail "summary files"; fi
 if grep -q '"verdict": "PASS"' "$WORK/temp/e2e-summary/summary.json"; then note_pass; else note_fail "summary verdict"; fi
+# R133: the sanitized summary records zero rejections; the raw backend log is never in it.
+if grep -q '"backend_rate_limited": 0' "$WORK/temp/e2e-summary/summary.json"; then note_pass; else note_fail "summary lacks backend_rate_limited 0"; fi
+if grep -q 'Uvicorn running on' "$WORK/temp/e2e-summary/summary.json" "$WORK/temp/e2e-summary/summary.md"; then note_fail "backend log reached the summary"; else note_pass; fi
+# R133: the sized bucket reaches the main backend process only, and nothing else changes.
+if [ "$(grep '^backend-env ' "$FAKE_LOG")" = "backend-env api_rps=1000 api_burst=1000 authfail=unset ingest_rps=unset ingest_burst=unset" ]; then note_pass; else note_fail "main backend rate-limit environment"; fi
+if [ "$(grep -c '^npx-env ' "$FAKE_LOG")" -ge 4 ] && ! grep '^npx-env ' "$FAKE_LOG" | grep -qv '^npx-env api_rps=unset api_burst=unset$'; then note_pass; else note_fail "rate-limit settings leaked into Playwright"; fi
 password="$(grep '^POSTGRES_PASSWORD=' "$TREE/.env" | cut -d= -f2-)"
 token="$(grep '^LLMI_ADMIN_TOKEN=' "$TREE/.env" | cut -d= -f2-)"
 if [ -n "$password" ] && ! grep -q -- "$password" "$WORK/out.log" "$FAKE_LOG" && ! grep -q -- "$token" "$WORK/out.log" "$FAKE_LOG"; then note_pass; else note_fail "a generated value was printed"; fi
@@ -390,6 +405,41 @@ fail_at "M project left behind" test "FIXTURE_TEARDOWN" 'FAKE_REMAINING=[99]'
 fail_at "M only four projects deleted" test "FIXTURE_TEARDOWN" 'FAKE_DELETED=[1,2,3,4]'
 fail_at "M six projects deleted" test "FIXTURE_TEARDOWN" 'FAKE_DELETED=[1,2,3,4,5,6]'
 fail_at "M a project id repeated" test "FIXTURE_TEARDOWN" 'FAKE_DELETED=[1,1,2,3,4]'
+
+echo "== R133 main backend log"
+BACKEND_LOG="$WORK/temp/e2e/backend.log"
+backend_log_case() { # <name> <want or empty for success> <missing|empty|blank|directory|replace|append> [line]
+  local name=$1 want=$2 mode=$3 line=${4:-}
+  setup
+  until_phase test || return 0
+  case "$mode" in
+    missing) rm -f "$BACKEND_LOG" ;;
+    empty) : > "$BACKEND_LOG" ;;
+    blank) printf '\n  \n' > "$BACKEND_LOG" ;;
+    directory) rm -f "$BACKEND_LOG"; mkdir "$BACKEND_LOG" ;;
+    replace) printf '%s\n' "$line" > "$BACKEND_LOG" ;;
+    append) printf '%s\n' "$line" >> "$BACKEND_LOG" ;;
+  esac
+  if [ -n "$want" ]; then expect_fail "$name" test "$want"; else expect_ok "$name" test; fi
+}
+backend_log_case "R133 log missing" "BACKEND_LOG_MISSING" missing
+backend_log_case "R133 log unreadable" "BACKEND_LOG_MISSING" directory
+backend_log_case "R133 log empty" "BACKEND_LOG_EMPTY" empty
+backend_log_case "R133 log blank" "BACKEND_LOG_EMPTY" blank
+backend_log_case "R133 no startup line" "BACKEND_LOG_NO_STARTUP" replace "INFO:     Started server process [4242]"
+backend_log_case "R133 startup on another port" "BACKEND_LOG_NO_STARTUP" replace "INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)"
+backend_log_case "R133 api rate limited" "BACKEND_RATE_LIMITED" append "api rejected reason=api_rate_limited client=127.0.0.1"
+backend_log_case "R133 auth-failure bucket" "BACKEND_RATE_LIMITED" append "api rejected reason=authfail_rate_limited client=127.0.0.1"
+backend_log_case "R133 ingest key bucket" "BACKEND_RATE_LIMITED" append "ingest rejected reason=key_rate_limited key_id=7"
+backend_log_case "R133 ingest auth-failure bucket" "BACKEND_RATE_LIMITED" append "ingest rejected reason=authfail_rate_limited client=127.0.0.1"
+backend_log_case "R133 prefixed rejection" "BACKEND_RATE_LIMITED" append "WARNING app.api.admin: api rejected reason=api_rate_limited client=127.0.0.1"
+backend_log_case "R133 ordinary auth failure passes" "" append "api auth failed reason=mismatch client=127.0.0.1"
+if grep -q '"backend_auth_failed": 1' "$WORK/temp/e2e-summary/summary.json" && grep -q '"backend_rate_limited": 0' "$WORK/temp/e2e-summary/summary.json"; then note_pass; else note_fail "auth failure counted apart from rejections"; fi
+if grep -q 'reason=mismatch\|client=127' "$WORK/temp/e2e-summary/summary.json" "$WORK/out.log"; then note_fail "a backend log line was printed"; else note_pass; fi
+backend_log_case "R133 failure reports the count only" "BACKEND_RATE_LIMITED 2 requests" append "api rejected reason=api_rate_limited client=127.0.0.1
+api rejected reason=api_rate_limited client=127.0.0.1"
+if grep -q 'client=127' "$WORK/out.log" "$WORK/temp/e2e-summary/summary.json"; then note_fail "a rejection line was printed"; else note_pass; fi
 
 echo "== report privacy"
 setup; until_phase test

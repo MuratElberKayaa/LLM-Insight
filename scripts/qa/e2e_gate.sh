@@ -25,6 +25,13 @@ project="llmi-r1045-${GITHUB_RUN_ID}"
 state="${RUNNER_TEMP}/e2e"
 py="${LLMI_PYTHON:-python}"
 ready_url="http://127.0.0.1:8000/health/ready"
+# R133: the main backend's /api/v1 bucket is keyed by client address, and the dashboard's
+# server-side reads and the tests' direct reads all come from 127.0.0.1, so the suite's own
+# navigation (3-5 parallel reads per page load) can drain the default 10/s, burst 20.
+# Sized for this E2E backend process only: far above the suite's peak, still finite, so a
+# request storm fails the backend-log check of the report. The production defaults, the
+# auth-failure and ingest buckets, and the :8001/:8002 backends of the 429 tests are unchanged.
+readonly e2e_api_rps=1000 e2e_api_burst=1000
 env_args=(--env .env --env frontend/.env.local)
 unset COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_FILE
 
@@ -121,7 +128,11 @@ database() {
 
 start_backend() {
   require_done prepare install database
-  ( cd backend && exec nohup .venv/bin/python -m app ) > "$state/backend.log" 2>&1 &
+  (
+    cd backend
+    export LLMI_RATE_LIMIT_API_RPS="$e2e_api_rps" LLMI_RATE_LIMIT_API_BURST="$e2e_api_burst"
+    exec nohup .venv/bin/python -m app
+  ) > "$state/backend.log" 2>&1 &
   local pid=$! attempt
   echo "$pid" > "$state/backend.pid"
   for ((attempt = 0; attempt < 60; attempt++)); do
@@ -172,7 +183,7 @@ run_tests() {
     PLAYWRIGHT_JSON_OUTPUT_NAME="$state/playwright.json" timeout 900 npx playwright test --reporter=list,json 2>&1
   ) | check redact "${env_args[@]}" | tee "$state/playwright.log" || status=$?
   check report --list "$state/list.json" --report "$state/playwright.json" --log "$state/playwright.log" \
-    --exit-status "$status" "${env_args[@]}" --out-dir "$RUNNER_TEMP/e2e-summary"
+    --backend-log "$state/backend.log" --exit-status "$status" "${env_args[@]}" --out-dir "$RUNNER_TEMP/e2e-summary"
 }
 
 cleanup() {

@@ -49,6 +49,16 @@ def kinds(problems):
     return {item["kind"] for item in problems}
 
 
+# R133: uvicorn 0.54.0's startup lines for the main E2E backend, as written to backend.log.
+STARTUP = (
+    "INFO:     Started server process [4242]\n"
+    "INFO:     Waiting for application startup.\n"
+    "INFO:     Application startup complete.\n"
+    "INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)\n"
+)
+API_REJECTED = "api rejected reason=api_rate_limited client=127.0.0.1"
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -335,7 +345,7 @@ class Reports(Base):
             lines.append("[e2e] teardown: " + json.dumps(body))
         return "\n".join(lines) + "\n"
 
-    def run_check(self, listed=None, report=None, log=None, status=0):
+    def run_check(self, listed=None, report=None, log=None, status=0, backend=None):
         for name, value in (
             ("list.json", listed if listed is not None else self.listed()),
             ("run.json", report if report is not None else self.passed()),
@@ -344,8 +354,18 @@ class Reports(Base):
         (self.tmp / "log").write_text(
             self.log() if log is None else log, encoding="utf-8"
         )
+        (self.tmp / "backend.log").write_text(
+            STARTUP if backend is None else backend, encoding="utf-8"
+        )
+        return self.evaluate(status)
+
+    def evaluate(self, status=0):
         return check.evaluate_report(
-            self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", status
+            self.tmp / "list.json",
+            self.tmp / "run.json",
+            self.tmp / "log",
+            status,
+            self.tmp / "backend.log",
         )
 
     def test_complete_green_run_passes(self):
@@ -353,6 +373,22 @@ class Reports(Base):
         self.assertEqual(problems, [])
         self.assertEqual(len(rows), self.COUNT)
         self.assertEqual(totals["passed"], self.COUNT)
+        self.assertEqual(totals["backend_rate_limited"], 0)
+        self.assertEqual(totals["backend_auth_failed"], 0)
+
+    def test_r133_a_rejection_fails_an_otherwise_green_run(self):
+        problems, rows, totals = self.run_check(backend=STARTUP + API_REJECTED + "\n")
+        self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+        self.assertEqual(len(rows), self.COUNT)
+        self.assertEqual(totals["passed"], self.COUNT)
+        self.assertEqual(totals["backend_rate_limited"], 1)
+
+    def test_r133_the_backend_log_is_checked_when_the_report_is_missing(self):
+        self.run_check(backend="")
+        (self.tmp / "run.json").unlink()
+        problems = self.evaluate()[0]
+        self.assertIn("REPORT_MISSING", kinds(problems))
+        self.assertIn("BACKEND_LOG_EMPTY", kinds(problems))
 
     def test_i_failed_test_fails_even_with_exit_zero(self):
         specs = [self.spec(i) for i in range(self.COUNT)]
@@ -571,23 +607,17 @@ class Reports(Base):
             with self.subTest(name):
                 self.run_check()
                 (self.tmp / name).unlink()
-                found = check.evaluate_report(
-                    self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", 0
-                )[0]
+                found = self.evaluate()[0]
                 self.assertIn(kind, kinds(found))
         self.run_check()
         (self.tmp / "run.json").write_text("[]", encoding="utf-8")
-        found = check.evaluate_report(
-            self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", 0
-        )[0]
+        found = self.evaluate()[0]
         self.assertIn("REPORT_MALFORMED", kinds(found))
 
     def test_missing_log_fails(self):
         self.run_check()
         (self.tmp / "log").unlink()
-        found = check.evaluate_report(
-            self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", 0
-        )[0]
+        found = self.evaluate()[0]
         self.assertIn("LOG_MISSING", kinds(found))
 
     def test_nested_suites_are_counted(self):
@@ -623,33 +653,177 @@ class Reports(Base):
             ["summary.json", "summary.md"],
         )
 
+    def cli(self, exit_status="1", backend_log=True):
+        env = self.write("env", self.env_values())
+        argv = [
+            "report",
+            "--list",
+            str(self.tmp / "list.json"),
+            "--report",
+            str(self.tmp / "run.json"),
+            "--log",
+            str(self.tmp / "log"),
+            "--exit-status",
+            exit_status,
+            "--env",
+            str(env),
+            "--out-dir",
+            str(self.tmp / "s"),
+        ]
+        if backend_log:
+            argv[7:7] = ["--backend-log", str(self.tmp / "backend.log")]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = check.main(argv)
+        return code, output.getvalue()
+
     def test_cli_writes_a_summary_and_fails_without_printing_values(self):
         problems_status = self.run_check(status=1)[0]
         self.assertTrue(problems_status)
-        env = self.write("env", self.env_values())
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            code = check.main(
-                [
-                    "report",
-                    "--list",
-                    str(self.tmp / "list.json"),
-                    "--report",
-                    str(self.tmp / "run.json"),
-                    "--log",
-                    str(self.tmp / "log"),
-                    "--exit-status",
-                    "1",
-                    "--env",
-                    str(env),
-                    "--out-dir",
-                    str(self.tmp / "s"),
-                ]
-            )
+        code, output = self.cli()
         self.assertEqual(code, 1)
-        self.assertIn("PLAYWRIGHT_FAILED", output.getvalue())
-        self.assertNotIn(GOOD[SECRET_VAR], output.getvalue())
+        self.assertIn("PLAYWRIGHT_FAILED", output)
+        self.assertNotIn(GOOD[SECRET_VAR], output)
         self.assertTrue((self.tmp / "s/summary.json").exists())
+
+    def test_r133_a_green_summary_records_zero_rejections_and_no_log_text(self):
+        self.run_check(
+            backend=STARTUP + "api auth failed reason=mismatch client=127.0.0.1\n"
+        )
+        code, output = self.cli(exit_status="0")
+        self.assertEqual(code, 0, output)
+        summary = json.loads((self.tmp / "s/summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["verdict"], "PASS")
+        self.assertEqual(summary["totals"]["backend_rate_limited"], 0)
+        self.assertEqual(summary["totals"]["backend_auth_failed"], 1)
+        for text in (
+            (self.tmp / "s/summary.json").read_text(encoding="utf-8"),
+            (self.tmp / "s/summary.md").read_text(encoding="utf-8"),
+            output,
+        ):
+            self.assertNotIn("Uvicorn running", text)
+            self.assertNotIn("client=127", text)
+            self.assertNotIn("reason=mismatch", text)
+        self.assertIn("'backend_rate_limited': 0", output)
+
+    def test_r133_a_rejection_fails_the_cli_with_the_count_only(self):
+        self.run_check(backend=STARTUP + (API_REJECTED + "\n") * 3)
+        code, output = self.cli(exit_status="0")
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "BACKEND_RATE_LIMITED 3 requests rejected by the main backend rate limit",
+            output,
+        )
+        self.assertNotIn("client=127", output)
+        summary = json.loads((self.tmp / "s/summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["verdict"], "FAIL")
+        self.assertEqual(summary["totals"]["backend_rate_limited"], 3)
+
+    def test_r133_the_backend_log_argument_is_required(self):
+        self.run_check()
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self.cli(exit_status="0", backend_log=False)
+
+
+class BackendLog(Base):
+    """R133: the main backend's log is read fail-closed and only counted."""
+
+    def check_text(self, text):
+        path = self.tmp / "backend.log"
+        path.write_bytes(text if isinstance(text, bytes) else text.encode("utf-8"))
+        return check.check_backend_log(path)
+
+    def test_a_clean_startup_passes_with_zero_counts(self):
+        self.assertEqual(
+            self.check_text(STARTUP),
+            ([], {"backend_rate_limited": 0, "backend_auth_failed": 0}),
+        )
+
+    def test_every_rate_limit_rejection_fails(self):
+        for line in (
+            API_REJECTED,
+            "api rejected reason=authfail_rate_limited client=127.0.0.1",
+            "ingest rejected reason=authfail_rate_limited client=127.0.0.1",
+            "ingest rejected reason=key_rate_limited key_id=7",
+            "WARNING:app.api:" + API_REJECTED,
+            "2026-11-11 11:38:12 WARNING " + API_REJECTED + " extra",
+        ):
+            with self.subTest(line):
+                problems, counts = self.check_text(STARTUP + line + "\n")
+                self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+                self.assertEqual(counts["backend_rate_limited"], 1)
+
+    def test_a_rejection_before_the_startup_lines_still_counts(self):
+        problems, counts = self.check_text(API_REJECTED + "\n" + STARTUP)
+        self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+        self.assertEqual(counts["backend_rate_limited"], 1)
+
+    def test_ordinary_auth_failures_are_counted_apart_and_pass(self):
+        problems, counts = self.check_text(
+            STARTUP
+            + "api auth failed reason=mismatch client=127.0.0.1\n"
+            + "api auth failed reason=missing client=127.0.0.1\n"
+            + "ingest auth failed reason=unknown_key prefix=- client=127.0.0.1\n"
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(counts, {"backend_rate_limited": 0, "backend_auth_failed": 3})
+
+    def test_other_lines_are_not_rejections(self):
+        problems, counts = self.check_text(
+            STARTUP
+            + "ingest body rejected status=413 key_id=7 client=127.0.0.1\n"
+            + 'INFO:     127.0.0.1:5 - "GET /api/v1/traces HTTP/1.1" 200 OK\n'
+            + "api rejected reason=api_rate_limitedX client=127.0.0.1\n"
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(counts["backend_rate_limited"], 0)
+
+    def test_count_is_per_line(self):
+        problems, counts = self.check_text(STARTUP + (API_REJECTED + "\n") * 4)
+        self.assertEqual(counts["backend_rate_limited"], 4)
+        self.assertEqual(problems[0]["detail"].split()[0], "4")
+
+    def test_missing_or_unreadable_log_fails(self):
+        self.assertEqual(
+            kinds(check.check_backend_log(self.tmp / "absent.log")[0]),
+            {"BACKEND_LOG_MISSING"},
+        )
+        (self.tmp / "dir.log").mkdir()
+        self.assertEqual(
+            kinds(check.check_backend_log(self.tmp / "dir.log")[0]),
+            {"BACKEND_LOG_MISSING"},
+        )
+
+    def test_empty_or_blank_log_fails(self):
+        for text in ("", "\n", "  \n\t\n"):
+            with self.subTest(repr(text)):
+                self.assertEqual(kinds(self.check_text(text)[0]), {"BACKEND_LOG_EMPTY"})
+
+    def test_log_without_verified_startup_fails(self):
+        running = "INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)\n"
+        complete = "INFO:     Application startup complete.\n"
+        any_address = ".".join(["0"] * 4)  # assembled: a literal is a Bandit B104 match
+        for text in (
+            "INFO:     Started server process [4242]\n",
+            running,
+            complete,
+            complete + running.replace(":8000", ":8001"),
+            complete + running.replace("127.0.0.1", any_address),
+            complete + running.replace("http://", "https://"),
+            # A rejection without startup evidence is still a startup failure first.
+            API_REJECTED + "\n",
+        ):
+            with self.subTest(text):
+                self.assertEqual(
+                    kinds(self.check_text(text)[0]), {"BACKEND_LOG_NO_STARTUP"}
+                )
+
+    def test_undecodable_bytes_are_read_and_still_checked(self):
+        problems, counts = self.check_text(
+            STARTUP.encode() + b"\xff\xfe junk\n" + API_REJECTED.encode() + b"\n"
+        )
+        self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+        self.assertEqual(counts["backend_rate_limited"], 1)
 
 
 class E2eInputs(unittest.TestCase):
@@ -700,6 +874,80 @@ class E2eInputs(unittest.TestCase):
         for role in roles:
             with self.subTest(role):
                 self.assertIn(f"{role}=${{result.projects.{role}}}", setup)
+
+    def test_r133_patterns_cover_exactly_the_backend_messages(self):
+        """Every rate-limit rejection the backend logs is one the gate fails on, and every
+        authentication failure it logs is counted apart. A new rejection reason fails here."""
+        import ast
+
+        rejections, auth_failures = [], []
+        for path in sorted((REPO / "backend/app").rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if " rejected reason=" in node.value:
+                        rejections.append(node.value)
+                    elif " auth failed reason=" in node.value:
+                        auth_failures.append(node.value)
+        reasons = {re.search(r"rejected reason=(\w+)", m).group(1) for m in rejections}
+        self.assertEqual(reasons, set(check.RATE_LIMIT_REASONS))
+        self.assertEqual(len(rejections), 4)  # api x2, ingest x2
+        self.assertEqual(len(auth_failures), 2)  # api, ingest
+        for message in rejections:
+            with self.subTest(message):
+                self.assertRegex(message, check.RATE_LIMITED)
+                self.assertNotRegex(message, check.AUTH_FAILED)
+        for message in auth_failures:
+            with self.subTest(message):
+                self.assertRegex(message, check.AUTH_FAILED)
+                self.assertNotRegex(message, check.RATE_LIMITED)
+
+    def test_r133_gate_sizes_only_the_main_backend_process(self):
+        gate = self.text("scripts/qa/e2e_gate.sh")
+        self.assertEqual(
+            gate.count("readonly e2e_api_rps=1000 e2e_api_burst=1000\n"), 1
+        )
+        start = gate[gate.index("start_backend() {") :]
+        start = start[: start.index("\n}\n")]
+        self.assertIn(
+            "  (\n    cd backend\n"
+            '    export LLMI_RATE_LIMIT_API_RPS="$e2e_api_rps"'
+            ' LLMI_RATE_LIMIT_API_BURST="$e2e_api_burst"\n'
+            "    exec nohup .venv/bin/python -m app\n"
+            '  ) > "$state/backend.log" 2>&1 &\n',
+            start,
+        )
+        # Set nowhere else in the gate: not for Playwright, the dashboards or 8001/8002.
+        self.assertEqual(gate.count("LLMI_RATE_LIMIT_"), 2)
+        self.assertNotIn("AUTHFAIL", gate)
+        self.assertNotIn("INGEST", gate)
+        self.assertEqual(gate.count('--backend-log "$state/backend.log"'), 1)
+
+    def test_r133_production_defaults_and_429_backends_are_unchanged(self):
+        config = self.text("backend/app/core/config.py")
+        for line in (
+            "rate_limit_ingest_rps: float = Field(default=20, gt=0)",
+            "rate_limit_ingest_burst: int = Field(default=40, gt=0)",
+            "rate_limit_api_rps: float = Field(default=10, gt=0)",
+            "rate_limit_api_burst: int = Field(default=20, gt=0)",
+            "rate_limit_authfail_per_min: int = Field(default=30, gt=0)",
+            'env_prefix="LLMI_"',
+        ):
+            with self.subTest(line):
+                self.assertIn(line, config)
+        pw = self.text("frontend/playwright.config.ts")
+        for line in (
+            (
+                'env: { LLMI_PORT: "8001", LLMI_RATE_LIMIT_API_RPS: "0.001",'
+                ' LLMI_RATE_LIMIT_API_BURST: "5" },'
+            ),
+            (
+                'env: { LLMI_PORT: "8002", LLMI_RATE_LIMIT_API_RPS: "0.001",'
+                ' LLMI_RATE_LIMIT_API_BURST: "6" },'
+            ),
+        ):
+            with self.subTest(line):
+                self.assertEqual(pw.count(line), 1)
+        self.assertEqual(pw.count("LLMI_RATE_LIMIT_"), 4)
 
     def test_no_test_mocks_the_backend_or_is_focused(self):
         for path in sorted((REPO / "frontend/tests/e2e").glob("*.spec.ts")):

@@ -6,7 +6,8 @@ scripts/qa/e2e_gate.sh runs the stack on the GitHub runner and hands its outputs
   compose  the effective Compose model: run-specific project, PostgreSQL only, loopback port
   ports    the ports of the E2E topology are free
   redact   filters a stream, replacing the generated values
-  report   the Playwright JSON report: every discovered test ran and passed, none was skipped
+  report   the Playwright JSON report: every discovered test ran and passed, none was skipped,
+           and the main backend's log shows a completed startup and no rate-limit rejection
 
 Every failure exits 1 and prints only a fixed kind and a sanitized detail, never a value.
 """
@@ -43,6 +44,21 @@ TEARDOWN_LINE = re.compile(r"\[e2e\] teardown: (\{.*\})")
 # The run-owned projects of scripts/dev/e2e_fixtures.py `names()`: main, foreign,
 # providers, hostile and (Phase 8A-6) comparison. The teardown must delete each once.
 OWNED_PROJECTS = 5
+# R133: the log of the main E2E backend (127.0.0.1:8000). The gate sizes its /api/v1 bucket
+# so the suite cannot drain it, so any rate-limit rejection there means a page rendered a 429
+# state that no test asked for. Only counts leave this file: the log holds request paths and
+# client addresses and is never printed or uploaded.
+# uvicorn 0.54.0 startup lines (pinned by backend/tests/unit/test_r133_log_messages.py).
+BACKEND_RUNNING = "Uvicorn running on " + BACKEND_ORIGIN + " (Press CTRL+C to quit)"
+BACKEND_STARTED = "Application startup complete."
+# The rate-limit rejections of app/api/admin.py and app/services/ingestion/service.py, and
+# their ordinary authentication failures (401), which are expected and never a rejection.
+# Unanchored, so a prefix added to the log format cannot hide a line.
+RATE_LIMIT_REASONS = ("api_rate_limited", "authfail_rate_limited", "key_rate_limited")
+RATE_LIMITED = re.compile(
+    r"\b(?:api|ingest) rejected reason=(?:" + "|".join(RATE_LIMIT_REASONS) + r")\b"
+)
+AUTH_FAILED = re.compile(r"\b(?:api|ingest) auth failed reason=")
 MAX_ANNOTATED = 20
 LIMITATIONS = [
     "Chromium bundled with Playwright is not the Microsoft Edge used by the local default.",
@@ -256,9 +272,46 @@ def check_lifecycle(log_path):
     return []
 
 
-def evaluate_report(list_path, report_path, log_path, exit_status):
+def check_backend_log(path):
+    """Returns (problems, counts). Fails closed: a missing, unreadable or empty log, or one
+    without the backend's completed startup on 127.0.0.1:8000, is a problem, as is any
+    rate-limit rejection. Authentication failures are counted apart and are not problems."""
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return [problem("BACKEND_LOG_MISSING", "the backend log cannot be read")], {}
+    if not raw.strip():
+        return [problem("BACKEND_LOG_EMPTY", "the backend log is empty")], {}
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+    if not (
+        any(BACKEND_RUNNING in line for line in lines)
+        and any(BACKEND_STARTED in line for line in lines)
+    ):
+        return [
+            problem(
+                "BACKEND_LOG_NO_STARTUP",
+                "the backend log shows no completed startup on 127.0.0.1:8000",
+            )
+        ], {}
+    counts = {
+        "backend_rate_limited": sum(1 for line in lines if RATE_LIMITED.search(line)),
+        "backend_auth_failed": sum(1 for line in lines if AUTH_FAILED.search(line)),
+    }
+    if counts["backend_rate_limited"]:
+        return [
+            problem(
+                "BACKEND_RATE_LIMITED",
+                f"{counts['backend_rate_limited']} requests rejected by the main"
+                " backend rate limit",
+            )
+        ], counts
+    return [], counts
+
+
+def evaluate_report(list_path, report_path, log_path, exit_status, backend_log_path):
     """Returns (problems, rows, totals)."""
     problems = []
+    backend_problems, backend_counts = check_backend_log(backend_log_path)
     if exit_status != 0:
         kind = "PLAYWRIGHT_TIMEOUT" if exit_status == 124 else "PLAYWRIGHT_FAILED"
         problems.append(problem(kind, f"exit status {exit_status}"))
@@ -267,7 +320,11 @@ def evaluate_report(list_path, report_path, log_path, exit_status):
     data, found = load_json(report_path, "REPORT")
     problems += found
     if listed is None or data is None:
-        return problems + check_lifecycle(log_path), [], {}
+        return (
+            problems + check_lifecycle(log_path) + backend_problems,
+            [],
+            dict(backend_counts),
+        )
     expected_ids = sorted(identity(f, s) for f, s, _t in iter_tests(listed["suites"]))
     if not expected_ids:
         problems.append(problem("DISCOVERY_EMPTY", "no test was discovered"))
@@ -318,7 +375,8 @@ def evaluate_report(list_path, report_path, log_path, exit_status):
     if any(value != 0 for value in retries_of(data)) or not retries_of(data):
         problems.append(problem("RETRIES_ENABLED", "retries must be zero"))
     problems += check_lifecycle(log_path)
-    return problems, rows, {"discovered": len(expected_ids), **counts}
+    problems += backend_problems
+    return problems, rows, {"discovered": len(expected_ids), **counts, **backend_counts}
 
 
 def clean_label(text, needles):
@@ -388,6 +446,7 @@ def main(argv=None):
     rep.add_argument("--report", required=True)
     rep.add_argument("--log", required=True)
     rep.add_argument("--exit-status", type=int, required=True)
+    rep.add_argument("--backend-log", required=True)
     rep.add_argument("--env", action="append", required=True)
     rep.add_argument("--out-dir", required=True)
     args = parser.parse_args(argv)
@@ -420,7 +479,7 @@ def main(argv=None):
             [problem("REDACT_ENV", "the env files cannot be read")], ""
         )
     problems, rows, totals = evaluate_report(
-        args.list, args.report, args.log, args.exit_status
+        args.list, args.report, args.log, args.exit_status, args.backend_log
     )
     problems = [
         {**item, "detail": clean_label(item["detail"], needles)} for item in problems
