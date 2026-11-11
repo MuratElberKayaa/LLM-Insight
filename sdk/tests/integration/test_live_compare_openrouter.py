@@ -90,6 +90,11 @@ PROMPT_TEXTS = tuple(
     text for s in cs.SCENARIOS.values() for text in (s.task, s.fixture, cs.compose_input(s))
 )
 OPENROUTER_PRICE_VERSION = "SYNTHETIC-openrouter-it-v1"
+TODAY = NOW.astimezone(UTC).date().isoformat()  # the UTC date the guards compare against
+ATTESTATION_DATE_VARS = {
+    "groq": "LLMI_GROQ_PLAN_CHECKED_ON",
+    "openrouter": "LLMI_OPENROUTER_ACCOUNT_CHECKED_ON",
+}
 
 
 # ---------------------------------------------------------------- fixtures
@@ -167,8 +172,17 @@ def new_project(live: LiveBackend, label: str) -> Project:
     return Project(int(row[0]), key)
 
 
-def env_for(provider: str, live: LiveBackend, owner: Project) -> dict[str, str]:
+def provider_env(provider: str) -> dict[str, str]:
+    """The guard tests' SYNTHETIC environment, with the operator attestation dated on this
+    module's injected clock: an attestation is valid for one day only, and the Groq guard tests
+    use an earlier `NOW` than this module."""
     env = dict(OPENROUTER_ENV if provider == "openrouter" else GROQ_ENV)
+    env[ATTESTATION_DATE_VARS[provider]] = TODAY
+    return env
+
+
+def env_for(provider: str, live: LiveBackend, owner: Project) -> dict[str, str]:
+    env = provider_env(provider)
     env.update(
         {
             "LLMI_LIVE_MAX_OUTPUT_TOKENS": "1024",
@@ -227,6 +241,23 @@ def stored_text(live: LiveBackend, pid: int) -> str:
 
 def compare_groups(live: LiveBackend, scope: Mapping[str, Any], **params: str) -> list[dict]:
     return live.api(f"/api/v1/models/compare?{urlencode({**scope, **params})}")["groups"]
+
+
+# ---------------------------------------------------------------- the fixture's own consistency
+@pytest.mark.usefixtures("released")
+@pytest.mark.parametrize("provider", ["groq", "openrouter"])
+def test_each_synthetic_environment_is_attested_on_the_injected_clock(provider):
+    """Database-free. The runner reads its clock from `NOW`, so a fixture attested on another day
+    is refused as stale before any send (PR #11, run 43092031596)."""
+    env = provider_env(provider)
+    assert env[ATTESTATION_DATE_VARS[provider]] == TODAY == "2026-11-11"
+    if provider == "groq":
+        decision = groq_live.evaluate_free_plan_policy(env, now=NOW)
+    else:
+        decision = openrouter_live.evaluate_free_model_policy(env, now=NOW)
+    assert decision.allowed, sorted(r.code for r in decision.refusals)
+    # The shared guard-test fixtures are not changed by this module.
+    assert GROQ_ENV["LLMI_GROQ_PLAN_CHECKED_ON"] == "2026-11-09"
 
 
 # ---------------------------------------------------------------- as shipped
