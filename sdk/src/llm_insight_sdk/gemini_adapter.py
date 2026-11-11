@@ -427,6 +427,20 @@ def live_gemini_client_problems(client: object) -> list[str]:
         tls = attr(pool, "_ssl_context")
         if attr(tls, "verify_mode") != ssl.CERT_REQUIRED or attr(tls, "check_hostname") is not True:
             problems.append("TLS certificate and hostname verification must be enabled")
+        # R123 (2): a context with key logging writes the TLS session keys to a file. A missing
+        # attribute (not an `ssl.SSLContext`) is refused as well, never read as "off".
+        if type(tls) is not ssl.SSLContext or attr(tls, "keylog_filename") is not None:
+            problems.append("TLS key logging must be off")
+    # The library's async client and websocket context are never used to send, but each holds
+    # a TLS context of its own, built from the environment unless one is given (R123).
+    async_tls = attr(
+        attr(attr(attr(api, "_async_httpx_client"), "_transport"), "_pool"), "_ssl_context"
+    )
+    websocket_args = attr(api, "_websocket_ssl_ctx")  # request arguments: {"ssl": context}
+    websocket_tls = websocket_args.get("ssl") if isinstance(websocket_args, dict) else _MISSING
+    for context, where in ((async_tls, "async client"), (websocket_tls, "websocket")):
+        if type(context) is not ssl.SSLContext or attr(context, "keylog_filename") is not None:
+            problems.append(f"TLS key logging must be off ({where})")
     return problems
 
 

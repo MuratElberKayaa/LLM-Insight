@@ -250,8 +250,18 @@ def test_redirects_are_never_followed(stub, recorder, status):
     assert doc["error_category"] == "http_error"
 
 
-def test_an_unreadable_ca_setting_refuses_before_sending(stub, recorder, monkeypatch):
-    monkeypatch.setenv("SSL_CERT_FILE", str(REPO / "does-not-exist.pem"))
+def test_a_ca_setting_in_the_environment_refuses_before_sending(stub, recorder, monkeypatch):
+    """Since R123 the runner's TLS contexts never read the environment, so a CA setting cannot
+    take effect; the policy refuses it instead of ignoring it."""
+    for var in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+        env = {**runner_env(stub.endpoint), var: str(REPO / "does-not-exist.pem")}
+        code, doc = _execute_real(stub, env)
+        assert code == 2 and recorder == [] and doc["provider_request_sent"] is False
+        assert {r["code"] for r in doc["refusals"]} == {"client_env_override"}
+
+
+def test_an_unreadable_ca_bundle_refuses_before_sending(stub, recorder, monkeypatch):
+    monkeypatch.setattr(live_gemini.certifi, "where", lambda: str(REPO / "does-not-exist.pem"))
     code, doc = _execute_real(stub, runner_env(stub.endpoint))
     assert code == 2 and recorder == [] and doc["provider_request_sent"] is False
     assert doc["refusals"][0]["code"] == "client_construction_failed"
@@ -264,6 +274,67 @@ def test_the_client_is_checked_again_immediately_before_the_send(telemetry, reco
     )
     client._api_client._http_options.base_url = "https://evil.example/"  # changed after the check
     with pytest.raises(ConfigError):
+        adapter.generate_text(
+            TextRequest(model=MODEL, input_text="SYNTHETIC", max_output_tokens=16)
+        )
+    assert recorder == []
+
+
+# ---------------------------------------------------------------- R123 (2): TLS key logging
+def _tls(client: genai.Client) -> ssl.SSLContext:
+    return client._api_client._httpx_client._transport._pool._ssl_context
+
+
+def test_r123_a_key_logging_tls_context_is_refused_by_the_client_check(tmp_path):
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.keylog_filename = str(tmp_path / "keys.log")
+    problems = live_gemini_client_problems(client_with(http=safe_http(verify=context)))
+    assert problems == ["TLS key logging must be off"]
+
+
+def test_r123_the_runner_client_never_opens_a_key_log(monkeypatch, tmp_path):
+    """Even with the variable set (which the policy refuses first), the runner's own TLS context
+    neither logs keys nor creates the file, and still verifies against exactly certifi."""
+    log = tmp_path / "keys.log"
+    monkeypatch.setenv("SSLKEYLOGFILE", str(log))
+    client = runner_client()
+    tls = _tls(client)
+    assert tls.keylog_filename is None and not log.exists()
+    assert tls.verify_mode == ssl.CERT_REQUIRED and tls.check_hostname is True
+    assert tls.minimum_version >= ssl.TLSVersion.TLSv1_2
+    pinned = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    pinned.load_verify_locations(cafile=certifi.where())
+    assert tls.get_ca_certs(binary_form=True) == pinned.get_ca_certs(binary_form=True)
+    api = client._api_client
+    async_tls = api._async_httpx_client._transport._pool._ssl_context
+    assert (
+        async_tls.keylog_filename is None and api._websocket_ssl_ctx["ssl"].keylog_filename is None
+    )
+    assert live_gemini_client_problems(client) == []
+
+
+def test_r123_the_librarys_own_async_client_is_checked_for_key_logging(monkeypatch, tmp_path):
+    """google-genai builds its async client and websocket context from the environment unless
+    they are given; with SSLKEYLOGFILE set, both log keys, so such a client is refused. The sync
+    client here is key-log-free, so only the library's own contexts are reported."""
+    sync = safe_http(verify=live_gemini.verifying_tls_context())
+    monkeypatch.setenv("SSLKEYLOGFILE", str(tmp_path / "keys.log"))
+    problems = live_gemini_client_problems(client_with(http=sync))
+    assert problems == [
+        "TLS key logging must be off (async client)",
+        "TLS key logging must be off (websocket)",
+    ]
+
+
+def test_r123_key_logging_switched_on_after_the_check_is_refused_before_the_send(
+    telemetry, recorder, tmp_path
+):
+    client = runner_client()
+    adapter = GeminiTextAdapter(
+        ObservedGeminiClient(telemetry, client, provenance="real", require_live_endpoint=True)
+    )
+    _tls(client).keylog_filename = str(tmp_path / "keys.log")  # changed after the check
+    with pytest.raises(ConfigError, match="TLS key logging must be off"):
         adapter.generate_text(
             TextRequest(model=MODEL, input_text="SYNTHETIC", max_output_tokens=16)
         )

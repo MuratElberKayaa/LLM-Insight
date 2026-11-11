@@ -33,6 +33,7 @@ Messages name the setting and the rule, never a value (like `live` and `config`)
 from __future__ import annotations
 
 import os
+import re
 import threading
 import uuid
 from collections.abc import Mapping, Sequence
@@ -67,7 +68,17 @@ CLIENT_ENV_OVERRIDES = (
     "GOOGLE_APPLICATION_CREDENTIALS",
     "GOOGLE_API_USE_MTLS_ENDPOINT",
     "GOOGLE_API_USE_CLIENT_CERTIFICATE",
+    # R123 (2): `ssl.create_default_context` honours it even though the client ignores the
+    # environment, so TLS session keys would be written to that file.
+    "SSLKEYLOGFILE",
+    # The runner's TLS contexts trust exactly the pinned certifi bundle, so a CA setting would be
+    # silently ignored; it is refused instead, as by the Groq and OpenRouter guards.
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
 )
+# R123 (1): exactly YYYY-MM-DD. `date.fromisoformat` alone also accepts other ISO 8601 forms of
+# the same length, such as the week date `2026-W45-1`.
+_UTC_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 @dataclass(frozen=True)
@@ -145,7 +156,7 @@ def _attestation(r: _Reader, now: datetime) -> date | None:
         )
     raw = r.raw("LLMI_GEMINI_TIER_CHECKED_ON")
     try:
-        checked = date.fromisoformat(raw) if len(raw) == 10 else None
+        checked = date.fromisoformat(raw) if _UTC_DATE.fullmatch(raw) else None
     except ValueError:
         checked = None
     if checked is None:

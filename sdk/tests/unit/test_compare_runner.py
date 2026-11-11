@@ -573,7 +573,15 @@ def test_a_client_that_is_not_the_audited_shape_is_refused(stub, wire):
 
 # ---------------------------------------------------------------- providers
 @pytest.mark.parametrize("mode", [[], ["--execute"]])
-def test_gemini_is_refused_before_anything_is_read(stub, mode):
+def test_a_provider_without_an_executable_path_is_refused_before_anything_is_read(
+    stub, mode, monkeypatch
+):
+    """Since ADR-49 every registered provider is executable; the refusal path stays for any
+    entry without one."""
+    blocked = runner.ProviderEntry(
+        "gemini", "gcp.gemini", runner.Refusal("provider_blocked", "SYNTHETIC block")
+    )
+    monkeypatch.setattr(runner, "PROVIDERS", {**runner.PROVIDERS, "gemini": blocked})
     env = Recording(runner_env(stub.endpoint))
     never = NeverBuilt()
     rc, doc, _ = run(["--provider", "gemini", "--scenario", TICKET, *mode], env, http_factory=never)
@@ -586,10 +594,11 @@ def test_gemini_is_refused_before_anything_is_read(stub, mode):
 def test_the_provider_registry_is_closed():
     assert set(runner.PROVIDERS) == {"groq", "gemini", "openrouter"}
     executable = [name for name, e in runner.PROVIDERS.items() if e.refusal is None]
-    assert executable == ["groq", "openrouter"]
+    assert executable == ["groq", "gemini", "openrouter"]
     assert runner.PROVIDERS["groq"].executable is runner.GROQ
+    assert runner.PROVIDERS["gemini"].executable is runner.GEMINI
     assert runner.PROVIDERS["openrouter"].executable is runner.OPENROUTER
-    assert runner.PROVIDERS["gemini"].executable is None
+    assert runner.GEMINI.run is runner.run_gemini_request  # the shared Gemini path, no gate copy
     with pytest.raises(TypeError):
         runner.PROVIDERS["other"] = runner.PROVIDERS["groq"]  # type: ignore[index]
 
@@ -760,10 +769,15 @@ def test_the_runner_imports_no_other_provider_library():
     assert result.stdout.strip() == "[]"
 
 
-def test_the_gemini_runners_are_not_imported_or_changed_by_this_runner():
+def test_the_gemini_runners_are_imported_only_for_a_gemini_run():
+    """ADR-49: the Gemini modules are loaded through `_gemini_modules` only, never at import."""
     source = Path(runner.__file__).read_text(encoding="utf-8")
-    assert "live_gemini" not in source and "gemini_live" not in source
+    import_lines = [line for line in source.splitlines() if line.startswith(("import ", "from "))]
+    assert not [line for line in import_lines if "gemini" in line or "google" in line]
+    assert source.count('importlib.import_module("demo_app.live_gemini")') == 1
     assert "follow_redirects=True" not in source
+    gemini_runner = (REPO / "demo_app" / "live_gemini.py").read_text(encoding="utf-8")
+    assert "live_compare" not in gemini_runner
 
 
 def test_a_reviewed_scenario_with_a_bad_pin_is_refused_before_the_policy(stub, monkeypatch):

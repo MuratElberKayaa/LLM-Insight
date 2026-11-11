@@ -633,3 +633,29 @@ The architectural review of `reports/phase-8a-0.md` authorized checkpoint 8A-1 (
 - **Consequences:** a Groq run and an OpenRouter run of the same scenario, in the dedicated comparison project, give two `/models/compare` rows with the same `prompt_version`. One sample each is never a ranking (R126).
 - **Affected files:** `demo_app/live_compare.py`, `frontend/components/models/model-comparison.tsx`, `README.md`, `sdk/README.md`.
 - **Tests:** `sdk/tests/unit/test_compare_runner.py` (registry, schema), `sdk/tests/unit/test_compare_runner_openrouter.py`, `sdk/tests/integration/test_live_compare_openrouter.py`, `frontend/tests/unit/phase3c.test.tsx`.
+
+### ADR-49 — Gemini joins the comparison runner through its shared Free Tier path; R123 fixed (amends ADR-48's registry and ADR-35's refused settings)
+- **Status:** Implemented offline by the three-provider readiness instruction (2026-11-11); for the architectural review. **Amends ADR-48** in one point: `gemini` is no longer refused as `provider_blocked`. **Amends ADR-35** by adding `SSLKEYLOGFILE`, `SSL_CERT_FILE` and `SSL_CERT_DIR` to the refused settings and requiring a strict `YYYY-MM-DD` attestation date. ADR-34's endpoint check gains the key-logging rule. **It permits no provider request.**
+- **Context:** Gemini is a mandatory comparison provider. R123 blocked any further real Gemini call until two findings were fixed and reviewed. An offline probe for this change also found that google-genai builds an async client and websocket TLS arguments of its own with `ssl.create_default_context`, which opens any `SSLKEYLOGFILE`, even when a sync client is given.
+- **Decision:**
+  - **R123 (1):** `LLMI_GEMINI_TIER_CHECKED_ON` must match `[0-9]{4}-[0-9]{2}-[0-9]{2}` before `date.fromisoformat`, as in ADR-44 and ADR-47.
+  - **R123 (2):** three layers.
+    - The policy refuses `SSLKEYLOGFILE`, `SSL_CERT_FILE` and `SSL_CERT_DIR`.
+    - The runner client's TLS context is `ssl.SSLContext(PROTOCOL_TLS_CLIENT)` with TLS 1.2 or newer and the pinned `certifi` bundle. It never reads the environment, and it is given to google-genai for the sync client, the async client, `client_args` and `async_client_args`.
+    - `live_gemini_client_problems` refuses a context that is not an `ssl.SSLContext` or has key logging on, in the sending client, the async client and the websocket arguments. That check runs at construction and again immediately before the send.
+  - **Comparison path:** `--provider gemini` runs through the unchanged `live_gemini.run_single_request`: the Free Tier policy, the session reservation and settlement, and the endpoint checks. The runner adds:
+    - exactly one model (`model_list_not_single`);
+    - a second policy evaluation immediately before, which must equal the planned one;
+    - the one process slot shared by all three providers;
+    - request states claimed from the outcome only: `not_sent` before the send began, `sent` for a classified response, `possibly_sent` for a timeout, connection or unexpected error.
+
+    The answer is validated from the first candidate's non-thought text only.
+  - **Loading:** the Gemini modules are imported through `importlib` only for a Gemini run, so Groq and OpenRouter runs never load google-genai. `sdk_checkout_match` checks `gemini_live` and `gemini_adapter` as well on a Gemini run.
+  - **No new lock, no release:** the Gemini guard's lock remains its evidence window (R140). The shipped evidence (2026-10-28 13:00 UTC, 14 days) expired on 2026-11-11 13:00 UTC, so every real Gemini request is refused. Re-releasing it is a reviewed change.
+- **Alternatives rejected:**
+  - a Gemini send gate copied from ADR-44: a second, divergent Gemini security path;
+  - importing the Gemini runner at module level: Groq and OpenRouter runs would load google-genai;
+  - refreshing `FREE_TIER_VERIFIED_AT` in this change: that would re-enable real Gemini requests without the per-provider authorization.
+- **Consequences:** the three providers run the same pinned scenarios through one runner, each through its own guard, one request per process. R123 is fixed, for review. Gemini stays refused until its evidence is re-released.
+- **Affected files:** `sdk/src/llm_insight_sdk/{gemini_live,gemini_adapter}.py`, `demo_app/{live_gemini,live_compare}.py`, `SECURITY.md` §6, `README.md`, `sdk/README.md`.
+- **Tests:** `sdk/tests/unit/{test_gemini_live_guard,test_gemini_endpoint,test_compare_runner,test_compare_runner_gemini}.py`, `sdk/tests/integration/test_live_compare_three_providers.py`.
