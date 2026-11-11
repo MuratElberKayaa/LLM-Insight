@@ -40,7 +40,7 @@ SCHEMA_SUMMARY = "llm-insight/secret-history-summary/v1"
 # SHA-256 of the canonical reviewed baseline. Changing the baseline therefore also needs a reviewed
 # change of this constant and of the docs/SECURITY.md register; CI never regenerates any of them.
 REVIEWED_BASELINE_SHA256 = (
-    "80ede79f8954f899f76a3901e61dbdfea8cdbbdfd83cea87d5bfdac31dd5661a"
+    "203d442266a1a5eb2594ac5141c8cc201cbc81bb7f3ea9e33c8c1a9d2ea153f7"
 )
 
 OID = re.compile(r"[0-9a-f]{40}\Z")

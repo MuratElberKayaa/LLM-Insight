@@ -1,7 +1,7 @@
-"""Phase 8A-4 comparison runner: one fixed SYNTHETIC scenario, at most one provider request.
+"""Comparison runner (ADR-45, ADR-48): one fixed SYNTHETIC scenario, at most one provider request.
 
-    sdk/.venv/Scripts/python -m demo_app.live_compare --provider groq --scenario <id>   # dry run
-    sdk/.venv/Scripts/python -m demo_app.live_compare --provider groq --scenario <id> --execute
+    sdk/.venv/Scripts/python -m demo_app.live_compare --provider <groq|openrouter> --scenario <id>
+    sdk/.venv/Scripts/python -m demo_app.live_compare --provider ... --scenario <id> --execute
 
 **The default is a dry run.** It checks the scenario, the provider's guard policy, the audited
 libraries, the installed SDK against this checkout, the backend and the dashboard project, and
@@ -10,12 +10,14 @@ complete flag; abbreviations are refused) sends one request only when every gate
 here retries, continues, falls back to another model or provider, or runs a second scenario.
 **Never re-run automatically after a failure**: a timeout may have reached the provider.
 
-**Providers** form a closed registry. Only `groq` can be executed, through the unchanged Free Plan
-guard and endpoint boundary (ADR-43, ADR-44): `groq_live.FreePlanSession` is the client's send
-gate and re-checks everything immediately before the send. In this version that guard refuses
-every real request (`REAL_EXECUTION_ENABLED` is false and no Free Plan evidence is released).
-`gemini` is refused until the R123 security fix is reviewed, and `openrouter` is refused because no
-OpenRouter adapter exists. Both are refused before any setting is read.
+**Providers** form a closed registry. Two can be executed, each through its own unchanged guard
+and the shared audited endpoint boundary (ADR-43, ADR-44, ADR-47):
+- `groq`: `groq_live.FreePlanSession` is the send gate (Free Plan attestation, ADR-44);
+- `openrouter`: `openrouter_live.FreeModelSession` is the send gate (one verified `:free` model,
+  no fallback, zero-price routing, no purchased credits, ADR-47).
+In this version both guards refuse every real request: each provider's execution lock is false and
+no evidence is released. `gemini` is refused until the R123 security fix is reviewed, before any
+setting is read.
 
 **The credential** is read once from the same environment the policy validates and handed to the
 client, which never sets it on the HTTP client. The send gate checks that the request carries
@@ -25,13 +27,13 @@ exactly that validated key. No key, input or output is printed, logged or export
 with `python -m app.cli create-key --project llm-insight-compare` and use that key and project ID
 here. The SDK cannot verify which project a key belongs to, so `project_id_source` says so. Each
 scenario has its own `prompt_version`, so `/models/compare` keeps one row per provider, model and
-scenario.
+scenario. Identical scenario text and output cap are sent to every provider.
 
 Stdout is one JSON line, schema `llminsight.demo.compare.v1`, with metadata only (`--help` is the
 sole exception). Exit codes: 0 dry run printed, or the provider completed, local validation passed
 and export is confirmed; 1 the provider failed or blocked the answer, or the call was interrupted
 after the send may have begun; 2 refused before a provider send; 3 the provider answered but local
-validation did not pass or export is not confirmed, or a Free Plan violation indicator halted the
+validation did not pass or export is not confirmed, or a free-only violation indicator halted the
 session (`free_plan_violation`). Cost is always `unknown`, never 0.
 """
 
@@ -57,7 +59,7 @@ import llm_insight_sdk as lli
 from demo_app import comparison_scenarios
 from demo_app.comparison_scenarios import ComparisonScenario, ValidationResult
 from demo_app.live_common import DEFAULT_DASHBOARD_URL, check_backend, emit
-from llm_insight_sdk import groq_adapter, groq_live
+from llm_insight_sdk import groq_adapter, groq_live, openrouter_adapter, openrouter_live
 from llm_insight_sdk.config import ConfigError
 from llm_insight_sdk.groq_adapter import (
     GroqCompletion,
@@ -66,6 +68,14 @@ from llm_insight_sdk.groq_adapter import (
     UnsupportedRequestError,
 )
 from llm_insight_sdk.live import LiveRefusal, Refusal, input_token_bound
+from llm_insight_sdk.openrouter_adapter import (
+    ObservedOpenRouterClient,
+    OpenRouterCompletion,
+    OpenRouterTextAdapter,
+)
+from llm_insight_sdk.openrouter_adapter import (
+    UnsupportedRequestError as OpenRouterUnsupported,
+)
 from llm_insight_sdk.providers import TextOutcome, TextRequest
 from llm_insight_sdk.telemetry import Telemetry, TelemetryStats
 
@@ -83,6 +93,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _AUDITED_SDK_MODULES = (
     "groq_live",
     "groq_adapter",
+    "openrouter_live",
+    "openrouter_adapter",
     "live",
     "providers",
     "instrumentation",
@@ -97,12 +109,150 @@ COST_BASIS = (
     "Free Plan: no billed amount is reported and no stored price applies to groq (ADR-40); "
     "a published per-token price is never shown as a charge; unknown is never 0"
 )
+OPENROUTER_ACCOUNT_BASIS = (
+    "operator attestation that the OpenRouter account has no purchased credits, no BYOK and no "
+    "automatic top-up; not verified with OpenRouter's billing system"
+)
+OPENROUTER_COST_BASIS = (
+    "free model: no stored price applies to openrouter (ADR-40); the provider-reported usage.cost "
+    "is in credits, is checked to be exactly 0 by the guard and is never ledger data; unknown is "
+    "never 0"
+)
 
 CheckoutMatch = Literal[True, False, "unknown"]
 RequestState = Literal["not_sent", "sent", "possibly_sent"]
 ExportOutcome = Literal["confirmed", "failed", "partial", "unknown"]
 HttpFactory = Callable[[], httpx.Client]
 Clock = Callable[[], datetime]
+
+
+# ---------------------------------------------------------------- executable providers
+@dataclass(frozen=True)
+class Executable:
+    """Everything that differs between the two executable providers. Each callable looks its
+    target up when called, so the audited functions are the ones in their modules."""
+
+    provider: str
+    endpoint: str
+    request_fields: tuple[str, ...]
+    evaluate: Callable[[Mapping[str, str], datetime], Any]
+    library_problems: Callable[[], list[str]]
+    client_problems: Callable[[object], list[str]]
+    default_http: HttpFactory
+    api_key_value: Callable[[Mapping[str, str]], str]
+    new_session: Callable[[Mapping[str, str], Clock], Any]
+    new_client: Callable[..., Any]
+    new_adapter: Callable[[Any], Any]
+    unsupported: tuple[type[Exception], ...]
+    min_output_tokens: int
+    max_requests: int
+    max_input_tokens: int
+    deadline: float
+    constraints_extra: Callable[[], dict[str, Any]]
+    plan_extra: Callable[[Any], dict[str, Any]]
+    cost_extra: Callable[[Any, TextOutcome | None], dict[str, Any]]
+
+
+def _groq_plan(policy: groq_live.FreePlanPolicy) -> dict[str, Any]:
+    return {
+        "plan": groq_live.PLAN_FREE,
+        "plan_checked_on": policy.plan_checked_on.isoformat(),
+        "plan_basis": PLAN_BASIS,
+        "free_plan_evidence_verified_at": _iso(groq_live.FREE_PLAN_EVIDENCE_VERIFIED_AT),
+    }
+
+
+def _groq_cost(policy: groq_live.FreePlanPolicy, outcome: TextOutcome | None) -> dict[str, Any]:
+    return {
+        "plan": groq_live.PLAN_FREE,
+        "plan_checked_on": policy.plan_checked_on.isoformat(),
+        "plan_basis": PLAN_BASIS,
+        "basis": COST_BASIS,
+    }
+
+
+def _openrouter_plan(policy: openrouter_live.FreeModelPolicy) -> dict[str, Any]:
+    return {
+        "account_state": openrouter_live.ACCOUNT_STATE,
+        "account_checked_on": policy.account_checked_on.isoformat(),
+        "account_basis": OPENROUTER_ACCOUNT_BASIS,
+        "free_model_evidence_verified_at": _iso(openrouter_live.FREE_MODEL_EVIDENCE_VERIFIED_AT),
+        "zero_price_routing_verified_at": _iso(openrouter_live.ZERO_PRICE_ROUTING_VERIFIED_AT),
+        "routing": dict(openrouter_adapter.PROVIDER_ROUTING),
+        "model_fallback": False,
+    }
+
+
+def _openrouter_cost(
+    policy: openrouter_live.FreeModelPolicy, outcome: TextOutcome | None
+) -> dict[str, Any]:
+    completion = outcome.provider_response if outcome is not None else None
+    signals = completion.signals if isinstance(completion, OpenRouterCompletion) else None
+    return {
+        "account_state": openrouter_live.ACCOUNT_STATE,
+        "account_checked_on": policy.account_checked_on.isoformat(),
+        "account_basis": OPENROUTER_ACCOUNT_BASIS,
+        "basis": OPENROUTER_COST_BASIS,
+        # States only, never an amount: `zero` means the response reported exactly 0 credits.
+        "provider_reported_cost": signals.reported_cost if signals is not None else None,
+        "provider_reported_byok": signals.is_byok if signals is not None else None,
+    }
+
+
+GROQ = Executable(
+    provider=groq_adapter.PROVIDER,
+    endpoint=groq_adapter.ENDPOINT_URL,
+    request_fields=("model", "messages", "max_completion_tokens", "stream", "include_reasoning"),
+    evaluate=lambda env, now: groq_live.evaluate_free_plan_policy(env, now=now),
+    library_problems=lambda: groq_adapter.groq_library_problems(),
+    client_problems=lambda http: groq_adapter.live_groq_client_problems(http),
+    default_http=lambda: groq_adapter.build_groq_http_client(),
+    api_key_value=lambda env: groq_live.api_key_value(env),
+    new_session=lambda env, clock: groq_live.FreePlanSession(env, clock=clock),
+    new_client=ObservedGroqClient,
+    new_adapter=GroqTextAdapter,
+    unsupported=(ConfigError, UnsupportedRequestError),
+    min_output_tokens=groq_live.MIN_OUTPUT_TOKENS,
+    max_requests=groq_live.MAX_REQUESTS_CAP,
+    max_input_tokens=groq_live.MAX_INPUT_TOKENS_CAP,
+    deadline=groq_adapter.TOTAL_DEADLINE_SECONDS,
+    constraints_extra=lambda: {
+        "include_reasoning": False,
+        "real_execution_enabled": groq_adapter.REAL_EXECUTION_ENABLED,
+        "free_plan_models_released": len(groq_live.FREE_PLAN_MODELS),
+    },
+    plan_extra=_groq_plan,
+    cost_extra=_groq_cost,
+)
+
+OPENROUTER = Executable(
+    provider=openrouter_adapter.PROVIDER,
+    endpoint=openrouter_adapter.ENDPOINT_URL,
+    request_fields=openrouter_adapter.REQUEST_FIELDS,
+    evaluate=lambda env, now: openrouter_live.evaluate_free_model_policy(env, now=now),
+    library_problems=lambda: groq_adapter.groq_library_problems(),
+    client_problems=lambda http: openrouter_adapter.live_openrouter_client_problems(http),
+    default_http=lambda: openrouter_adapter.build_openrouter_http_client(),
+    api_key_value=lambda env: openrouter_live.api_key_value(env),
+    new_session=lambda env, clock: openrouter_live.FreeModelSession(env, clock=clock),
+    new_client=ObservedOpenRouterClient,
+    new_adapter=OpenRouterTextAdapter,
+    unsupported=(ConfigError, OpenRouterUnsupported),
+    min_output_tokens=openrouter_live.MIN_OUTPUT_TOKENS,
+    max_requests=openrouter_live.MAX_REQUESTS_CAP,
+    max_input_tokens=openrouter_live.MAX_INPUT_TOKENS_CAP,
+    deadline=openrouter_adapter.TOTAL_DEADLINE_SECONDS,
+    constraints_extra=lambda: {
+        "include_reasoning": False,  # sent as `reasoning: {exclude: true}`
+        "routing": dict(openrouter_adapter.PROVIDER_ROUTING),
+        "model_variant": openrouter_adapter.FREE_SUFFIX,
+        "real_execution_enabled": openrouter_adapter.REAL_EXECUTION_ENABLED,
+        "free_models_released": len(openrouter_live.FREE_MODELS),
+        "zero_price_routing_verified": openrouter_live.ZERO_PRICE_ROUTING_VERIFIED_AT is not None,
+    },
+    plan_extra=_openrouter_plan,
+    cost_extra=_openrouter_cost,
+)
 
 
 # ---------------------------------------------------------------- providers
@@ -113,11 +263,12 @@ class ProviderEntry:
     name: str  # the command-line value
     provider: str  # the telemetry `gen_ai.provider.name`
     refusal: Refusal | None = None
+    executable: Executable | None = None
 
 
 PROVIDERS: Mapping[str, ProviderEntry] = MappingProxyType(
     {
-        "groq": ProviderEntry("groq", groq_adapter.PROVIDER),
+        "groq": ProviderEntry("groq", groq_adapter.PROVIDER, executable=GROQ),
         "gemini": ProviderEntry(
             "gemini",
             "gcp.gemini",
@@ -127,12 +278,7 @@ PROVIDERS: Mapping[str, ProviderEntry] = MappingProxyType(
             ),
         ),
         "openrouter": ProviderEntry(
-            "openrouter",
-            "openrouter",
-            Refusal(
-                "provider_not_implemented",
-                "no OpenRouter adapter exists, so no request can be routed to OpenRouter",
-            ),
+            "openrouter", openrouter_adapter.PROVIDER, executable=OPENROUTER
         ),
     }
 )
@@ -262,29 +408,26 @@ def _request_state(value: object) -> RequestState:
     return "possibly_sent"
 
 
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
 # ---------------------------------------------------------------- JSON sections
-def constraints_doc() -> dict[str, Any]:
-    """What every Groq comparison request is held to, whatever the environment says."""
+def constraints_doc(executable: Executable = GROQ) -> dict[str, Any]:
+    """What every comparison request to this provider is held to, whatever the environment says."""
     return {
-        "provider": groq_adapter.PROVIDER,
-        "endpoint": f"POST {groq_adapter.ENDPOINT_URL}",
+        "provider": executable.provider,
+        "endpoint": f"POST {executable.endpoint}",
         "messages": "exactly one user message; no system prompt",
-        "request_fields": [
-            "model",
-            "messages",
-            "max_completion_tokens",
-            "stream",
-            "include_reasoning",
-        ],
+        "request_fields": list(executable.request_fields),
         "streaming": False,
-        "include_reasoning": False,
         "tools": [],
-        "requests_per_execution": groq_live.MAX_REQUESTS_CAP,
+        "requests_per_execution": executable.max_requests,
         "physical_attempts": 1,
         "retries": 0,
         "concurrency": 1,
-        "timeout_seconds": groq_adapter.TOTAL_DEADLINE_SECONDS,
-        "max_input_token_bound": groq_live.MAX_INPUT_TOKENS_CAP,
+        "timeout_seconds": executable.deadline,
+        "max_input_token_bound": executable.max_input_tokens,
         "max_output_tokens": comparison_scenarios.UNIFORM_OUTPUT_TOKENS,
         "model_fallback": False,
         "provider_fallback": False,
@@ -292,8 +435,7 @@ def constraints_doc() -> dict[str, Any]:
         "redirects_followed": False,
         "proxy": False,
         "base_url_override": False,
-        "real_execution_enabled": groq_adapter.REAL_EXECUTION_ENABLED,
-        "free_plan_models_released": len(groq_live.FREE_PLAN_MODELS),
+        **executable.constraints_extra(),
     }
 
 
@@ -367,41 +509,40 @@ def _correlation_doc(
 
 
 def build_plan(
-    policy: groq_live.FreePlanPolicy | None, scenario: ComparisonScenario, text: str
+    policy: Any,
+    scenario: ComparisonScenario,
+    text: str,
+    executable: Executable = GROQ,
 ) -> dict[str, Any] | None:
     if policy is None:
         return None
     return {
-        "provider": groq_adapter.PROVIDER,
+        "provider": executable.provider,
         "model": policy.model,
-        "endpoint": groq_adapter.ENDPOINT_URL,
+        "endpoint": executable.endpoint,
         "max_output_tokens": scenario.max_output_tokens,
         "input_token_bound": input_token_bound(text),
         "max_requests": policy.max_requests,
         "max_retries": policy.max_retries,
         "max_concurrency": policy.max_concurrency,
         "timeout_seconds": policy.timeout_seconds,
-        "plan": groq_live.PLAN_FREE,
-        "plan_checked_on": policy.plan_checked_on.isoformat(),
-        "plan_basis": PLAN_BASIS,
-        "free_plan_evidence_verified_at": (
-            groq_live.FREE_PLAN_EVIDENCE_VERIFIED_AT.isoformat()
-            if groq_live.FREE_PLAN_EVIDENCE_VERIFIED_AT is not None
-            else None
-        ),
+        **executable.plan_extra(policy),
         "paid_fallback": False,
     }
 
 
 def _provider_doc(
-    outcome: TextOutcome | None, *, outcome_label: str | None = None
+    outcome: TextOutcome | None,
+    *,
+    outcome_label: str | None = None,
+    provider: str = groq_adapter.PROVIDER,
 ) -> dict[str, Any]:
     return {
         "outcome": outcome.status if outcome is not None else outcome_label,
         "incomplete_reason": outcome.incomplete_reason if outcome is not None else None,
         "provider_reason": outcome.provider_reason if outcome is not None else None,
         "error_category": outcome.error_category if outcome is not None else None,
-        "provider": groq_adapter.PROVIDER,
+        "provider": provider,
         "request_model": outcome.request_model if outcome is not None else None,
         "response_model": outcome.response_model if outcome is not None else None,
         "service_tier": outcome.service_tier if outcome is not None else None,
@@ -411,7 +552,9 @@ def _provider_doc(
     }
 
 
-def _usage_doc(outcome: TextOutcome | None, policy: groq_live.FreePlanPolicy) -> dict[str, Any]:
+def _usage_doc(
+    outcome: TextOutcome | None, policy: Any, executable: Executable = GROQ
+) -> dict[str, Any]:
     usage = outcome.usage if outcome is not None else None
     return {
         "tokens": (
@@ -419,6 +562,7 @@ def _usage_doc(outcome: TextOutcome | None, policy: groq_live.FreePlanPolicy) ->
                 "input": usage.input_tokens,
                 "output": usage.output_tokens,
                 "cache_read_input": usage.cache_read_input_tokens,
+                "cache_write_input": usage.cache_write_input_tokens,
                 "reasoning_output": usage.reasoning_output_tokens,
             }
             if usage is not None
@@ -430,10 +574,7 @@ def _usage_doc(outcome: TextOutcome | None, policy: groq_live.FreePlanPolicy) ->
             "billed_amount_usd": None,
             "list_price_estimate_usd": None,
             "ledger_cost_status": "unknown (price_missing)",
-            "plan": groq_live.PLAN_FREE,
-            "plan_checked_on": policy.plan_checked_on.isoformat(),
-            "plan_basis": PLAN_BASIS,
-            "basis": COST_BASIS,
+            **executable.cost_extra(policy, outcome),
         },
     }
 
@@ -446,7 +587,9 @@ def _evaluate(scenario: ComparisonScenario, outcome: TextOutcome | None) -> Vali
     if outcome.status == "incomplete":
         return comparison_scenarios.not_evaluated("provider_incomplete")
     completion = outcome.provider_response
-    text = completion.text if isinstance(completion, GroqCompletion) else None
+    text = (
+        completion.text if isinstance(completion, GroqCompletion | OpenRouterCompletion) else None
+    )
     if text is None:
         return comparison_scenarios.not_evaluated("no_text_answer")
     return comparison_scenarios.validate_answer(scenario, text)
@@ -458,10 +601,11 @@ def _default_http() -> httpx.Client:
 
 
 @dataclass
-class GroqRunResult:
-    """What `run_groq_request` did. `refusals` non-empty and `request_state` `not_sent`: nothing
-    was sent. `session` is the guard's own record, so `request_state` is never guessed here.
-    `aborted` is an exception that ended the attempt, handed back after telemetry is closed."""
+class RunResult:
+    """What `run_provider_request` did. `refusals` non-empty and `request_state` `not_sent`:
+    nothing was sent. `session` is the guard's own record, so `request_state` is never guessed
+    here. `aborted` is an exception that ended the attempt, handed back after telemetry is
+    closed."""
 
     refusals: list[dict[str, str]] = field(default_factory=list)
     outcome: TextOutcome | None = None
@@ -482,30 +626,35 @@ class GroqRunResult:
         return halted if isinstance(halted, str) else None
 
 
-def run_groq_request(
+GroqRunResult = RunResult
+
+
+def run_provider_request(
+    executable: Executable,
     *,
-    policy: groq_live.FreePlanPolicy,
+    policy: Any,
     config: lli.LLMInsightConfig,
     scenario: ComparisonScenario,
     input_text: str,
     environ: Mapping[str, str],
     clock: Clock,
-    http_factory: HttpFactory = _default_http,
-    session_holder: list[groq_live.FreePlanSession] | None = None,
-) -> GroqRunResult:
-    """The one security path: the guard's session, the audited client, the ADR-43 checks, one
-    adapter call under a root span, flush and shutdown. At most one request, never resent. The
-    session re-evaluates the policy, the boundary, the credential and the body before the send."""
-    result = GroqRunResult()
-    session = groq_live.FreePlanSession(environ, clock=clock)
+    http_factory: HttpFactory | None = None,
+    session_holder: list[Any] | None = None,
+) -> RunResult:
+    """The one security path: the provider's guard session, the audited client, the boundary
+    checks, one adapter call under a root span, flush and shutdown. At most one request, never
+    resent. The session re-evaluates the policy, the boundary, the credential and the body
+    immediately before the send."""
+    result = RunResult()
+    session = executable.new_session(environ, clock)
     if session_holder is not None:
         session_holder.append(session)
     http: httpx.Client | None = None
     telemetry: Telemetry | None = None
     try:
         try:
-            http = http_factory()
-            problems = groq_adapter.live_groq_client_problems(http)
+            http = (http_factory or executable.default_http)()
+            problems = executable.client_problems(http)
         except Exception as exc:  # e.g. an unreadable CA bundle: nothing was sent
             result.refusals = [
                 {"code": "client_construction_failed", "message": type(exc).__name__}
@@ -517,9 +666,9 @@ def run_groq_request(
         telemetry = lli.init(config)
         try:
             # The same reading the policy validated; the send gate checks the request carries it.
-            observed = ObservedGroqClient(
+            observed = executable.new_client(
                 telemetry,
-                groq_live.api_key_value(environ),
+                executable.api_key_value(environ),
                 http_client=http,
                 provenance="real",
                 send_gate=session,
@@ -539,10 +688,10 @@ def run_groq_request(
         with telemetry.tracer.start_as_current_span(ROOT_SPAN) as root:
             result.trace_id = format(root.get_span_context().trace_id, "032x")
             try:
-                result.outcome = GroqTextAdapter(observed).generate_text(request)
+                result.outcome = executable.new_adapter(observed).generate_text(request)
             except LiveRefusal as refusal:  # the gate refused immediately before the send
                 result.refusals = refusal_docs(refusal.refusals)
-            except (ConfigError, UnsupportedRequestError):
+            except executable.unsupported:
                 result.refusals = [
                     {
                         "code": "client_not_allowed",
@@ -566,11 +715,37 @@ def run_groq_request(
     return result
 
 
+def run_groq_request(
+    *,
+    policy: groq_live.FreePlanPolicy,
+    config: lli.LLMInsightConfig,
+    scenario: ComparisonScenario,
+    input_text: str,
+    environ: Mapping[str, str],
+    clock: Clock,
+    http_factory: HttpFactory = _default_http,
+    session_holder: list[Any] | None = None,
+) -> RunResult:
+    """The Groq path of `run_provider_request` (ADR-45), unchanged in behaviour."""
+    return run_provider_request(
+        GROQ,
+        policy=policy,
+        config=config,
+        scenario=scenario,
+        input_text=input_text,
+        environ=environ,
+        clock=clock,
+        http_factory=http_factory,
+        session_holder=session_holder,
+    )
+
+
 # ---------------------------------------------------------------- the run
 @dataclass
 class _RunState:
     mode: str = "invalid_arguments"
-    sessions: list[groq_live.FreePlanSession] = field(default_factory=list)
+    provider: str = groq_adapter.PROVIDER
+    sessions: list[Any] = field(default_factory=list)
     emitted: bool = False
     exit_code: int = 2
 
@@ -594,7 +769,7 @@ def _refuse(out: TextIO, doc: dict[str, Any], items: list[dict[str, str]], state
 
 
 def _scenario_limit_refusals(
-    policy: groq_live.FreePlanPolicy, scenario: ComparisonScenario, text: str
+    policy: Any, scenario: ComparisonScenario, text: str, executable: Executable = GROQ
 ) -> list[Refusal]:
     """The session's own limits, evaluated early so a dry run cannot report ready for a request
     the gate would refuse. The environment can refuse, never alter."""
@@ -603,7 +778,7 @@ def _scenario_limit_refusals(
         refusals.append(
             Refusal("input_too_large", "the input bound exceeds LLMI_LIVE_MAX_INPUT_TOKENS")
         )
-    if not groq_live.MIN_OUTPUT_TOKENS <= scenario.max_output_tokens <= policy.max_output_tokens:
+    if not executable.min_output_tokens <= scenario.max_output_tokens <= policy.max_output_tokens:
         refusals.append(
             Refusal(
                 "output_limit_exceeded",
@@ -625,9 +800,10 @@ def _exit_code(outcome: TextOutcome, validation: str, export: ExportOutcome, hal
 
 def _report_attempt(
     doc: dict[str, Any],
-    result: GroqRunResult,
+    result: RunResult,
     scenario: ComparisonScenario,
-    policy: groq_live.FreePlanPolicy,
+    policy: Any,
+    executable: Executable = GROQ,
 ) -> int:
     """Fill the sent / possibly-sent sections. Returns the exit code."""
     outcome = result.outcome
@@ -642,7 +818,7 @@ def _report_attempt(
         "spans_exported": stats.spans_exported if stats is not None else None,
         "spans_export_failed": stats.spans_export_failed if stats is not None else None,
     }
-    doc["usage"] = _usage_doc(outcome, policy)
+    doc["usage"] = _usage_doc(outcome, policy, executable)
     validation = _evaluate(scenario, outcome)
     doc["validation"] = validation.to_doc()
     state = result.request_state
@@ -650,9 +826,9 @@ def _report_attempt(
     doc["provider_request_sent"] = {"sent": True, "not_sent": False}.get(state)
     if outcome is None:
         label = "interrupted" if isinstance(result.aborted, KeyboardInterrupt) else "internal_error"
-        doc["provider"] = _provider_doc(None, outcome_label=label)
+        doc["provider"] = _provider_doc(None, outcome_label=label, provider=executable.provider)
         return 1  # a halt needs a response or a provider error, so it always has an outcome
-    doc["provider"] = _provider_doc(outcome)
+    doc["provider"] = _provider_doc(outcome, provider=executable.provider)
     return _exit_code(
         outcome, validation.status, doc["export"]["outcome"], result.halted is not None
     )
@@ -662,7 +838,7 @@ def _run(
     argv: Sequence[str] | None,
     env: Mapping[str, str],
     clock: Clock,
-    http_factory: HttpFactory,
+    http_factory: HttpFactory | None,
     out: TextIO,
     state: _RunState,
 ) -> int:
@@ -682,10 +858,13 @@ def _run(
     doc["provider_selection"] = {
         "name": entry.name,
         "provider": entry.provider,
-        "available": entry.refusal is None,
+        "available": entry.refusal is None and entry.executable is not None,
     }
-    if entry.refusal is not None:  # before any setting, key or client
-        return _refuse(out, doc, refusal_docs([entry.refusal]), state)
+    if entry.refusal is not None or entry.executable is None:  # before any setting, key or client
+        refusal = entry.refusal or Refusal("provider_blocked", "the provider cannot be executed")
+        return _refuse(out, doc, refusal_docs([refusal]), state)
+    executable = entry.executable
+    state.provider = executable.provider
 
     scenario = comparison_scenarios.SCENARIOS.get(args.scenario)
     if scenario is None:
@@ -696,18 +875,18 @@ def _run(
         return _refuse(out, doc, refusal_docs(registry_problems), state)
     text = comparison_scenarios.compose_input(scenario)
     doc["scenario"] = _scenario_doc(scenario, text)
-    doc["constraints"] = constraints_doc()
+    doc["constraints"] = constraints_doc(executable)
 
     # One read-only copy for the whole run: the policy, the client's credential and the send
     # gate all see the same values.
     environ: Mapping[str, str] = MappingProxyType(dict(env))
-    decision = groq_live.evaluate_free_plan_policy(environ, now=clock())
+    decision = executable.evaluate(environ, clock())
     policy_refusals = list(decision.refusals)
     policy = decision.policy
-    for problem in groq_adapter.groq_library_problems():  # the boundary holds for these only
+    for problem in executable.library_problems():  # the boundary holds for these only
         policy_refusals.append(Refusal("client_library_not_audited", problem))
     if policy is not None:
-        policy_refusals += _scenario_limit_refusals(policy, scenario, text)
+        policy_refusals += _scenario_limit_refusals(policy, scenario, text, executable)
 
     readiness_refusals: list[Refusal] = []
     config: lli.LLMInsightConfig | None
@@ -751,7 +930,7 @@ def _run(
             "execution_ready": ready,
             "execution_allowed": eligible and ready,
             "refusals": refusal_docs([*policy_refusals, *readiness_refusals]),
-            "plan": build_plan(policy, scenario, text),
+            "plan": build_plan(policy, scenario, text, executable),
             "environment": {"backend": backend, "sdk_checkout_match": checkout},
             "comparison": _comparison_doc(scenario, project_id),
             "correlation": _correlation_doc(None, project_id, base),
@@ -763,7 +942,8 @@ def _run(
     if policy is None or config is None or not (eligible and ready):
         return _finish(out, doc, 2, state)
 
-    result = run_groq_request(
+    result = run_provider_request(
+        executable,
         policy=policy,
         config=config,
         scenario=scenario,
@@ -784,7 +964,7 @@ def _run(
         code = "interrupted_before_send" if interrupted else "internal_error"
         name = type(result.aborted).__name__
         return _refuse(out, doc, [{"code": code, "message": name}], state)
-    code_ = _report_attempt(doc, result, scenario, policy)
+    code_ = _report_attempt(doc, result, scenario, policy, executable)
     if result.aborted is not None and result.outcome is not None:
         doc["export"]["interrupted"] = True
     return _finish(out, doc, code_, state)
@@ -811,14 +991,14 @@ def main(
     out: TextIO | None = None,
 ) -> int:
     """`now`, `clock` and `http_factory` exist for offline tests only. The command line always
-    uses the real UTC clock and the audited client of `groq_adapter.build_groq_http_client`."""
+    uses the real UTC clock and the provider's own audited client builder."""
     stdout = sys.stdout if out is None else out
     environ: Mapping[str, str] = os.environ if env is None else env
     if clock is None:
         clock = _utc_now if now is None else _fixed_clock(now)
     state = _RunState()
     try:
-        return _run(argv, environ, clock, http_factory or _default_http, stdout, state)
+        return _run(argv, environ, clock, http_factory, stdout, state)
     except (KeyboardInterrupt, Exception) as exc:
         if state.emitted:
             return state.exit_code
@@ -830,7 +1010,7 @@ def main(
             doc["provider_request_sent"] = True if request_state == "sent" else None
             doc["provider_request_state"] = request_state
             label = "interrupted" if interrupted else "internal_error"
-            doc["provider"] = _provider_doc(None, outcome_label=label)
+            doc["provider"] = _provider_doc(None, outcome_label=label, provider=state.provider)
             doc["validation"] = comparison_scenarios.not_evaluated(
                 "provider_not_completed"
             ).to_doc()

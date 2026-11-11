@@ -256,6 +256,20 @@ describe("model comparison components", () => {
     assert.deepEqual(compareNotice(mixed).present, ["real", "synthetic"]);
   });
 
+  it("states that a real label is asserted, not verified, only when real attempts are shown", () => {
+    assert.doesNotMatch(html(<ComparisonNotices data={makeCompare()} />), /data-testid="compare-real"/);
+    const real = compareWith((c) => {
+      for (const g of c.groups) g.by_provenance = { real: g.attempts, synthetic: 0, unknown: 0 };
+    });
+    const n = html(<ComparisonNotices data={real} />);
+    assert.match(n, /data-testid="compare-real"/);
+    assert.match(n, /asserted, not verified by the server/);
+    assert.match(n, /does not show which upstream served a request/);
+    assert.doesNotMatch(n, /SYNTHETIC data/);
+    assert.match(n, /Groups are not ranked/);
+    assert.doesNotMatch(n, /\bbest model\b|\bwinner\b|\brecommended\b/i);
+  });
+
   it("keeps the backend group order in charts and labels missing models", () => {
     const pts = toGroupPoints(makeCompare().groups);
     assert.deepEqual(

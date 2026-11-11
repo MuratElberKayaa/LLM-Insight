@@ -1,0 +1,29 @@
+{
+  "schema": "llminsight.fixture.openrouter_client_span.v1",
+  "synthetic": true,
+  "note": "SYNTHETIC. The exact CLIENT span OpenRouterTextAdapter emits for a completed call. The SDK test asserts it emits this, and the backend test asserts it ingests this with no dropped attribute. The model and response ID are made up.",
+  "span_name": "chat synthetic-org/synthetic-model-7b:free",
+  "span_kind": "CLIENT",
+  "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openrouter",
+    "gen_ai.request.model": "synthetic-org/synthetic-model-7b:free",
+    "gen_ai.response.model": "synthetic-org/synthetic-model-7b:free",
+    "gen_ai.response.id": "gen-SYNTHETIC-openrouter-0001",
+    "gen_ai.response.finish_reasons": ["stop"],
+    "gen_ai.request.max_tokens": 64,
+    "gen_ai.prompt.name": "smoke",
+    "gen_ai.prompt.version": "v1",
+    "gen_ai.usage.input_tokens": 24,
+    "gen_ai.usage.output_tokens": 40,
+    "gen_ai.usage.cache_read.input_tokens": 4,
+    "gen_ai.usage.cache_write.input_tokens": 2,
+    "gen_ai.usage.reasoning.output_tokens": 8,
+    "llminsight.usage_source": "provider_reported",
+    "llminsight.call_id": "5f0c6e1a-3b7d-4c2e-9a41-000000000043",
+    "llminsight.attempt": 1,
+    "llminsight.provenance": "synthetic",
+    "server.address": "openrouter.ai",
+    "server.port": 443
+  }
+}

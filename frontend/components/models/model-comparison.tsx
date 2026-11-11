@@ -212,6 +212,12 @@ export function ComparisonNotices({ data }: { data: ModelsCompare }) {
             : "Some attempts were produced by mock or fake providers; the provenance column shows the split per group."}
         </Notice>
       )}
+      {n.present.includes("real") && (
+        <Notice tone="info" title="Labeled real by the instrumentation" testId="compare-real">
+          Real-labeled attempts came from a provider request, as stated by the instrumentation; the label is asserted, not verified by the server. It does not show which upstream served a request
+          (for example behind OpenRouter), and a group from one or a few requests describes those requests only.
+        </Notice>
+      )}
       <Notice tone="info" title="Groups are not ranked" testId="compare-not-ranked">
         Groups are listed by number of attempts, as returned by the backend. They can differ in sample size, prompt version, provenance and cost completeness, so no group is presented as the best.
         {n.anyLowSample ? " ▲ marks a p95 from fewer than 20 samples." : ""}
