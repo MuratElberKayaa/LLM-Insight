@@ -6,7 +6,11 @@ scripts/qa/e2e_gate.sh runs the stack on the GitHub runner and hands its outputs
   compose  the effective Compose model: run-specific project, PostgreSQL only, loopback port
   ports    the ports of the E2E topology are free
   redact   filters a stream, replacing the generated values
-  report   the Playwright JSON report: every discovered test ran and passed, none was skipped
+  report   the Playwright JSON report: every discovered test ran and passed, none was skipped,
+           and the main backend's log shows a completed startup and no rate-limit rejection
+  browser-packages / browser-deps
+           the system packages Playwright's `install --with-deps chromium` would install are
+           already on the runner (read from `dpkg-query`; nothing is installed)
 
 Every failure exits 1 and prints only a fixed kind and a sanitized detail, never a value.
 """
@@ -43,6 +47,70 @@ TEARDOWN_LINE = re.compile(r"\[e2e\] teardown: (\{.*\})")
 # The run-owned projects of scripts/dev/e2e_fixtures.py `names()`: main, foreign,
 # providers, hostile and (Phase 8A-6) comparison. The teardown must delete each once.
 OWNED_PROJECTS = 5
+# R133: the log of the main E2E backend (127.0.0.1:8000). The gate sizes its /api/v1 bucket
+# so the suite cannot drain it, so any rate-limit rejection there means a page rendered a 429
+# state that no test asked for. Only counts leave this file: the log holds request paths and
+# client addresses and is never printed or uploaded.
+# uvicorn 0.54.0 startup lines (pinned by backend/tests/unit/test_r133_log_messages.py).
+BACKEND_RUNNING = "Uvicorn running on " + BACKEND_ORIGIN + " (Press CTRL+C to quit)"
+BACKEND_STARTED = "Application startup complete."
+# The rate-limit rejections of app/api/admin.py and app/services/ingestion/service.py, and
+# their ordinary authentication failures (401), which are expected and never a rejection.
+# Unanchored, so a prefix added to the log format cannot hide a line.
+RATE_LIMIT_REASONS = ("api_rate_limited", "authfail_rate_limited", "key_rate_limited")
+RATE_LIMITED = re.compile(
+    r"\b(?:api|ingest) rejected reason=(?:" + "|".join(RATE_LIMIT_REASONS) + r")\b"
+)
+AUTH_FAILED = re.compile(r"\b(?:api|ingest) auth failed reason=")
+# R133 (CI browser): the gate installs the Playwright browser only, never system packages, so an
+# unreachable Ubuntu mirror cannot stall the job. Instead it proves the runner already has what
+# `npx playwright install --with-deps chromium` would apt-install: Playwright 1.64.0's own
+# `ubuntu24.04-x64` lists (playwright-core `nativeDeps`: `chromium` plus `tools`). The lists are
+# valid for that version and host only, so both are required. A missing library package fails;
+# a missing font or `xvfb` package (rendering only, not needed to launch headless) is reported
+# by name as a warning. The launch check (`e2e_browser_smoke.mjs`) is the runtime proof.
+PLAYWRIGHT_VERSION = "1.64.0"
+BROWSER_HOST = {"ID": "ubuntu", "VERSION_ID": "24.04"}
+BROWSER_MACHINE = "x86_64"
+CHROMIUM_LIBRARY_PACKAGES = (
+    "libasound2t64",
+    "libatk-bridge2.0-0t64",
+    "libatk1.0-0t64",
+    "libatspi2.0-0t64",
+    "libcairo2",
+    "libcups2t64",
+    "libdbus-1-3",
+    "libdrm2",
+    "libgbm1",
+    "libglib2.0-0t64",
+    "libnspr4",
+    "libnss3",
+    "libpango-1.0-0",
+    "libx11-6",
+    "libxcb1",
+    "libxcomposite1",
+    "libxdamage1",
+    "libxext6",
+    "libxfixes3",
+    "libxkbcommon0",
+    "libxrandr2",
+    # From Playwright's `tools` list, but shared libraries Chromium links against.
+    "libfontconfig1",
+    "libfreetype6",
+)
+CHROMIUM_RENDERING_PACKAGES = (
+    "xvfb",
+    "fonts-noto-color-emoji",
+    "fonts-unifont",
+    "xfonts-cyrillic",
+    "xfonts-scalable",
+    "fonts-liberation",
+    "fonts-ipafont-gothic",
+    "fonts-wqy-zenhei",
+    "fonts-tlwg-loma-otf",
+    "fonts-freefont-ttf",
+)
+DPKG_LINE = re.compile(r"([a-z0-9][a-z0-9.+-]*) ([a-z-]+)\Z")
 MAX_ANNOTATED = 20
 LIMITATIONS = [
     "Chromium bundled with Playwright is not the Microsoft Edge used by the local default.",
@@ -256,9 +324,46 @@ def check_lifecycle(log_path):
     return []
 
 
-def evaluate_report(list_path, report_path, log_path, exit_status):
+def check_backend_log(path):
+    """Returns (problems, counts). Fails closed: a missing, unreadable or empty log, or one
+    without the backend's completed startup on 127.0.0.1:8000, is a problem, as is any
+    rate-limit rejection. Authentication failures are counted apart and are not problems."""
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return [problem("BACKEND_LOG_MISSING", "the backend log cannot be read")], {}
+    if not raw.strip():
+        return [problem("BACKEND_LOG_EMPTY", "the backend log is empty")], {}
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+    if not (
+        any(BACKEND_RUNNING in line for line in lines)
+        and any(BACKEND_STARTED in line for line in lines)
+    ):
+        return [
+            problem(
+                "BACKEND_LOG_NO_STARTUP",
+                "the backend log shows no completed startup on 127.0.0.1:8000",
+            )
+        ], {}
+    counts = {
+        "backend_rate_limited": sum(1 for line in lines if RATE_LIMITED.search(line)),
+        "backend_auth_failed": sum(1 for line in lines if AUTH_FAILED.search(line)),
+    }
+    if counts["backend_rate_limited"]:
+        return [
+            problem(
+                "BACKEND_RATE_LIMITED",
+                f"{counts['backend_rate_limited']} requests rejected by the main"
+                " backend rate limit",
+            )
+        ], counts
+    return [], counts
+
+
+def evaluate_report(list_path, report_path, log_path, exit_status, backend_log_path):
     """Returns (problems, rows, totals)."""
     problems = []
+    backend_problems, backend_counts = check_backend_log(backend_log_path)
     if exit_status != 0:
         kind = "PLAYWRIGHT_TIMEOUT" if exit_status == 124 else "PLAYWRIGHT_FAILED"
         problems.append(problem(kind, f"exit status {exit_status}"))
@@ -267,7 +372,11 @@ def evaluate_report(list_path, report_path, log_path, exit_status):
     data, found = load_json(report_path, "REPORT")
     problems += found
     if listed is None or data is None:
-        return problems + check_lifecycle(log_path), [], {}
+        return (
+            problems + check_lifecycle(log_path) + backend_problems,
+            [],
+            dict(backend_counts),
+        )
     expected_ids = sorted(identity(f, s) for f, s, _t in iter_tests(listed["suites"]))
     if not expected_ids:
         problems.append(problem("DISCOVERY_EMPTY", "no test was discovered"))
@@ -318,7 +427,8 @@ def evaluate_report(list_path, report_path, log_path, exit_status):
     if any(value != 0 for value in retries_of(data)) or not retries_of(data):
         problems.append(problem("RETRIES_ENABLED", "retries must be zero"))
     problems += check_lifecycle(log_path)
-    return problems, rows, {"discovered": len(expected_ids), **counts}
+    problems += backend_problems
+    return problems, rows, {"discovered": len(expected_ids), **counts, **backend_counts}
 
 
 def clean_label(text, needles):
@@ -369,6 +479,121 @@ def write_summary(out_dir, problems, rows, totals, needles):
     return []
 
 
+def browser_packages():
+    return CHROMIUM_LIBRARY_PACKAGES + CHROMIUM_RENDERING_PACKAGES
+
+
+def read_os_release(path):
+    values = {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.partition("=")
+        if sep and re.fullmatch(r"[A-Z_]+", key):
+            values[key] = value.strip().strip("\"'")
+    return values
+
+
+def check_browser_deps(dpkg_path, exit_status, os_release_path, machine):
+    """Returns (problems, warnings, counts) for the `dpkg-query -W -f='${Package}
+    ${db:Status-Status}\\n' <packages>` output. dpkg-query exits 1 when a package is unknown
+    to dpkg (it is then simply absent from the output), and 2 or more on an error."""
+    try:
+        host = read_os_release(os_release_path)
+    except (OSError, UnicodeDecodeError):
+        return [problem("BROWSER_HOST", "the OS release cannot be read")], [], {}
+    if (
+        any(host.get(k) != v for k, v in BROWSER_HOST.items())
+        or machine != BROWSER_MACHINE
+    ):
+        return (
+            [
+                problem(
+                    "BROWSER_HOST",
+                    "the dependency lists are for Ubuntu 24.04 x86_64, Playwright 1.64.0",
+                )
+            ],
+            [],
+            {},
+        )
+    if exit_status not in (0, 1):
+        return (
+            [
+                problem(
+                    "BROWSER_DEPENDENCIES_UNVERIFIED", f"dpkg-query exit {exit_status}"
+                )
+            ],
+            [],
+            {},
+        )
+    try:
+        lines = Path(dpkg_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return (
+            [
+                problem(
+                    "BROWSER_DEPENDENCIES_UNVERIFIED",
+                    "dpkg-query output cannot be read",
+                )
+            ],
+            [],
+            {},
+        )
+    wanted = set(browser_packages())
+    installed, seen = set(), set()
+    for line in lines:
+        match = DPKG_LINE.fullmatch(line)
+        if not match or match.group(1) not in wanted:
+            return (
+                [
+                    problem(
+                        "BROWSER_DEPENDENCIES_UNVERIFIED",
+                        "unexpected dpkg-query output",
+                    )
+                ],
+                [],
+                {},
+            )
+        seen.add(match.group(1))
+        if match.group(2) == "installed":
+            installed.add(match.group(1))
+    # Exit 0 means dpkg knows every package, so each must have a line.
+    if exit_status == 0 and seen != wanted:
+        return (
+            [
+                problem(
+                    "BROWSER_DEPENDENCIES_UNVERIFIED", "dpkg-query omitted a package"
+                )
+            ],
+            [],
+            {},
+        )
+    missing_libraries = [p for p in CHROMIUM_LIBRARY_PACKAGES if p not in installed]
+    missing_rendering = [p for p in CHROMIUM_RENDERING_PACKAGES if p not in installed]
+    counts = {
+        "library_packages": len(CHROMIUM_LIBRARY_PACKAGES),
+        "library_missing": len(missing_libraries),
+        "rendering_packages": len(CHROMIUM_RENDERING_PACKAGES),
+        "rendering_missing": len(missing_rendering),
+    }
+    problems, warnings = [], []
+    if missing_libraries:
+        problems.append(
+            problem(
+                "BROWSER_DEPENDENCIES_MISSING",
+                f"{len(missing_libraries)} library packages not installed, "
+                + " ".join(missing_libraries),
+            )
+        )
+    if missing_rendering:
+        warnings.append(
+            problem(
+                "BROWSER_RENDERING_PACKAGES_MISSING",
+                f"{len(missing_rendering)} font or display packages not installed,"
+                " earlier added by --with-deps, " + " ".join(missing_rendering),
+            )
+        )
+    return problems, warnings, counts
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -388,9 +613,29 @@ def main(argv=None):
     rep.add_argument("--report", required=True)
     rep.add_argument("--log", required=True)
     rep.add_argument("--exit-status", type=int, required=True)
+    rep.add_argument("--backend-log", required=True)
     rep.add_argument("--env", action="append", required=True)
     rep.add_argument("--out-dir", required=True)
+    sub.add_parser("browser-packages")
+    deps = sub.add_parser("browser-deps")
+    deps.add_argument("--dpkg", required=True)
+    deps.add_argument("--exit-status", type=int, required=True)
+    deps.add_argument("--os-release", required=True)
+    deps.add_argument("--machine", required=True)
     args = parser.parse_args(argv)
+    if args.command == "browser-packages":
+        # Bytes, so no platform newline translation can alter a package name.
+        sys.stdout.flush()
+        sys.stdout.buffer.write(("\n".join(browser_packages()) + "\n").encode("ascii"))
+        sys.stdout.buffer.flush()
+        return 0
+    if args.command == "browser-deps":
+        problems, warnings, counts = check_browser_deps(
+            args.dpkg, args.exit_status, args.os_release, args.machine
+        )
+        for item in warnings:
+            print(f"::warning title=e2e::{item['kind']} {item['detail']}")
+        return report_problems(problems, f"browser deps: {counts}")
     if args.command == "env":
         return report_problems(
             check_env(args.env, args.frontend_env), "env: isolated targets verified"
@@ -420,7 +665,7 @@ def main(argv=None):
             [problem("REDACT_ENV", "the env files cannot be read")], ""
         )
     problems, rows, totals = evaluate_report(
-        args.list, args.report, args.log, args.exit_status
+        args.list, args.report, args.log, args.exit_status, args.backend_log
     )
     problems = [
         {**item, "detail": clean_label(item["detail"], needles)} for item in problems

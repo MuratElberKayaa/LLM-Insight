@@ -431,6 +431,19 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] All seven jobs success on `c2eef4e` (run 42522499520, `pull_request`, attempt 1); the real failures found on the way are recorded with their fixes
 - [ ] PR #2 merged and `main` CI green (the user merges; R104 resolves then)
 
+## R133 — Main-backend rate-limit exhaustion in the CI E2E suite (2026-11-11; evidence: `reports/r133.md`)
+- [x] Observed: `main` run 43013325462 on `ae65321` (the PR #9 merge) failed in `e2e`, 70 of 72; the other six jobs succeeded. PR run 43004380869 on the identical tree passed 72 of 72. The two failures and the 429 timestamps were verified by the reviewer from the job log and the `e2e-summary` artifact
+- [x] Cause: the main E2E backend's default `/api/v1` bucket (10/s, burst 20, keyed by client address) is shared by the dashboard's server-side reads and the tests' direct reads from `127.0.0.1`. A 429 renders the designed error state instead of the awaited element. The backend's own reason code was not observable, and runner speed was not measured
+- [x] CI-only correction authorized 2026-11-11 (conditional GO): `scripts/qa/e2e_gate.sh` sizes the main backend process's bucket at 1000/1000; the report check reads that backend's log fail-closed and fails on any rate-limit rejection, recording `backend_rate_limited`. No production, SDK, migration, dependency, workflow, environment-file or test-assertion change; the `:8001`/`:8002` 429 backends unchanged
+- [x] Local verification: see `reports/r133.md` §6. Committed as `11486ee` on `fix/r133-e2e-rate-limit`; pushed by the owner as PR #10
+- [x] PR #10 CI run 43044114789 (attempt 1 and the failed-jobs re-run): `e2e` failed at step 10, before any test ran. `npx playwright install --with-deps chromium` could not resolve the Ubuntu mirror, and the step hit its `timeout 600` (exit 124). The other six jobs succeeded. The log was read by the reviewer; run, job, step and annotation data from the public API (`reports/r133.md` §9)
+- [x] Installation correction authorized 2026-11-11: the gate installs the pinned browser only (`npx playwright install chromium`), then:
+  - checks with `dpkg-query` that the 33 packages Playwright 1.64.0's `--with-deps` would install are present: libraries required, fonts and `xvfb` warned by name;
+  - launches the exact CI Chromium on a local page, fail-closed.
+
+  No workflow, timeout, test or production change. A second local commit, not pushed
+- [ ] GitHub CI: PR run and post-merge `main` run all seven jobs green, `e2e` 72 of 72, five projects deleted, `backend_rate_limited: 0`, browser deps `library_missing: 0` and `browser smoke: PASS`; **NOT RUN**
+
 ## Phase 7A — Gemini content demo: architecture and source audit (2026-11-09; evidence: `reports/phase-7a.md`)
 - [x] Source and Git baseline verified: `feature/phase-7-gemini-demo` at `4350306`, equal to GitHub `main`; three user-owned untracked files preserved
 - [x] Inventory recorded with source facts, historical claims, unverified runtime facts and provider facts separated

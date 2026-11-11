@@ -49,6 +49,16 @@ def kinds(problems):
     return {item["kind"] for item in problems}
 
 
+# R133: uvicorn 0.54.0's startup lines for the main E2E backend, as written to backend.log.
+STARTUP = (
+    "INFO:     Started server process [4242]\n"
+    "INFO:     Waiting for application startup.\n"
+    "INFO:     Application startup complete.\n"
+    "INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)\n"
+)
+API_REJECTED = "api rejected reason=api_rate_limited client=127.0.0.1"
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -335,7 +345,7 @@ class Reports(Base):
             lines.append("[e2e] teardown: " + json.dumps(body))
         return "\n".join(lines) + "\n"
 
-    def run_check(self, listed=None, report=None, log=None, status=0):
+    def run_check(self, listed=None, report=None, log=None, status=0, backend=None):
         for name, value in (
             ("list.json", listed if listed is not None else self.listed()),
             ("run.json", report if report is not None else self.passed()),
@@ -344,8 +354,18 @@ class Reports(Base):
         (self.tmp / "log").write_text(
             self.log() if log is None else log, encoding="utf-8"
         )
+        (self.tmp / "backend.log").write_text(
+            STARTUP if backend is None else backend, encoding="utf-8"
+        )
+        return self.evaluate(status)
+
+    def evaluate(self, status=0):
         return check.evaluate_report(
-            self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", status
+            self.tmp / "list.json",
+            self.tmp / "run.json",
+            self.tmp / "log",
+            status,
+            self.tmp / "backend.log",
         )
 
     def test_complete_green_run_passes(self):
@@ -353,6 +373,22 @@ class Reports(Base):
         self.assertEqual(problems, [])
         self.assertEqual(len(rows), self.COUNT)
         self.assertEqual(totals["passed"], self.COUNT)
+        self.assertEqual(totals["backend_rate_limited"], 0)
+        self.assertEqual(totals["backend_auth_failed"], 0)
+
+    def test_r133_a_rejection_fails_an_otherwise_green_run(self):
+        problems, rows, totals = self.run_check(backend=STARTUP + API_REJECTED + "\n")
+        self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+        self.assertEqual(len(rows), self.COUNT)
+        self.assertEqual(totals["passed"], self.COUNT)
+        self.assertEqual(totals["backend_rate_limited"], 1)
+
+    def test_r133_the_backend_log_is_checked_when_the_report_is_missing(self):
+        self.run_check(backend="")
+        (self.tmp / "run.json").unlink()
+        problems = self.evaluate()[0]
+        self.assertIn("REPORT_MISSING", kinds(problems))
+        self.assertIn("BACKEND_LOG_EMPTY", kinds(problems))
 
     def test_i_failed_test_fails_even_with_exit_zero(self):
         specs = [self.spec(i) for i in range(self.COUNT)]
@@ -571,23 +607,17 @@ class Reports(Base):
             with self.subTest(name):
                 self.run_check()
                 (self.tmp / name).unlink()
-                found = check.evaluate_report(
-                    self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", 0
-                )[0]
+                found = self.evaluate()[0]
                 self.assertIn(kind, kinds(found))
         self.run_check()
         (self.tmp / "run.json").write_text("[]", encoding="utf-8")
-        found = check.evaluate_report(
-            self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", 0
-        )[0]
+        found = self.evaluate()[0]
         self.assertIn("REPORT_MALFORMED", kinds(found))
 
     def test_missing_log_fails(self):
         self.run_check()
         (self.tmp / "log").unlink()
-        found = check.evaluate_report(
-            self.tmp / "list.json", self.tmp / "run.json", self.tmp / "log", 0
-        )[0]
+        found = self.evaluate()[0]
         self.assertIn("LOG_MISSING", kinds(found))
 
     def test_nested_suites_are_counted(self):
@@ -623,33 +653,372 @@ class Reports(Base):
             ["summary.json", "summary.md"],
         )
 
+    def cli(self, exit_status="1", backend_log=True):
+        env = self.write("env", self.env_values())
+        argv = [
+            "report",
+            "--list",
+            str(self.tmp / "list.json"),
+            "--report",
+            str(self.tmp / "run.json"),
+            "--log",
+            str(self.tmp / "log"),
+            "--exit-status",
+            exit_status,
+            "--env",
+            str(env),
+            "--out-dir",
+            str(self.tmp / "s"),
+        ]
+        if backend_log:
+            argv[7:7] = ["--backend-log", str(self.tmp / "backend.log")]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = check.main(argv)
+        return code, output.getvalue()
+
     def test_cli_writes_a_summary_and_fails_without_printing_values(self):
         problems_status = self.run_check(status=1)[0]
         self.assertTrue(problems_status)
-        env = self.write("env", self.env_values())
+        code, output = self.cli()
+        self.assertEqual(code, 1)
+        self.assertIn("PLAYWRIGHT_FAILED", output)
+        self.assertNotIn(GOOD[SECRET_VAR], output)
+        self.assertTrue((self.tmp / "s/summary.json").exists())
+
+    def test_r133_a_green_summary_records_zero_rejections_and_no_log_text(self):
+        self.run_check(
+            backend=STARTUP + "api auth failed reason=mismatch client=127.0.0.1\n"
+        )
+        code, output = self.cli(exit_status="0")
+        self.assertEqual(code, 0, output)
+        summary = json.loads((self.tmp / "s/summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["verdict"], "PASS")
+        self.assertEqual(summary["totals"]["backend_rate_limited"], 0)
+        self.assertEqual(summary["totals"]["backend_auth_failed"], 1)
+        for text in (
+            (self.tmp / "s/summary.json").read_text(encoding="utf-8"),
+            (self.tmp / "s/summary.md").read_text(encoding="utf-8"),
+            output,
+        ):
+            self.assertNotIn("Uvicorn running", text)
+            self.assertNotIn("client=127", text)
+            self.assertNotIn("reason=mismatch", text)
+        self.assertIn("'backend_rate_limited': 0", output)
+
+    def test_r133_a_rejection_fails_the_cli_with_the_count_only(self):
+        self.run_check(backend=STARTUP + (API_REJECTED + "\n") * 3)
+        code, output = self.cli(exit_status="0")
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "BACKEND_RATE_LIMITED 3 requests rejected by the main backend rate limit",
+            output,
+        )
+        self.assertNotIn("client=127", output)
+        summary = json.loads((self.tmp / "s/summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["verdict"], "FAIL")
+        self.assertEqual(summary["totals"]["backend_rate_limited"], 3)
+
+    def test_r133_the_backend_log_argument_is_required(self):
+        self.run_check()
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self.cli(exit_status="0", backend_log=False)
+
+
+class BackendLog(Base):
+    """R133: the main backend's log is read fail-closed and only counted."""
+
+    def check_text(self, text):
+        path = self.tmp / "backend.log"
+        path.write_bytes(text if isinstance(text, bytes) else text.encode("utf-8"))
+        return check.check_backend_log(path)
+
+    def test_a_clean_startup_passes_with_zero_counts(self):
+        self.assertEqual(
+            self.check_text(STARTUP),
+            ([], {"backend_rate_limited": 0, "backend_auth_failed": 0}),
+        )
+
+    def test_every_rate_limit_rejection_fails(self):
+        for line in (
+            API_REJECTED,
+            "api rejected reason=authfail_rate_limited client=127.0.0.1",
+            "ingest rejected reason=authfail_rate_limited client=127.0.0.1",
+            "ingest rejected reason=key_rate_limited key_id=7",
+            "WARNING:app.api:" + API_REJECTED,
+            "2026-11-11 11:38:12 WARNING " + API_REJECTED + " extra",
+        ):
+            with self.subTest(line):
+                problems, counts = self.check_text(STARTUP + line + "\n")
+                self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+                self.assertEqual(counts["backend_rate_limited"], 1)
+
+    def test_a_rejection_before_the_startup_lines_still_counts(self):
+        problems, counts = self.check_text(API_REJECTED + "\n" + STARTUP)
+        self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+        self.assertEqual(counts["backend_rate_limited"], 1)
+
+    def test_ordinary_auth_failures_are_counted_apart_and_pass(self):
+        problems, counts = self.check_text(
+            STARTUP
+            + "api auth failed reason=mismatch client=127.0.0.1\n"
+            + "api auth failed reason=missing client=127.0.0.1\n"
+            + "ingest auth failed reason=unknown_key prefix=- client=127.0.0.1\n"
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(counts, {"backend_rate_limited": 0, "backend_auth_failed": 3})
+
+    def test_other_lines_are_not_rejections(self):
+        problems, counts = self.check_text(
+            STARTUP
+            + "ingest body rejected status=413 key_id=7 client=127.0.0.1\n"
+            + 'INFO:     127.0.0.1:5 - "GET /api/v1/traces HTTP/1.1" 200 OK\n'
+            + "api rejected reason=api_rate_limitedX client=127.0.0.1\n"
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(counts["backend_rate_limited"], 0)
+
+    def test_count_is_per_line(self):
+        problems, counts = self.check_text(STARTUP + (API_REJECTED + "\n") * 4)
+        self.assertEqual(counts["backend_rate_limited"], 4)
+        self.assertEqual(problems[0]["detail"].split()[0], "4")
+
+    def test_missing_or_unreadable_log_fails(self):
+        self.assertEqual(
+            kinds(check.check_backend_log(self.tmp / "absent.log")[0]),
+            {"BACKEND_LOG_MISSING"},
+        )
+        (self.tmp / "dir.log").mkdir()
+        self.assertEqual(
+            kinds(check.check_backend_log(self.tmp / "dir.log")[0]),
+            {"BACKEND_LOG_MISSING"},
+        )
+
+    def test_empty_or_blank_log_fails(self):
+        for text in ("", "\n", "  \n\t\n"):
+            with self.subTest(repr(text)):
+                self.assertEqual(kinds(self.check_text(text)[0]), {"BACKEND_LOG_EMPTY"})
+
+    def test_log_without_verified_startup_fails(self):
+        running = "INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)\n"
+        complete = "INFO:     Application startup complete.\n"
+        any_address = ".".join(["0"] * 4)  # assembled: a literal is a Bandit B104 match
+        for text in (
+            "INFO:     Started server process [4242]\n",
+            running,
+            complete,
+            complete + running.replace(":8000", ":8001"),
+            complete + running.replace("127.0.0.1", any_address),
+            complete + running.replace("http://", "https://"),
+            # A rejection without startup evidence is still a startup failure first.
+            API_REJECTED + "\n",
+        ):
+            with self.subTest(text):
+                self.assertEqual(
+                    kinds(self.check_text(text)[0]), {"BACKEND_LOG_NO_STARTUP"}
+                )
+
+    def test_undecodable_bytes_are_read_and_still_checked(self):
+        problems, counts = self.check_text(
+            STARTUP.encode() + b"\xff\xfe junk\n" + API_REJECTED.encode() + b"\n"
+        )
+        self.assertEqual(kinds(problems), {"BACKEND_RATE_LIMITED"})
+        self.assertEqual(counts["backend_rate_limited"], 1)
+
+
+class BrowserDeps(Base):
+    """R133 (CI browser): the runner already has what `install --with-deps chromium` would
+    install. Libraries are required; fonts and xvfb are named warnings."""
+
+    UBUNTU = 'NAME="Ubuntu"\nVERSION_ID="24.04"\nID=ubuntu\n'
+
+    def run_deps(
+        self, missing=(), unknown=(), status=None, extra="", host=None, machine="x86_64"
+    ):
+        lines = [
+            f"{p} {'not-installed' if p in missing else 'installed'}"
+            for p in check.browser_packages()
+            if p not in unknown
+        ]
+        # dpkg-query prints one line per known package and nothing for an unknown one.
+        (self.tmp / "dpkg.txt").write_text(
+            "".join(f"{line}\n" for line in lines) + extra, encoding="utf-8"
+        )
+        (self.tmp / "os-release").write_text(
+            self.UBUNTU if host is None else host, encoding="utf-8"
+        )
+        exit_status = (1 if unknown else 0) if status is None else status
+        return check.check_browser_deps(
+            self.tmp / "dpkg.txt", exit_status, self.tmp / "os-release", machine
+        )
+
+    def test_the_lists_are_playwrights_and_disjoint(self):
+        libraries = set(check.CHROMIUM_LIBRARY_PACKAGES)
+        rendering = set(check.CHROMIUM_RENDERING_PACKAGES)
+        self.assertEqual(len(libraries), 23)
+        self.assertEqual(len(rendering), 10)
+        self.assertEqual(libraries & rendering, set())
+        self.assertEqual(len(check.browser_packages()), 33)
+        self.assertTrue(
+            all(
+                check.DPKG_LINE.fullmatch(f"{p} installed")
+                for p in libraries | rendering
+            )
+        )
+        # Only fonts and the virtual display are warnings; every library is required.
+        for package in rendering:
+            with self.subTest(package):
+                self.assertTrue(
+                    package == "xvfb" or package.startswith(("fonts-", "xfonts-"))
+                )
+                self.assertFalse(package.startswith("lib"))
+
+    def test_everything_installed_passes(self):
+        problems, warnings, counts = self.run_deps()
+        self.assertEqual((problems, warnings), ([], []))
+        self.assertEqual(
+            counts,
+            {
+                "library_packages": 23,
+                "library_missing": 0,
+                "rendering_packages": 10,
+                "rendering_missing": 0,
+            },
+        )
+
+    def test_a_missing_library_package_fails_by_name(self):
+        for package in check.CHROMIUM_LIBRARY_PACKAGES:
+            with self.subTest(package):
+                problems, _, counts = self.run_deps(missing={package})
+                self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+                self.assertTrue(problems[0]["detail"].endswith(" " + package))
+                self.assertEqual(counts["library_missing"], 1)
+
+    def test_a_library_unknown_to_dpkg_fails_by_name(self):
+        problems, _, _ = self.run_deps(unknown={"libgbm1", "libnss3"})
+        self.assertEqual(
+            problems[0]["detail"], "2 library packages not installed, libgbm1 libnss3"
+        )
+
+    def test_other_dpkg_states_are_not_installed(self):
+        for state in ("not-installed", "config-files", "half-installed", "unpacked"):
+            with self.subTest(state):
+                lines = [
+                    f"{p} {state if p == 'libnss3' else 'installed'}"
+                    for p in check.browser_packages()
+                ]
+                (self.tmp / "dpkg.txt").write_text(
+                    "\n".join(lines) + "\n", encoding="utf-8"
+                )
+                (self.tmp / "os-release").write_text(self.UBUNTU, encoding="utf-8")
+                problems = check.check_browser_deps(
+                    self.tmp / "dpkg.txt", 0, self.tmp / "os-release", "x86_64"
+                )[0]
+                self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+
+    def test_missing_fonts_and_xvfb_are_named_warnings_only(self):
+        problems, warnings, counts = self.run_deps(
+            missing={"fonts-wqy-zenhei", "xvfb"}, unknown={"fonts-ipafont-gothic"}
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(kinds(warnings), {"BROWSER_RENDERING_PACKAGES_MISSING"})
+        self.assertEqual(
+            warnings[0]["detail"],
+            "3 font or display packages not installed, earlier added by --with-deps,"
+            " xvfb fonts-ipafont-gothic fonts-wqy-zenhei",
+        )
+        self.assertEqual(counts["rendering_missing"], 3)
+
+    def test_libraries_and_fonts_missing_together(self):
+        problems, warnings, _ = self.run_deps(missing={"libdrm2", "fonts-unifont"})
+        self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+        self.assertEqual(kinds(warnings), {"BROWSER_RENDERING_PACKAGES_MISSING"})
+
+    def test_unverifiable_output_fails(self):
+        for kwargs in (
+            {"status": 2},
+            {"status": 127},
+            {"extra": "junk line\n"},
+            {"extra": "libnss3:amd64 installed\n"},
+            {"extra": "some-other-package installed\n"},
+            {"extra": "libnss3  installed\n"},
+            {"unknown": {"libnss3"}, "status": 0},  # exit 0 yet a package has no line
+        ):
+            with self.subTest(kwargs):
+                problems = self.run_deps(**kwargs)[0]
+                self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_UNVERIFIED"})
+        problems = check.check_browser_deps(
+            self.tmp / "absent.txt", 0, self.tmp / "os-release", "x86_64"
+        )[0]
+        self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_UNVERIFIED"})
+
+    def test_empty_output_with_exit_1_means_everything_missing(self):
+        problems, warnings, counts = self.run_deps(
+            unknown=set(check.browser_packages())
+        )
+        self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+        self.assertEqual(kinds(warnings), {"BROWSER_RENDERING_PACKAGES_MISSING"})
+        self.assertEqual(counts["library_missing"], 23)
+        self.assertEqual(counts["rendering_missing"], 10)
+
+    def test_only_ubuntu_24_04_x86_64(self):
+        for host, machine in (
+            ('NAME="Ubuntu"\nVERSION_ID="22.04"\nID=ubuntu\n', "x86_64"),
+            ('NAME="Debian"\nVERSION_ID="24.04"\nID=debian\n', "x86_64"),
+            ("VERSION_ID=24.04\n", "x86_64"),
+            (self.UBUNTU, "aarch64"),
+            (self.UBUNTU, ""),
+        ):
+            with self.subTest(host=host, machine=machine):
+                problems, warnings, counts = self.run_deps(host=host, machine=machine)
+                self.assertEqual(kinds(problems), {"BROWSER_HOST"})
+                self.assertEqual((warnings, counts), ([], {}))
+        problems = check.check_browser_deps(
+            self.tmp / "dpkg.txt", 0, self.tmp / "no-such-os-release", "x86_64"
+        )[0]
+        self.assertEqual(kinds(problems), {"BROWSER_HOST"})
+
+    def test_cli_prints_the_list_and_reports_warnings_and_failures(self):
+        output = io.StringIO()
+        out_bytes = io.BytesIO()
+        with contextlib.redirect_stdout(
+            io.TextIOWrapper(out_bytes, encoding="ascii")
+        ) as wrapper:
+            self.assertEqual(check.main(["browser-packages"]), 0)
+            wrapper.flush()
+        self.assertEqual(
+            out_bytes.getvalue(), ("\n".join(check.browser_packages()) + "\n").encode()
+        )
+        self.run_deps(missing={"fonts-liberation"})
+        argv = [
+            "browser-deps",
+            "--dpkg",
+            str(self.tmp / "dpkg.txt"),
+            "--exit-status",
+            "0",
+            "--os-release",
+            str(self.tmp / "os-release"),
+            "--machine",
+            "x86_64",
+        ]
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(check.main(argv), 0)
+        self.assertIn(
+            "::warning title=e2e::BROWSER_RENDERING_PACKAGES_MISSING 1 font or display",
+            output.getvalue(),
+        )
+        self.assertIn(
+            "browser deps: {'library_packages': 23, 'library_missing': 0",
+            output.getvalue(),
+        )
+        self.run_deps(missing={"libnss3"})
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            code = check.main(
-                [
-                    "report",
-                    "--list",
-                    str(self.tmp / "list.json"),
-                    "--report",
-                    str(self.tmp / "run.json"),
-                    "--log",
-                    str(self.tmp / "log"),
-                    "--exit-status",
-                    "1",
-                    "--env",
-                    str(env),
-                    "--out-dir",
-                    str(self.tmp / "s"),
-                ]
-            )
-        self.assertEqual(code, 1)
-        self.assertIn("PLAYWRIGHT_FAILED", output.getvalue())
-        self.assertNotIn(GOOD[SECRET_VAR], output.getvalue())
-        self.assertTrue((self.tmp / "s/summary.json").exists())
+            self.assertEqual(check.main(argv), 1)
+        self.assertIn(
+            "::error title=e2e::BROWSER_DEPENDENCIES_MISSING 1 library packages not installed, libnss3",
+            output.getvalue(),
+        )
 
 
 class E2eInputs(unittest.TestCase):
@@ -700,6 +1069,164 @@ class E2eInputs(unittest.TestCase):
         for role in roles:
             with self.subTest(role):
                 self.assertIn(f"{role}=${{result.projects.{role}}}", setup)
+
+    def test_r133_patterns_cover_exactly_the_backend_messages(self):
+        """Every rate-limit rejection the backend logs is one the gate fails on, and every
+        authentication failure it logs is counted apart. A new rejection reason fails here."""
+        import ast
+
+        rejections, auth_failures = [], []
+        for path in sorted((REPO / "backend/app").rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if " rejected reason=" in node.value:
+                        rejections.append(node.value)
+                    elif " auth failed reason=" in node.value:
+                        auth_failures.append(node.value)
+        reasons = {re.search(r"rejected reason=(\w+)", m).group(1) for m in rejections}
+        self.assertEqual(reasons, set(check.RATE_LIMIT_REASONS))
+        self.assertEqual(len(rejections), 4)  # api x2, ingest x2
+        self.assertEqual(len(auth_failures), 2)  # api, ingest
+        for message in rejections:
+            with self.subTest(message):
+                self.assertRegex(message, check.RATE_LIMITED)
+                self.assertNotRegex(message, check.AUTH_FAILED)
+        for message in auth_failures:
+            with self.subTest(message):
+                self.assertRegex(message, check.AUTH_FAILED)
+                self.assertNotRegex(message, check.RATE_LIMITED)
+
+    def test_r133_gate_sizes_only_the_main_backend_process(self):
+        gate = self.text("scripts/qa/e2e_gate.sh")
+        self.assertEqual(
+            gate.count("readonly e2e_api_rps=1000 e2e_api_burst=1000\n"), 1
+        )
+        start = gate[gate.index("start_backend() {") :]
+        start = start[: start.index("\n}\n")]
+        self.assertIn(
+            "  (\n    cd backend\n"
+            '    export LLMI_RATE_LIMIT_API_RPS="$e2e_api_rps"'
+            ' LLMI_RATE_LIMIT_API_BURST="$e2e_api_burst"\n'
+            "    exec nohup .venv/bin/python -m app\n"
+            '  ) > "$state/backend.log" 2>&1 &\n',
+            start,
+        )
+        # Set nowhere else in the gate: not for Playwright, the dashboards or 8001/8002.
+        self.assertEqual(gate.count("LLMI_RATE_LIMIT_"), 2)
+        self.assertNotIn("AUTHFAIL", gate)
+        self.assertNotIn("INGEST", gate)
+        self.assertEqual(gate.count('--backend-log "$state/backend.log"'), 1)
+
+    def frontend_phase(self):
+        gate = self.text("scripts/qa/e2e_gate.sh")
+        start = gate.index("\nfrontend() {\n")
+        return gate[start : gate.index("\n}\n", start)]
+
+    def test_r133_browser_install_installs_no_system_package(self):
+        gate = self.text("scripts/qa/e2e_gate.sh")
+        for needle in ("--with-deps", "install-deps", "apt-get", "apt ", "sudo "):
+            with self.subTest(needle):
+                self.assertNotIn(needle, gate)
+        phase = self.frontend_phase()
+        steps = [
+            "    npx playwright install chromium\n",
+            '  [ "$version" = "Version 1.64.0" ] || fail "unexpected Playwright version"\n',
+            '  [ -x "$path" ] || fail "the Playwright Chromium browser is not installed"\n',
+            "  mapfile -t packages < <(check browser-packages)\n",
+            (
+                "  dpkg-query -W -f='${Package} ${db:Status-Status}\\n' \"${packages[@]}\""
+                ' > "$state/browser-dpkg.txt" 2> /dev/null || dpkg_status=$?\n'
+            ),
+            (
+                '  check browser-deps --dpkg "$state/browser-dpkg.txt" --exit-status'
+                ' "$dpkg_status" \\\n'
+            ),
+            "  (cd frontend && node ../scripts/qa/e2e_browser_smoke.mjs)\n",
+            "  done_mark frontend",
+        ]
+        positions = []
+        for step in steps:
+            with self.subTest(step):
+                self.assertEqual(phase.count(step), 1)
+                positions.append(phase.index(step))
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("readonly os_release=/etc/os-release\n", gate)
+        self.assertIn("PLAYWRIGHT_SKIP_* | PLAYWRIGHT_*DOWNLOAD_HOST*)", phase)
+        # The step's own bound is unchanged.
+        self.assertIn(
+            "run: timeout 600 bash scripts/qa/e2e_gate.sh frontend",
+            self.text(".github/workflows/ci.yml"),
+        )
+
+    def test_r133_launch_check_uses_exactly_the_ci_browser(self):
+        source = self.text("scripts/qa/e2e_browser_smoke.mjs")
+        smoke = "\n".join(
+            line for line in source.splitlines() if not line.lstrip().startswith("//")
+        )
+        self.assertIn(
+            "const LAUNCH_OPTIONS = Object.freeze({ headless: true, timeout: 30_000 });",
+            smoke,
+        )
+        self.assertEqual(smoke.count(".launch("), 1)
+        self.assertIn("return await chromium.launch({ ...LAUNCH_OPTIONS });", smoke)
+        self.assertIn(
+            f'const EXPECTED_PLAYWRIGHT = "{check.PLAYWRIGHT_VERSION}";', smoke
+        )
+        for needle in (
+            "executablePath",
+            "channel",
+            "headless: false",
+            "retry",
+            "retries",
+        ):
+            with self.subTest(needle):
+                self.assertNotIn(needle, smoke)
+        self.assertIn(
+            "if (process.env.PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS) {", smoke
+        )
+        self.assertIn(
+            'return env.LLMI_E2E_CI === "1" ? { browserName: "chromium" } : { channel: "msedge" };',
+            self.text("frontend/tests/setup/e2e-browser.ts"),
+        )
+        config = self.text("frontend/playwright.config.ts")
+        self.assertIn("    ...e2eBrowser(process.env),\n    headless: true,\n", config)
+
+    def test_r133_dependency_lists_are_for_the_pinned_playwright(self):
+        """The pinned lists are Playwright 1.64.0's: an upgrade must re-check them."""
+        self.assertEqual(check.PLAYWRIGHT_VERSION, "1.64.0")
+        package = json.loads(self.text("frontend/package.json"))
+        self.assertEqual(package["devDependencies"]["@playwright/test"], "1.64.0")
+        lock = json.loads(self.text("frontend/package-lock.json"))["packages"]
+        for name in ("@playwright/test", "playwright", "playwright-core"):
+            with self.subTest(name):
+                self.assertEqual(lock[f"node_modules/{name}"]["version"], "1.64.0")
+
+    def test_r133_production_defaults_and_429_backends_are_unchanged(self):
+        config = self.text("backend/app/core/config.py")
+        for line in (
+            "rate_limit_ingest_rps: float = Field(default=20, gt=0)",
+            "rate_limit_ingest_burst: int = Field(default=40, gt=0)",
+            "rate_limit_api_rps: float = Field(default=10, gt=0)",
+            "rate_limit_api_burst: int = Field(default=20, gt=0)",
+            "rate_limit_authfail_per_min: int = Field(default=30, gt=0)",
+            'env_prefix="LLMI_"',
+        ):
+            with self.subTest(line):
+                self.assertIn(line, config)
+        pw = self.text("frontend/playwright.config.ts")
+        for line in (
+            (
+                'env: { LLMI_PORT: "8001", LLMI_RATE_LIMIT_API_RPS: "0.001",'
+                ' LLMI_RATE_LIMIT_API_BURST: "5" },'
+            ),
+            (
+                'env: { LLMI_PORT: "8002", LLMI_RATE_LIMIT_API_RPS: "0.001",'
+                ' LLMI_RATE_LIMIT_API_BURST: "6" },'
+            ),
+        ):
+            with self.subTest(line):
+                self.assertEqual(pw.count(line), 1)
+        self.assertEqual(pw.count("LLMI_RATE_LIMIT_"), 4)
 
     def test_no_test_mocks_the_backend_or_is_focused(self):
         for path in sorted((REPO / "frontend/tests/e2e").glob("*.spec.ts")):
