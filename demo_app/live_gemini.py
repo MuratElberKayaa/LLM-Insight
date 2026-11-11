@@ -158,13 +158,32 @@ def cost_doc(outcome: TextOutcome | None, policy: gemini_live.FreeTierPolicy) ->
     }
 
 
+def verifying_tls_context() -> ssl.SSLContext:
+    """TLS trusting only the pinned certifi bundle, with certificate and hostname verification.
+    Built without `ssl.create_default_context`, which would open any SSLKEYLOGFILE (R123)."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
 def _default_client(env: Mapping[str, str]) -> ClientFactory:
     def factory(policy: gemini_live.FreeTierPolicy) -> genai.Client:
         # ADR-34: no redirect is followed (a redirect would carry x-goog-api-key, which httpx
         # does not strip), no proxy or CA setting is taken from the environment, the CA
         # bundle is the pinned certifi one, and the library sends exactly one attempt.
+        tls = verifying_tls_context()
         http = httpx.Client(
-            verify=ssl.create_default_context(cafile=certifi.where()),
+            verify=tls,
+            trust_env=False,
+            follow_redirects=False,
+            timeout=policy.timeout_seconds,
+        )
+        # R123: google-genai builds an async client and a websocket TLS context of its own with
+        # `ssl.create_default_context` (which opens any SSLKEYLOGFILE) unless they are given.
+        # Neither is used to send, but every context here is the same key-log-free one.
+        async_http = httpx.AsyncClient(
+            verify=tls,
             trust_env=False,
             follow_redirects=False,
             timeout=policy.timeout_seconds,
@@ -180,6 +199,9 @@ def _default_client(env: Mapping[str, str]) -> ClientFactory:
                 api_version=LIVE_API_VERSION,
                 timeout=int(policy.timeout_seconds * 1000),  # milliseconds
                 httpx_client=http,
+                httpx_async_client=async_http,
+                client_args={"verify": tls},
+                async_client_args={"verify": tls, "ssl": tls},
             ),
         )
 

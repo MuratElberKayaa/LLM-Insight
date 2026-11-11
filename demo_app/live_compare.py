@@ -1,7 +1,9 @@
-"""Comparison runner (ADR-45, ADR-48): one fixed SYNTHETIC scenario, at most one provider request.
+"""Comparison runner (ADR-45, ADR-48, ADR-49): one fixed SYNTHETIC scenario, at most one request.
 
-    sdk/.venv/Scripts/python -m demo_app.live_compare --provider <groq|openrouter> --scenario <id>
-    sdk/.venv/Scripts/python -m demo_app.live_compare --provider ... --scenario <id> --execute
+    sdk/.venv/Scripts/python -m demo_app.live_compare --provider <name> --scenario <id>  # dry run
+    sdk/.venv/Scripts/python -m demo_app.live_compare --provider <name> --scenario <id> --execute
+
+`<name>` is `groq`, `gemini` or `openrouter`.
 
 **The default is a dry run.** It checks the scenario, the provider's guard policy, the audited
 libraries, the installed SDK against this checkout, the backend and the dashboard project, and
@@ -10,14 +12,15 @@ complete flag; abbreviations are refused) sends one request only when every gate
 here retries, continues, falls back to another model or provider, or runs a second scenario.
 **Never re-run automatically after a failure**: a timeout may have reached the provider.
 
-**Providers** form a closed registry. Two can be executed, each through its own unchanged guard
-and the shared audited endpoint boundary (ADR-43, ADR-44, ADR-47):
+**Providers** form a closed registry; each runs through its own unchanged guard:
 - `groq`: `groq_live.FreePlanSession` is the send gate (Free Plan attestation, ADR-44);
 - `openrouter`: `openrouter_live.FreeModelSession` is the send gate (one verified `:free` model,
-  no fallback, zero-price routing, no purchased credits, ADR-47).
-In this version both guards refuse every real request: each provider's execution lock is false and
-no evidence is released. `gemini` is refused until the R123 security fix is reviewed, before any
-setting is read.
+  no fallback, zero-price routing, no purchased credits, ADR-47);
+- `gemini`: the shared Gemini path `live_gemini.run_single_request` (Free Tier attestation,
+  reservation and settlement, ADR-34 endpoint checks), with exactly one model (ADR-49).
+One process makes at most one real request across all three (one shared slot). In this version
+every real request is refused: the Groq and OpenRouter execution locks are false with no evidence
+released, and the Gemini Free Tier evidence has expired.
 
 **The credential** is read once from the same environment the policy validates and handed to the
 client, which never sets it on the HTTP client. The send gate checks that the request carries
@@ -56,7 +59,7 @@ from urllib.parse import urlsplit
 import httpx
 
 import llm_insight_sdk as lli
-from demo_app import comparison_scenarios
+from demo_app import comparison_scenarios, content_preview
 from demo_app.comparison_scenarios import ComparisonScenario, ValidationResult
 from demo_app.live_common import DEFAULT_DASHBOARD_URL, check_backend, emit
 from llm_insight_sdk import groq_adapter, groq_live, openrouter_adapter, openrouter_live
@@ -101,6 +104,8 @@ _AUDITED_SDK_MODULES = (
     "telemetry",
     "_guards",
 )
+# Gemini's own guard and adapter, checked as well when `--provider gemini` runs.
+GEMINI_AUDITED_SDK_MODULES = ("gemini_live", "gemini_adapter")
 PLAN_BASIS = (
     "operator attestation of the Groq account's plan; Groq exposes no plan API, so this is not "
     "verified with Groq's billing system"
@@ -151,6 +156,8 @@ class Executable:
     constraints_extra: Callable[[], dict[str, Any]]
     plan_extra: Callable[[Any], dict[str, Any]]
     cost_extra: Callable[[Any, TextOutcome | None], dict[str, Any]]
+    # A provider whose request runs through its own shared path instead of a send gate.
+    run: Callable[..., RunResult] | None = None
 
 
 def _groq_plan(policy: groq_live.FreePlanPolicy) -> dict[str, Any]:
@@ -255,6 +262,245 @@ OPENROUTER = Executable(
 )
 
 
+# ---------------------------------------------------------------- Gemini (ADR-49)
+# Gemini runs through the unchanged shared path of both Gemini runners,
+# `live_gemini.run_single_request` (Free Tier policy, reservation and settlement, the ADR-34
+# endpoint checks before telemetry starts and again immediately before the send). Its modules
+# are imported only when `--provider gemini` is selected, so a Groq or OpenRouter run never loads
+# google-genai.
+GEMINI_PROVIDER = "gcp.gemini"
+GEMINI_API = "generateContent (Gemini Developer API)"
+GEMINI_TIER_BASIS = (
+    "operator attestation of the AI Studio Billing Tier; not verified with Google's billing backend"
+)
+GEMINI_COST_BASIS = (
+    "Free Tier: the API reports no billed amount; no Gemini price is applied (ADR-35); "
+    "a paid-tier list price is never shown as a charge; unknown is never 0"
+)
+# What the adapter's sole possible error categories say about whether the request was sent.
+_GEMINI_UNPROVEN = frozenset({"timeout", "connection_error", "unexpected_error"})
+
+
+def _gemini_modules() -> tuple[Any, Any, Any]:
+    live_gemini = importlib.import_module("demo_app.live_gemini")
+    gemini_adapter = importlib.import_module("llm_insight_sdk.gemini_adapter")
+    gemini_live = importlib.import_module("llm_insight_sdk.gemini_live")
+    return live_gemini, gemini_adapter, gemini_live
+
+
+@dataclass(frozen=True)
+class GeminiComparePolicy:
+    """The Free Tier policy, narrowed to exactly one model (no fallback list)."""
+
+    model: str
+    max_requests: int
+    max_input_tokens: int
+    max_output_tokens: int
+    timeout_seconds: float
+    max_retries: int
+    max_concurrency: int
+    tier_checked_on: Any
+    free_tier: Any = field(repr=False)
+
+
+@dataclass(frozen=True)
+class _Decision:
+    policy: Any
+    refusals: tuple[Refusal, ...]
+
+
+def evaluate_gemini(env: Mapping[str, str], now: datetime) -> _Decision:
+    """`gemini_live.evaluate_free_tier_policy`, plus one comparison rule: exactly one model."""
+    _, _, gemini_live = _gemini_modules()
+    decision = gemini_live.evaluate_free_tier_policy(env, now=now)
+    refusals = list(decision.refusals)
+    policy = decision.policy
+    if policy is not None and len(policy.models) != 1:
+        refusals.append(
+            Refusal("model_list_not_single", "LLMI_LIVE_MODELS must name one model: no fallbacks")
+        )
+    if policy is None or len(policy.models) != 1:
+        return _Decision(None, tuple(refusals))
+    view = GeminiComparePolicy(
+        model=policy.models[0],
+        max_requests=policy.max_requests,
+        max_input_tokens=policy.max_input_tokens,
+        max_output_tokens=policy.max_output_tokens,
+        timeout_seconds=policy.timeout_seconds,
+        max_retries=policy.max_retries,
+        max_concurrency=policy.max_concurrency,
+        tier_checked_on=policy.tier_checked_on,
+        free_tier=policy,
+    )
+    return _Decision(view, tuple(refusals))
+
+
+class _GeminiSession:
+    """The run's record for the runner's interruption handling: `possibly_sent` from the moment
+    the shared Gemini path is entered until its result says otherwise."""
+
+    def __init__(self) -> None:
+        self.state: RequestState = "not_sent"
+        self.halted: str | None = None
+        self.attempts = 0
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "requests_started": 0 if self.state == "not_sent" and self.attempts == 0 else 1,
+            "max_requests": 1,
+            "physical_attempts": self.attempts,
+            "provider_request_state": self.state,
+            "halted": self.halted,
+        }
+
+
+def _gemini_request_state(result: Any) -> RequestState:
+    """`not_sent` only when the send never began; `sent` only when a response was classified;
+    an error that cannot show a response (timeout, connection, unexpected) is `possibly_sent`."""
+    if not result.send_started:
+        return "not_sent"
+    outcome = result.outcome
+    if outcome is None:
+        return "possibly_sent"
+    if outcome.status == "error" and outcome.error_category in _GEMINI_UNPROVEN:
+        return "possibly_sent"
+    return "sent"
+
+
+def run_gemini_request(
+    executable: Executable,
+    *,
+    policy: Any,
+    config: lli.LLMInsightConfig,
+    scenario: ComparisonScenario,
+    input_text: str,
+    environ: Mapping[str, str],
+    clock: Clock,
+    http_factory: HttpFactory | None = None,
+    session_holder: list[Any] | None = None,
+) -> RunResult:
+    """One Gemini Free Tier request through `live_gemini.run_single_request`. The policy is
+    evaluated again immediately before, and the one process slot shared with the Groq and
+    OpenRouter guards is taken and never released."""
+    live_gemini, _, _ = _gemini_modules()
+    result = RunResult()
+    session = _GeminiSession()
+    if session_holder is not None:
+        session_holder.append(session)
+    decision = evaluate_gemini(environ, clock())
+    if decision.policy is None or decision.refusals:
+        result.refusals = refusal_docs(decision.refusals)
+        result.session = session.snapshot()
+        return result
+    if decision.policy != policy:
+        result.refusals = [
+            {"code": "policy_changed", "message": "the Free Tier policy changed before the send"}
+        ]
+        result.session = session.snapshot()
+        return result
+    if not groq_live._PROCESS_SLOT.acquire(blocking=False):
+        result.refusals = [
+            {"code": "request_limit_reached", "message": "the one request has been used"}
+        ]
+        result.session = session.snapshot()
+        return result
+    session.state = "possibly_sent"
+    single = live_gemini.run_single_request(
+        policy=policy.free_tier,
+        config=config,
+        model=policy.model,
+        input_text=input_text,
+        max_output_tokens=scenario.max_output_tokens,
+        prompt_name=scenario.prompt_name,
+        prompt_version=scenario.prompt_version,
+        root_span=ROOT_SPAN,
+        environ=environ,
+    )
+    session.state = _gemini_request_state(single)
+    settlement = single.settlement
+    session.attempts = settlement.attempts if settlement is not None else 0
+    session.halted = settlement.halted if settlement is not None else None
+    result.refusals = list(single.refusals)
+    result.outcome = single.outcome
+    result.trace_id = single.trace_id
+    result.flushed = single.flushed
+    result.shutdown_ok = single.shutdown_ok
+    result.stats = single.stats
+    result.aborted = single.aborted
+    result.session = session.snapshot()
+    return result
+
+
+def _gemini_plan(policy: GeminiComparePolicy) -> dict[str, Any]:
+    _, _, gemini_live = _gemini_modules()
+    return {
+        "api": GEMINI_API,
+        "billing_tier": gemini_live.BILLING_TIER_FREE,
+        "billing_tier_checked_on": policy.tier_checked_on.isoformat(),
+        "billing_tier_basis": GEMINI_TIER_BASIS,
+        "free_tier_evidence_verified_at": _iso(gemini_live.FREE_TIER_VERIFIED_AT),
+        "max_output_tokens_note": "thinking tokens count against this ceiling",
+    }
+
+
+def _gemini_cost(policy: GeminiComparePolicy, outcome: TextOutcome | None) -> dict[str, Any]:
+    _, _, gemini_live = _gemini_modules()
+    return {
+        "billing_tier": gemini_live.BILLING_TIER_FREE,
+        "billing_tier_checked_on": policy.tier_checked_on.isoformat(),
+        "billing_tier_basis": GEMINI_TIER_BASIS,
+        "basis": GEMINI_COST_BASIS,
+    }
+
+
+def _gemini_constraints() -> dict[str, Any]:
+    _, _, gemini_live = _gemini_modules()
+    evidence_at = gemini_live.FREE_TIER_VERIFIED_AT
+    return {
+        "include_reasoning": False,  # thinking text is never requested; its tokens count
+        "api": GEMINI_API,
+        "automatic_function_calling": False,
+        "automatic_continuation": False,
+        "free_tier_models_released": len(gemini_live.FREE_TIER_MODELS),
+        "free_tier_evidence_verified_at": _iso(evidence_at),
+        "free_tier_evidence_max_age_days": gemini_live.FREE_TIER_MAX_AGE.days,
+    }
+
+
+def _gemini_libraries() -> list[str]:
+    _, gemini_adapter, _ = _gemini_modules()
+    problems: list[str] = gemini_adapter.gemini_library_problems()
+    return problems
+
+
+def _no_client(*args: Any, **kwargs: Any) -> Any:
+    raise AssertionError("the Gemini path builds its client in live_gemini.run_single_request")
+
+
+GEMINI = Executable(
+    provider=GEMINI_PROVIDER,
+    endpoint="https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+    request_fields=("model", "contents", "config.max_output_tokens"),
+    evaluate=evaluate_gemini,
+    library_problems=_gemini_libraries,
+    client_problems=_no_client,
+    default_http=_no_client,
+    api_key_value=_no_client,
+    new_session=_no_client,
+    new_client=_no_client,
+    new_adapter=_no_client,
+    unsupported=(ConfigError,),
+    min_output_tokens=16,
+    max_requests=1,
+    max_input_tokens=1024,
+    deadline=30.0,
+    constraints_extra=_gemini_constraints,
+    plan_extra=_gemini_plan,
+    cost_extra=_gemini_cost,
+    run=run_gemini_request,
+)
+
+
 # ---------------------------------------------------------------- providers
 @dataclass(frozen=True)
 class ProviderEntry:
@@ -269,14 +515,7 @@ class ProviderEntry:
 PROVIDERS: Mapping[str, ProviderEntry] = MappingProxyType(
     {
         "groq": ProviderEntry("groq", groq_adapter.PROVIDER, executable=GROQ),
-        "gemini": ProviderEntry(
-            "gemini",
-            "gcp.gemini",
-            Refusal(
-                "provider_blocked",
-                "Gemini comparison runs are blocked until the R123 security fix is reviewed",
-            ),
-        ),
+        "gemini": ProviderEntry("gemini", GEMINI_PROVIDER, executable=GEMINI),
         "openrouter": ProviderEntry(
             "openrouter", openrouter_adapter.PROVIDER, executable=OPENROUTER
         ),
@@ -319,7 +558,9 @@ def _build_parser() -> _Parser:
 
 
 # ---------------------------------------------------------------- local checks
-def sdk_checkout_match(root: Path = _REPO_ROOT) -> CheckoutMatch:
+def sdk_checkout_match(
+    root: Path = _REPO_ROOT, modules: Sequence[str] = _AUDITED_SDK_MODULES
+) -> CheckoutMatch:
     """Whether the imported SDK's audited modules are byte-identical to this checkout, so a stale
     non-editable install cannot run old guards beside new runner code. `unknown` (no source tree
     here) does not refuse; a mismatch or an unreadable file is False."""
@@ -327,7 +568,7 @@ def sdk_checkout_match(root: Path = _REPO_ROOT) -> CheckoutMatch:
     if not source.is_dir():
         return "unknown"
     try:
-        for name in _AUDITED_SDK_MODULES:
+        for name in modules:
             module = importlib.import_module(f"llm_insight_sdk.{name}")
             installed = Path(str(module.__file__)).read_bytes()
             if installed != (source / f"{name}.py").read_bytes():
@@ -587,9 +828,13 @@ def _evaluate(scenario: ComparisonScenario, outcome: TextOutcome | None) -> Vali
     if outcome.status == "incomplete":
         return comparison_scenarios.not_evaluated("provider_incomplete")
     completion = outcome.provider_response
-    text = (
-        completion.text if isinstance(completion, GroqCompletion | OpenRouterCompletion) else None
-    )
+    if isinstance(completion, GroqCompletion | OpenRouterCompletion):
+        text = completion.text
+    elif outcome.provider == GEMINI_PROVIDER:
+        # The first candidate's non-thought text; thought parts are never read as the answer.
+        text = content_preview.extract_answer(completion).text
+    else:
+        text = None
     if text is None:
         return comparison_scenarios.not_evaluated("no_text_answer")
     return comparison_scenarios.validate_answer(scenario, text)
@@ -901,6 +1146,8 @@ def _run(
             Refusal("backend_not_ready", "the LLM Insight backend is not ready")
         )
     checkout = sdk_checkout_match()
+    if checkout is True and executable is GEMINI:
+        checkout = sdk_checkout_match(modules=GEMINI_AUDITED_SDK_MODULES)
     if checkout is False:
         readiness_refusals.append(
             Refusal(
@@ -942,7 +1189,7 @@ def _run(
     if policy is None or config is None or not (eligible and ready):
         return _finish(out, doc, 2, state)
 
-    result = run_provider_request(
+    result = (executable.run or run_provider_request)(
         executable,
         policy=policy,
         config=config,

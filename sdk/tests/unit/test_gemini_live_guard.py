@@ -133,6 +133,42 @@ def test_every_client_environment_override_is_refused(var):
     assert not decision.allowed and codes(decision) == {"client_env_override"}
 
 
+# ---------------------------------------------------------------- R123 (1): the attestation date
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-W44-3",  # the ISO week date of TODAY: same length, accepted before the fix
+        "2026-W44",
+        "2026-301",  # ordinal date
+        "20261028",  # basic format
+        "2026-10-2",
+        "2026-1-028",
+        "2026-10-28T13:00",
+        "２０２６-10-28",  # full-width digits
+    ],
+)
+def test_r123_only_a_plain_utc_date_is_an_attestation(value):
+    decision = gemini_live.evaluate_free_tier_policy(
+        gemini_env(LLMI_GEMINI_TIER_CHECKED_ON=value), now=NOW
+    )
+    assert not decision.allowed and codes(decision) == {"free_tier_unverified"}
+
+
+def test_r123_the_week_date_really_names_today():
+    """The rejected week date is not a stale or invalid date: only its format is refused."""
+    from datetime import date
+
+    assert date.fromisoformat("2026-W44-3").isoformat() == TODAY
+
+
+def test_r123_tls_key_logging_is_refused_by_the_policy():
+    assert "SSLKEYLOGFILE" in gemini_live.CLIENT_ENV_OVERRIDES
+    decision = gemini_live.evaluate_free_tier_policy(
+        gemini_env(SSLKEYLOGFILE="SYNTHETIC-keys.log"), now=NOW
+    )
+    assert codes(decision) == {"client_env_override"}
+
+
 def test_the_attestation_may_be_from_yesterday_but_not_older():
     yesterday = (NOW - timedelta(days=1)).date().isoformat()
     assert policy(LLMI_GEMINI_TIER_CHECKED_ON=yesterday).tier_checked_on.isoformat() == yesterday

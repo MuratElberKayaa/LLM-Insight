@@ -317,8 +317,9 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
 - **Comparison runner (ADR-45):** `python -m demo_app.live_compare --provider groq --scenario
   <id>` runs one of three fixed SYNTHETIC scenarios (`cmp-ticket-triage`, `cmp-json-aggregate`,
   `cmp-release-summary`, each with its own `prompt_version`): dry run by default, `--execute`
-  for at most one request, metadata-only JSON on stdout, exit codes 0/1/2/3. `gemini` is
-  refused; `openrouter` runs through its own guard (below, ADR-48). Run it with the key and
+  for at most one request, metadata-only JSON on stdout, exit codes 0/1/2/3. `openrouter`
+  runs through its own guard (below, ADR-48), and `gemini` through the Gemini Free Tier guard
+  and `live_gemini.run_single_request` (ADR-49). Run it with the key and
   project ID of a dedicated comparison project. These tests never contact a provider.
 
 ## OpenRouter adapter and free-model guard (ADR-46, ADR-47)
