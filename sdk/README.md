@@ -317,9 +317,25 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
 - **Comparison runner (ADR-45):** `python -m demo_app.live_compare --provider groq --scenario
   <id>` runs one of three fixed SYNTHETIC scenarios (`cmp-ticket-triage`, `cmp-json-aggregate`,
   `cmp-release-summary`, each with its own `prompt_version`): dry run by default, `--execute`
-  for at most one request, metadata-only JSON on stdout, exit codes 0/1/2/3. `gemini` and
-  `openrouter` are refused. Run it with the key and project ID of a dedicated comparison
-  project. Phase 8A tests never contact a provider.
+  for at most one request, metadata-only JSON on stdout, exit codes 0/1/2/3. `gemini` is
+  refused; `openrouter` runs through its own guard (below, ADR-48). Run it with the key and
+  project ID of a dedicated comparison project. These tests never contact a provider.
+
+## OpenRouter adapter and free-model guard (ADR-46, ADR-47)
+
+- **Adapter (`llm_insight_sdk.openrouter_adapter`):** `ObservedOpenRouterClient` and
+  `OpenRouterTextAdapter` over the same audited direct `httpx` client shape as Groq
+  (`build_openrouter_http_client()`). Exactly one explicit `org/name:free` model; no router,
+  model list, fallback, tools, streaming or retries. Every request carries
+  `provider: {allow_fallbacks: false, data_collection: "deny", max_price: 0}` and
+  `reasoning: {exclude: true}`. One CLIENT span (`openrouter`, `chat`) with all five usage counters;
+  `usage.cost` and `is_byok` are read for the guard only and never exported. Cost is always unknown
+  (ADR-40). Extra: `pip install "llm-insight-sdk[openrouter]"`.
+- **Free-model guard (`llm_insight_sdk.openrouter_live`):** a real client needs `FreeModelSession`
+  as its send gate. **Real requests are refused in this version, three times over**: the execution
+  lock is off, no free-model evidence is released, and zero-price routing is not verified. The
+  session shares Groq's one-request process slot. A response that does not report exactly 0
+  credits and no BYOK halts the session (exit 3 in the runner).
 
 ## What is recorded
 

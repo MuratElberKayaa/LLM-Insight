@@ -309,6 +309,7 @@ def test_one_completed_request_with_metadata_only_output(stub, wire, scenario):
         "input": 20,
         "output": 32,
         "cache_read_input": None,
+        "cache_write_input": None,  # one token schema for every provider; unknown, never 0
         "reasoning_output": None,
     }
     cost = doc["usage"]["cost"]
@@ -571,24 +572,24 @@ def test_a_client_that_is_not_the_audited_shape_is_refused(stub, wire):
 
 
 # ---------------------------------------------------------------- providers
-@pytest.mark.parametrize(
-    ("provider", "code"),
-    [("gemini", "provider_blocked"), ("openrouter", "provider_not_implemented")],
-)
 @pytest.mark.parametrize("mode", [[], ["--execute"]])
-def test_gemini_and_openrouter_are_refused_before_anything_is_read(stub, provider, code, mode):
+def test_gemini_is_refused_before_anything_is_read(stub, mode):
     env = Recording(runner_env(stub.endpoint))
     never = NeverBuilt()
-    rc, doc, _ = run(["--provider", provider, "--scenario", TICKET, *mode], env, http_factory=never)
+    rc, doc, _ = run(["--provider", "gemini", "--scenario", TICKET, *mode], env, http_factory=never)
     assert rc == 2 and env.reads == 0 and never.calls == 0 and stub.attempts == 0
-    assert codes(doc) == {code}
+    assert codes(doc) == {"provider_blocked"}
     assert doc["provider_selection"]["available"] is False
     assert doc["scenario"] is None and doc["plan"] is None
 
 
 def test_the_provider_registry_is_closed():
     assert set(runner.PROVIDERS) == {"groq", "gemini", "openrouter"}
-    assert [name for name, e in runner.PROVIDERS.items() if e.refusal is None] == ["groq"]
+    executable = [name for name, e in runner.PROVIDERS.items() if e.refusal is None]
+    assert executable == ["groq", "openrouter"]
+    assert runner.PROVIDERS["groq"].executable is runner.GROQ
+    assert runner.PROVIDERS["openrouter"].executable is runner.OPENROUTER
+    assert runner.PROVIDERS["gemini"].executable is None
     with pytest.raises(TypeError):
         runner.PROVIDERS["other"] = runner.PROVIDERS["groq"]  # type: ignore[index]
 

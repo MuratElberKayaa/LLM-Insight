@@ -6,6 +6,10 @@ All fixtures are **SYNTHETIC**. They don't come from a real provider call and mu
 
 The exact attributes of the CLIENT span `GroqTextAdapter` emits for a completed call (Phase 8A-2, ADR-42). It is a contract shared by two offline tests: `sdk/tests/unit/test_groq_adapter.py` asserts the SDK emits it, and `backend/tests/unit/test_groq_contract.py` asserts the backend keeps every attribute with no drop and never prices the call.
 
+## `openrouter_client_span.v1.json`
+
+The same contract for `OpenRouterTextAdapter` (ADR-46): a made-up `:free` model, all five usage counters (input, output, cache read, cache write, reasoning) and `server.address` `openrouter.ai`. `sdk/tests/unit/test_openrouter_adapter.py` asserts the SDK emits it, and `backend/tests/unit/test_openrouter_contract.py` asserts the backend keeps every attribute with no drop and never prices the call. OpenRouter's reported `usage.cost` and `is_byok` are not in the span by design.
+
 ## `otlp_trace_3span.json`
 
 This file is an OTLP/JSON rendering of one `ExportTraceServiceRequest`, following `TELEMETRY_CONTRACT.md` §6. It is illustrative. Phase 1B parses it with `opentelemetry-proto` (hex IDs converted first, `backend/tests/otlp.py`) as part of T01.

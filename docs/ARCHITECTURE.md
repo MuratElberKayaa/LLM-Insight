@@ -613,7 +613,7 @@ Data comes from PyPI, npm and endoflife.date on 2026-10-24. Each candidate is th
 | PostgreSQL | 17 (Docker `postgres:17`, EOL 2029-11) | Conservative choice over 18 |
 | Backend | fastapi 0.143.0 · uvicorn 0.54.0 · pydantic 2.14.0 · pydantic-settings 2.15.0 · sqlalchemy 2.1.4 · alembic 1.20.0 · psycopg 3.3.6 | |
 | OTel / protos | opentelemetry-api / -sdk / -proto / -exporter-otlp-proto-http 1.45.1 · protobuf 7.36.2 (proto requires `>=5,<8`) · googleapis-common-protos 1.75.5 (`google.rpc.Status` / `BadRequest`; requires protobuf `>=6.33.5,<8`) · opentelemetry-instrumentation-fastapi 0.66b1 (beta line, demo only) | |
-| Provider | openai 3.28.0 · google-genai 2.30.1 (Phase 6C-A, ADR-33) · direct httpx 0.28.1 and certifi 2026.10.19 for Groq (Phase 8A-2, ADR-42, offline only) | SDK adapters (optional extras `openai`, `gemini`, `groq`) and demo only; never a backend dependency |
+| Provider | openai 3.28.0 · google-genai 2.30.1 (Phase 6C-A, ADR-33) · direct httpx 0.28.1 and certifi 2026.10.19 for Groq (Phase 8A-2, ADR-42) and OpenRouter (ADR-46), the same pins, offline only | SDK adapters (optional extras `openai`, `gemini`, `groq`, `openrouter`) and demo only; never a backend dependency |
 | Eval / test | jsonschema 4.26.0 · pytest 9.1.1 · httpx 0.28.1 · ruff 0.17.0 | |
 | Frontend | next **16.4.3** · react / react-dom / react-is **19.3.1** · tailwindcss 4.3.3 · recharts 3.10.1 · @playwright/test 1.64.0 · eslint **9.39.5** | Installed in Phase 3A (below). 16.4.0 and 19.3.0 were replaced for security fixes; ESLint 10 is blocked by plugin peer ranges |
 | TypeScript | **6.0.3** (decided in Phase 3A, R07) | `typescript-eslint` 8.x supports `<6.1.0`, which rules out 7.x |

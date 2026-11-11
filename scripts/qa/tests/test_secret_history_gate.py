@@ -545,12 +545,12 @@ class RepositoryBaseline(unittest.TestCase):
             REPO_ROOT / "docs/SECURITY.md",
         )
         self.assertEqual(problems, [])
-        self.assertEqual(baseline["totals"]["total"], 39)
+        self.assertEqual(baseline["totals"]["total"], 40)
         self.assertEqual(gate.digest(baseline), gate.REVIEWED_BASELINE_SHA256)
         self.assertEqual(
             baseline["totals"]["by_classification"],
             {
-                "F9-CHANGE-ME-VALUE": 11,
+                "F9-CHANGE-ME-VALUE": 12,
                 "F9-DOC-EXAMPLE": 20,
                 "F9-TEST-FIXTURE": 8,
             },

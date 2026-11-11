@@ -503,3 +503,133 @@ The architectural review of `reports/phase-8a-0.md` authorized checkpoint 8A-1 (
 - **Consequences:** comparison runs are possible for Groq only, and only after both ADR-44 locks are released by a reviewed change. A trace refused at the send still exports its root span with no inference span, as in the Gemini runners. The project and the account plan remain operator statements (R119, R125). The `.env.example` Groq comment is outdated until a reviewed change that also accepts its new history blob (R127).
 - **Affected files:** `demo_app/{live_compare,comparison_scenarios}.py`, `sdk/src/llm_insight_sdk/groq_live.py`, `README.md`, `sdk/README.md`, `SECURITY.md` §6, `SOURCES_AND_RISKS.md`.
 - **Tests:** `sdk/tests/unit/test_compare_runner.py`, `sdk/tests/unit/test_comparison_scenarios.py`, the credential-binding tests appended to `sdk/tests/unit/test_groq_live_guard.py` (whose request fixture now carries the validated key).
+
+### ADR-46 — OpenRouter chat completions adapter for one explicit `:free` model, on the Groq endpoint boundary (amends ADR-05 for this adapter)
+- **Status:** Implemented offline by the multi-provider live-comparison instruction (2026-11-11); for the architectural review. **Amends ADR-05** for this one adapter, as ADR-42 did for Groq. ADR-13, ADR-15, ADR-19, ADR-40, ADR-41 and ADR-43 unchanged; ADR-43's boundary is reused, not changed. **It permits no provider request.**
+- **Context:** OpenRouter and model comparison are confirmed MVP scope. OpenRouter's API reference (read 2026-11-11) documents:
+  - the endpoint `POST https://openrouter.ai/api/v1/chat/completions` with `Authorization: Bearer`;
+  - the output limit `max_tokens`, and `reasoning: {exclude: true}`, whose reasoning still counts against `max_tokens`;
+  - usage always returned, with `usage.cost` in credits and `usage.is_byok`;
+  - normalized finish reasons `stop`, `length`, `content_filter`, `tool_calls` and `error`;
+  - errors as `{error: {code, message, metadata}}`, including errors returned with HTTP 200.
+
+  A `models` list falls back to the next model on any error, and a fallback from a `:free` model to a paid one is billed. A non-streaming response does not document the upstream `provider` field.
+- **Decision:**
+  - **Client:** `llm_insight_sdk.openrouter_adapter` provides `ObservedOpenRouterClient` and `OpenRouterTextAdapter`, with one CLIENT span per physical request. The span carries:
+    - operation `chat` and provider `openrouter`, set from the instrumentation's knowledge, as `reports/phase-8a-0.md` §3 recorded for the semconv pin;
+    - the response `model` and `id`;
+    - the normalized finish reason verbatim;
+    - `server.address = openrouter.ai`.
+  - **Model:** exactly one explicit `org/name:free` ID (`MODEL_ID`). Routers (`openrouter/*`), aliases, other variants and paid IDs are refused before anything is sent. There is no default and no list.
+  - **Request body** (`PROVIDER_ROUTING`):
+    - exactly `model`, one user message, `max_tokens` (1 to 1024), `stream: false` and `reasoning: {exclude: true}`;
+    - `provider: {allow_fallbacks: false, data_collection: "deny", max_price: {prompt: 0, completion: 0, request: 0, image: 0}}`.
+  - **Refused parameters:** `models`, `route`, `plugins`, `sort`, `order`, tools, response formats, sampling settings and every other parameter. No `HTTP-Referer` or title header is sent.
+  - **Usage:**
+    - Prompt and completion counts are input and output.
+    - Cached, cache-write and reasoning counts are subsets when present.
+    - Missing counts are unknown (`missing`).
+    - Non-counts, a sum that does not match the total, or subsets above their totals are unknown (`inconsistent`).
+    - Nothing is estimated.
+  - **Free-routing signals:** `usage.cost` and `usage.is_byok` are read into `FreeRoutingSignals` for the guard's post-call check, as states only:
+    - cost: `zero`, `nonzero`, `absent` or `invalid`;
+    - BYOK: `true`, `false`, `absent` or `invalid`.
+
+    They are never exported and never ledger data.
+  - **Outcomes:** as ADR-42, with OpenRouter error types `openrouter.response.*`.
+    - An `error` object in a 200 body is `error`, never a completion.
+    - A choice carrying an `error`, or `finish_reason: error`, is `failed`/`response_failed`.
+    - A response naming another model, including the paid variant of the requested one, is `failed` with `openrouter.response.model_mismatch`.
+  - **Never read:** `message.reasoning`, `native_finish_reason`, the upstream `provider`, `error.message`, `cost_details`, and any `error.metadata` field except a keyword-checked `error_type`.
+  - **Endpoint boundary:**
+    - It reuses, unchanged, the audited Groq client shape and checks (`groq_library_problems`, `_routing_problems`, `transport_problems`), with OpenRouter's own URL, host and bounded timeouts.
+    - There is one attempt.
+    - `real` provenance raises while `REAL_EXECUTION_ENABLED` is false; `synthetic` needs an `httpx.MockTransport`.
+    - The extra `openrouter` uses the Groq pins, so no package enters the locks.
+- **Alternatives rejected:**
+  - the official `openrouter` package, or the `openai` client with a base URL (`reports/phase-8a-0.md` §5.1);
+  - a shared Groq/OpenRouter profile that changes ADR-42's audited module: a reviewed change to working Groq code for no stronger guarantee;
+  - `openrouter/free` or `openrouter/auto`: a router chooses the model, so neither the comparison nor the price is fixed;
+  - treating the paid variant as the same model: a silent billing path.
+- **Consequences:**
+  - OpenRouter spans are stored and read like any inference span, with no column, migration or allowlist change.
+  - Cost stays unknown (ADR-40), even with a 0 catalogue row.
+  - The parser is built from documentation and fails closed (R136).
+  - The upstream that served a request is not visible (R137).
+- **Affected files:** `sdk/src/llm_insight_sdk/openrouter_adapter.py`, `sdk/pyproject.toml` (extra `openrouter`), `docs/fixtures/openrouter_client_span.v1.json`.
+- **Tests:** `sdk/tests/unit/test_openrouter_adapter.py`, `backend/tests/unit/test_openrouter_contract.py`.
+
+### ADR-47 — OpenRouter free-model guard: three locks, zero-price routing as evidence, a shared one-request process slot (applies ADR-44's model to OpenRouter)
+- **Status:** Implemented offline by the multi-provider live-comparison instruction (2026-11-11); for the architectural review. ADR-44 unchanged; its TLS and connection checks are reused. **It permits no provider request.**
+- **Context:**
+  - The review of `reports/phase-8a-0.md` (§16.2) made `allow_fallbacks=false` **and a verified zero-price routing constraint** preconditions of any real OpenRouter call.
+  - OpenRouter documents that `max_price` "will prevent your request from running if the price is not available", but not how a cap of 0 behaves for a `:free` model, nor which status it returns when no endpoint qualifies.
+  - Free models change frequently.
+  - The account's credits are visible only through a separate key endpoint, and calling it is a provider request.
+- **Decision:**
+  - **Three independent locks**, each refusing on its own:
+    - `openrouter_adapter.REAL_EXECUTION_ENABLED` is false (`real_execution_disabled`);
+    - `FREE_MODELS` is empty and `FREE_MODEL_EVIDENCE_VERIFIED_AT = None` (`free_model_evidence_missing`);
+    - `ZERO_PRICE_ROUTING_VERIFIED_AT = None` (`free_routing_evidence_missing`).
+
+    Releasing any one is a reviewed code change. Both evidence records expire after 7 days. Releasing Groq releases nothing here.
+  - **Policy** (`evaluate_free_model_policy`):
+    - `LLMI_PROVIDER_MODE=real` and `LLMI_OPENROUTER_MODE=free-models` (no paid mode exists);
+    - `LLMI_LIVE_CONSENT=openrouter-free-model-single-call`;
+    - `OPENROUTER_API_KEY`, checked for presence and shape only: Groq, Google, ingest and plain `sk-` keys are refused, and `sk-or-` is accepted but not required;
+    - the operator attestation `LLMI_OPENROUTER_ACCOUNT_STATE=no-purchased-credits` (no purchased credits, no BYOK, no automatic top-up), with `LLMI_OPENROUTER_ACCOUNT_CHECKED_ON` at most one day old;
+    - the same refused base-URL, proxy, CA and key-log variables as ADR-44;
+    - provider `openrouter` only;
+    - exactly one allowlisted model, which must also be a `:free` ID;
+    - the same hard caps as ADR-44.
+  - **Immediately before the send**, as in ADR-44 and ADR-45, the session checks in this order:
+    - the whole policy, against the clock and one environment copy;
+    - the endpoint boundary: ADR-44's TLS and connection checks, plus OpenRouter's URL, host and timeouts;
+    - the credential binding (`credential_not_bound`);
+    - the exact body, whose `provider` and `reasoning` objects are compared in canonical JSON, so `0` is not `false`.
+
+    Only then is the slot taken.
+  - **One slot per process across providers.** The session takes `groq_live._PROCESS_SLOT`, so one process makes at most one real provider request, Groq or OpenRouter.
+  - **Post-call halts.** A halt never causes a request. The session halts on:
+    - a 402, or a 200 body with `error.code` 402 (`payment_required_indicator`);
+    - a 3xx (`redirect_refused`);
+    - a response model other than the requested one (`response_model_mismatch`);
+    - `usage.cost` not exactly 0 (`cost_not_zero`), or absent or unreadable (`cost_unverified`);
+    - `is_byok` true (`byok_used`), or not exactly false (`byok_unverified`);
+    - reported usage above the bounds.
+- **Alternatives rejected:**
+  - treating `max_price` as verified from documentation: the reviewer required verification, and its behaviour for a 0 cap is undocumented;
+  - calling the key endpoint for `is_free_tier`: an extra provider request outside the one authorized inference request, so it stays an operator check;
+  - a per-provider process slot: two real requests per process;
+  - accepting a missing cost or BYOK flag as free: it cannot confirm the route.
+- **Consequences:**
+  - A real OpenRouter request needs three reviewed releases and a current attestation.
+  - A successful response that cannot confirm a zero cost halts the session with exit 3.
+  - The account's real state remains the actual boundary (R134).
+- **Affected files:** `sdk/src/llm_insight_sdk/openrouter_live.py`, `.env.example`, `SECURITY.md` §6.
+- **Tests:** `sdk/tests/unit/test_openrouter_live_guard.py`.
+
+### ADR-48 — The comparison runner executes Groq and OpenRouter through one closed registry (amends ADR-45's provider registry)
+- **Status:** Implemented offline by the multi-provider live-comparison instruction (2026-11-11); for the architectural review. **Amends ADR-45** in one point: `openrouter` is no longer refused as `provider_not_implemented`. Everything else in ADR-45 is unchanged, and Gemini stays blocked by R123. **It permits no provider request.**
+- **Decision:**
+  - **Runner:** `demo_app.live_compare` keeps one entry point, one provider and one scenario per process. Dry run is the default, and `--execute` is the only authorization.
+  - **Registry:** it maps `groq` and `openrouter` to an `Executable` record, which binds the provider's own:
+    - policy;
+    - audited client builder and checks;
+    - credential reading;
+    - send gate;
+    - adapter;
+    - report wording.
+
+    Each callable looks its target up when called, so the audited module functions are the ones that run.
+  - **Scenarios:** the three versioned scenarios are unchanged. Both providers receive the same composed text, `prompt_version` and 1024-token cap.
+  - **Output:**
+    - every provider gains `usage.tokens.cache_write_input`;
+    - for OpenRouter, the plan adds the account attestation, the routing constraints and the evidence dates;
+    - for OpenRouter, `usage.cost.provider_reported_cost` and `provider_reported_byok` are states, never amounts;
+    - cost is `unknown` for both providers.
+  - **Checkout match:** `sdk_checkout_match` now covers nine audited modules, adding `openrouter_live` and `openrouter_adapter` (R128).
+  - **Dashboard:** Models / Compare shows a note when real-labelled attempts are present: the label is asserted, not verified, and does not show which upstream served a request. No dashboard action can start a provider request.
+- **Consequences:** a Groq run and an OpenRouter run of the same scenario, in the dedicated comparison project, give two `/models/compare` rows with the same `prompt_version`. One sample each is never a ranking (R126).
+- **Affected files:** `demo_app/live_compare.py`, `frontend/components/models/model-comparison.tsx`, `README.md`, `sdk/README.md`.
+- **Tests:** `sdk/tests/unit/test_compare_runner.py` (registry, schema), `sdk/tests/unit/test_compare_runner_openrouter.py`, `sdk/tests/integration/test_live_compare_openrouter.py`, `frontend/tests/unit/phase3c.test.tsx`.
