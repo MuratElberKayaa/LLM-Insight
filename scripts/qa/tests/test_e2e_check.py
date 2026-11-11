@@ -826,6 +826,201 @@ class BackendLog(Base):
         self.assertEqual(counts["backend_rate_limited"], 1)
 
 
+class BrowserDeps(Base):
+    """R133 (CI browser): the runner already has what `install --with-deps chromium` would
+    install. Libraries are required; fonts and xvfb are named warnings."""
+
+    UBUNTU = 'NAME="Ubuntu"\nVERSION_ID="24.04"\nID=ubuntu\n'
+
+    def run_deps(
+        self, missing=(), unknown=(), status=None, extra="", host=None, machine="x86_64"
+    ):
+        lines = [
+            f"{p} {'not-installed' if p in missing else 'installed'}"
+            for p in check.browser_packages()
+            if p not in unknown
+        ]
+        # dpkg-query prints one line per known package and nothing for an unknown one.
+        (self.tmp / "dpkg.txt").write_text(
+            "".join(f"{line}\n" for line in lines) + extra, encoding="utf-8"
+        )
+        (self.tmp / "os-release").write_text(
+            self.UBUNTU if host is None else host, encoding="utf-8"
+        )
+        exit_status = (1 if unknown else 0) if status is None else status
+        return check.check_browser_deps(
+            self.tmp / "dpkg.txt", exit_status, self.tmp / "os-release", machine
+        )
+
+    def test_the_lists_are_playwrights_and_disjoint(self):
+        libraries = set(check.CHROMIUM_LIBRARY_PACKAGES)
+        rendering = set(check.CHROMIUM_RENDERING_PACKAGES)
+        self.assertEqual(len(libraries), 23)
+        self.assertEqual(len(rendering), 10)
+        self.assertEqual(libraries & rendering, set())
+        self.assertEqual(len(check.browser_packages()), 33)
+        self.assertTrue(
+            all(
+                check.DPKG_LINE.fullmatch(f"{p} installed")
+                for p in libraries | rendering
+            )
+        )
+        # Only fonts and the virtual display are warnings; every library is required.
+        for package in rendering:
+            with self.subTest(package):
+                self.assertTrue(
+                    package == "xvfb" or package.startswith(("fonts-", "xfonts-"))
+                )
+                self.assertFalse(package.startswith("lib"))
+
+    def test_everything_installed_passes(self):
+        problems, warnings, counts = self.run_deps()
+        self.assertEqual((problems, warnings), ([], []))
+        self.assertEqual(
+            counts,
+            {
+                "library_packages": 23,
+                "library_missing": 0,
+                "rendering_packages": 10,
+                "rendering_missing": 0,
+            },
+        )
+
+    def test_a_missing_library_package_fails_by_name(self):
+        for package in check.CHROMIUM_LIBRARY_PACKAGES:
+            with self.subTest(package):
+                problems, _, counts = self.run_deps(missing={package})
+                self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+                self.assertTrue(problems[0]["detail"].endswith(" " + package))
+                self.assertEqual(counts["library_missing"], 1)
+
+    def test_a_library_unknown_to_dpkg_fails_by_name(self):
+        problems, _, _ = self.run_deps(unknown={"libgbm1", "libnss3"})
+        self.assertEqual(
+            problems[0]["detail"], "2 library packages not installed, libgbm1 libnss3"
+        )
+
+    def test_other_dpkg_states_are_not_installed(self):
+        for state in ("not-installed", "config-files", "half-installed", "unpacked"):
+            with self.subTest(state):
+                lines = [
+                    f"{p} {state if p == 'libnss3' else 'installed'}"
+                    for p in check.browser_packages()
+                ]
+                (self.tmp / "dpkg.txt").write_text(
+                    "\n".join(lines) + "\n", encoding="utf-8"
+                )
+                (self.tmp / "os-release").write_text(self.UBUNTU, encoding="utf-8")
+                problems = check.check_browser_deps(
+                    self.tmp / "dpkg.txt", 0, self.tmp / "os-release", "x86_64"
+                )[0]
+                self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+
+    def test_missing_fonts_and_xvfb_are_named_warnings_only(self):
+        problems, warnings, counts = self.run_deps(
+            missing={"fonts-wqy-zenhei", "xvfb"}, unknown={"fonts-ipafont-gothic"}
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(kinds(warnings), {"BROWSER_RENDERING_PACKAGES_MISSING"})
+        self.assertEqual(
+            warnings[0]["detail"],
+            "3 font or display packages not installed, earlier added by --with-deps,"
+            " xvfb fonts-ipafont-gothic fonts-wqy-zenhei",
+        )
+        self.assertEqual(counts["rendering_missing"], 3)
+
+    def test_libraries_and_fonts_missing_together(self):
+        problems, warnings, _ = self.run_deps(missing={"libdrm2", "fonts-unifont"})
+        self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+        self.assertEqual(kinds(warnings), {"BROWSER_RENDERING_PACKAGES_MISSING"})
+
+    def test_unverifiable_output_fails(self):
+        for kwargs in (
+            {"status": 2},
+            {"status": 127},
+            {"extra": "junk line\n"},
+            {"extra": "libnss3:amd64 installed\n"},
+            {"extra": "some-other-package installed\n"},
+            {"extra": "libnss3  installed\n"},
+            {"unknown": {"libnss3"}, "status": 0},  # exit 0 yet a package has no line
+        ):
+            with self.subTest(kwargs):
+                problems = self.run_deps(**kwargs)[0]
+                self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_UNVERIFIED"})
+        problems = check.check_browser_deps(
+            self.tmp / "absent.txt", 0, self.tmp / "os-release", "x86_64"
+        )[0]
+        self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_UNVERIFIED"})
+
+    def test_empty_output_with_exit_1_means_everything_missing(self):
+        problems, warnings, counts = self.run_deps(
+            unknown=set(check.browser_packages())
+        )
+        self.assertEqual(kinds(problems), {"BROWSER_DEPENDENCIES_MISSING"})
+        self.assertEqual(kinds(warnings), {"BROWSER_RENDERING_PACKAGES_MISSING"})
+        self.assertEqual(counts["library_missing"], 23)
+        self.assertEqual(counts["rendering_missing"], 10)
+
+    def test_only_ubuntu_24_04_x86_64(self):
+        for host, machine in (
+            ('NAME="Ubuntu"\nVERSION_ID="22.04"\nID=ubuntu\n', "x86_64"),
+            ('NAME="Debian"\nVERSION_ID="24.04"\nID=debian\n', "x86_64"),
+            ("VERSION_ID=24.04\n", "x86_64"),
+            (self.UBUNTU, "aarch64"),
+            (self.UBUNTU, ""),
+        ):
+            with self.subTest(host=host, machine=machine):
+                problems, warnings, counts = self.run_deps(host=host, machine=machine)
+                self.assertEqual(kinds(problems), {"BROWSER_HOST"})
+                self.assertEqual((warnings, counts), ([], {}))
+        problems = check.check_browser_deps(
+            self.tmp / "dpkg.txt", 0, self.tmp / "no-such-os-release", "x86_64"
+        )[0]
+        self.assertEqual(kinds(problems), {"BROWSER_HOST"})
+
+    def test_cli_prints_the_list_and_reports_warnings_and_failures(self):
+        output = io.StringIO()
+        out_bytes = io.BytesIO()
+        with contextlib.redirect_stdout(
+            io.TextIOWrapper(out_bytes, encoding="ascii")
+        ) as wrapper:
+            self.assertEqual(check.main(["browser-packages"]), 0)
+            wrapper.flush()
+        self.assertEqual(
+            out_bytes.getvalue(), ("\n".join(check.browser_packages()) + "\n").encode()
+        )
+        self.run_deps(missing={"fonts-liberation"})
+        argv = [
+            "browser-deps",
+            "--dpkg",
+            str(self.tmp / "dpkg.txt"),
+            "--exit-status",
+            "0",
+            "--os-release",
+            str(self.tmp / "os-release"),
+            "--machine",
+            "x86_64",
+        ]
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(check.main(argv), 0)
+        self.assertIn(
+            "::warning title=e2e::BROWSER_RENDERING_PACKAGES_MISSING 1 font or display",
+            output.getvalue(),
+        )
+        self.assertIn(
+            "browser deps: {'library_packages': 23, 'library_missing': 0",
+            output.getvalue(),
+        )
+        self.run_deps(missing={"libnss3"})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(check.main(argv), 1)
+        self.assertIn(
+            "::error title=e2e::BROWSER_DEPENDENCIES_MISSING 1 library packages not installed, libnss3",
+            output.getvalue(),
+        )
+
+
 class E2eInputs(unittest.TestCase):
     def text(self, rel):
         return (REPO / rel).read_text(encoding="utf-8").replace("\r\n", "\n")
@@ -921,6 +1116,90 @@ class E2eInputs(unittest.TestCase):
         self.assertNotIn("AUTHFAIL", gate)
         self.assertNotIn("INGEST", gate)
         self.assertEqual(gate.count('--backend-log "$state/backend.log"'), 1)
+
+    def frontend_phase(self):
+        gate = self.text("scripts/qa/e2e_gate.sh")
+        start = gate.index("\nfrontend() {\n")
+        return gate[start : gate.index("\n}\n", start)]
+
+    def test_r133_browser_install_installs_no_system_package(self):
+        gate = self.text("scripts/qa/e2e_gate.sh")
+        for needle in ("--with-deps", "install-deps", "apt-get", "apt ", "sudo "):
+            with self.subTest(needle):
+                self.assertNotIn(needle, gate)
+        phase = self.frontend_phase()
+        steps = [
+            "    npx playwright install chromium\n",
+            '  [ "$version" = "Version 1.64.0" ] || fail "unexpected Playwright version"\n',
+            '  [ -x "$path" ] || fail "the Playwright Chromium browser is not installed"\n',
+            "  mapfile -t packages < <(check browser-packages)\n",
+            (
+                "  dpkg-query -W -f='${Package} ${db:Status-Status}\\n' \"${packages[@]}\""
+                ' > "$state/browser-dpkg.txt" 2> /dev/null || dpkg_status=$?\n'
+            ),
+            (
+                '  check browser-deps --dpkg "$state/browser-dpkg.txt" --exit-status'
+                ' "$dpkg_status" \\\n'
+            ),
+            "  (cd frontend && node ../scripts/qa/e2e_browser_smoke.mjs)\n",
+            "  done_mark frontend",
+        ]
+        positions = []
+        for step in steps:
+            with self.subTest(step):
+                self.assertEqual(phase.count(step), 1)
+                positions.append(phase.index(step))
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("readonly os_release=/etc/os-release\n", gate)
+        self.assertIn("PLAYWRIGHT_SKIP_* | PLAYWRIGHT_*DOWNLOAD_HOST*)", phase)
+        # The step's own bound is unchanged.
+        self.assertIn(
+            "run: timeout 600 bash scripts/qa/e2e_gate.sh frontend",
+            self.text(".github/workflows/ci.yml"),
+        )
+
+    def test_r133_launch_check_uses_exactly_the_ci_browser(self):
+        source = self.text("scripts/qa/e2e_browser_smoke.mjs")
+        smoke = "\n".join(
+            line for line in source.splitlines() if not line.lstrip().startswith("//")
+        )
+        self.assertIn(
+            "const LAUNCH_OPTIONS = Object.freeze({ headless: true, timeout: 30_000 });",
+            smoke,
+        )
+        self.assertEqual(smoke.count(".launch("), 1)
+        self.assertIn("return await chromium.launch({ ...LAUNCH_OPTIONS });", smoke)
+        self.assertIn(
+            f'const EXPECTED_PLAYWRIGHT = "{check.PLAYWRIGHT_VERSION}";', smoke
+        )
+        for needle in (
+            "executablePath",
+            "channel",
+            "headless: false",
+            "retry",
+            "retries",
+        ):
+            with self.subTest(needle):
+                self.assertNotIn(needle, smoke)
+        self.assertIn(
+            "if (process.env.PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS) {", smoke
+        )
+        self.assertIn(
+            'return env.LLMI_E2E_CI === "1" ? { browserName: "chromium" } : { channel: "msedge" };',
+            self.text("frontend/tests/setup/e2e-browser.ts"),
+        )
+        config = self.text("frontend/playwright.config.ts")
+        self.assertIn("    ...e2eBrowser(process.env),\n    headless: true,\n", config)
+
+    def test_r133_dependency_lists_are_for_the_pinned_playwright(self):
+        """The pinned lists are Playwright 1.64.0's: an upgrade must re-check them."""
+        self.assertEqual(check.PLAYWRIGHT_VERSION, "1.64.0")
+        package = json.loads(self.text("frontend/package.json"))
+        self.assertEqual(package["devDependencies"]["@playwright/test"], "1.64.0")
+        lock = json.loads(self.text("frontend/package-lock.json"))["packages"]
+        for name in ("@playwright/test", "playwright", "playwright-core"):
+            with self.subTest(name):
+                self.assertEqual(lock[f"node_modules/{name}"]["version"], "1.64.0")
 
     def test_r133_production_defaults_and_429_backends_are_unchanged(self):
         config = self.text("backend/app/core/config.py")

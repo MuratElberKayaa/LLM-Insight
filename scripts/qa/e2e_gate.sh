@@ -32,6 +32,8 @@ ready_url="http://127.0.0.1:8000/health/ready"
 # request storm fails the backend-log check of the report. The production defaults, the
 # auth-failure and ingest buckets, and the :8001/:8002 backends of the 429 tests are unchanged.
 readonly e2e_api_rps=1000 e2e_api_burst=1000
+# R133 (CI browser): read to confirm the host the pinned Playwright dependency lists are for.
+readonly os_release=/etc/os-release
 env_args=(--env .env --env frontend/.env.local)
 unset COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_FILE
 
@@ -151,18 +153,33 @@ start_backend() {
 
 frontend() {
   require_done prepare
+  local name
+  for name in $(compgen -e); do
+    case "$name" in
+      PLAYWRIGHT_SKIP_* | PLAYWRIGHT_*DOWNLOAD_HOST*)
+        fail "refused: $name is set (Playwright's own download and host validation only)" ;;
+    esac
+  done
   (
     cd frontend
     npm ci --no-audit --no-fund
     npm run build
     npm run check:bundle
-    npx playwright install --with-deps chromium
+    # R133: the pinned browser only. No system package is installed (no apt, so no Ubuntu
+    # mirror): the package check and the launch check below prove the runner already has them.
+    npx playwright install chromium
   )
-  local version path
+  local version path packages dpkg_status=0
   version="$(cd frontend && npx playwright --version)"
   [ "$version" = "Version 1.64.0" ] || fail "unexpected Playwright version"
   path="$(cd frontend && node -e 'process.stdout.write(require("@playwright/test").chromium.executablePath())')"
   [ -x "$path" ] || fail "the Playwright Chromium browser is not installed"
+  mapfile -t packages < <(check browser-packages)
+  [ "${#packages[@]}" -gt 0 ] || fail "the browser dependency list is empty"
+  dpkg-query -W -f='${Package} ${db:Status-Status}\n' "${packages[@]}" > "$state/browser-dpkg.txt" 2> /dev/null || dpkg_status=$?
+  check browser-deps --dpkg "$state/browser-dpkg.txt" --exit-status "$dpkg_status" \
+    --os-release "$os_release" --machine "$(uname -m)"
+  (cd frontend && node ../scripts/qa/e2e_browser_smoke.mjs)
   done_mark frontend
 }
 

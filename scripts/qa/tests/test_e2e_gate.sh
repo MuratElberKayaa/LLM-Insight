@@ -11,6 +11,9 @@ set -uo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 export LLMI_REAL_PYTHON="${LLMI_REAL_PYTHON:-python}"
+# R133: the real Node runs the browser launch check against a stub Playwright (resolved before the
+# fakes are put on PATH). LLMI_REAL_NODE if `node` is not on PATH; a missing Node fails the tests.
+REAL_NODE="${LLMI_REAL_NODE:-$(command -v node || true)}"
 WORK="$(mktemp -d)"
 FAKE_BIN="$WORK/bin"
 mkdir -p "$FAKE_BIN"
@@ -184,7 +187,7 @@ printf 'npx LLMI_E2E_CI=%s %s\n' "${LLMI_E2E_CI:-unset}" "$*" >> "$FAKE_LOG"
 printf 'npx-env api_rps=%s api_burst=%s\n' "${LLMI_RATE_LIMIT_API_RPS:-unset}" "${LLMI_RATE_LIMIT_API_BURST:-unset}" >> "$FAKE_LOG"
 case "$*" in
   "playwright --version") echo "${FAKE_PW_VERSION:-Version 1.64.0}"; exit 0 ;;
-  "playwright install --with-deps chromium") [ -z "${FAKE_INSTALL_FAIL:-}" ] || exit 41; exit 0 ;;
+  "playwright install chromium") [ -z "${FAKE_INSTALL_FAIL:-}" ] || exit 41; exit 0 ;;
   "playwright test --list --reporter=json")
     [ -z "${FAKE_LIST_FAIL:-}" ] || exit 42
     exec "$LLMI_REAL_PYTHON" -I "$FAKE_BIN/mk_report.py" "$PLAYWRIGHT_JSON_OUTPUT_NAME" list ;;
@@ -203,8 +206,35 @@ cat > "$FAKE_BIN/node" <<'SH'
 case "${1:-}" in
   --version) echo "${FAKE_NODE_VERSION:-v22.23.4}" ;;
   -e) [ -n "${FAKE_NO_BROWSER:-}" ] && printf '%s' "$WORK/absent-browser" || printf '%s' "$FAKE_BIN/chromium" ;;
+  ../scripts/qa/e2e_browser_smoke.mjs)
+    printf 'node-smoke %s\n' "$*" >> "$FAKE_LOG"
+    if [ -n "${FAKE_SMOKE_FAIL:-}" ]; then echo "::error title=e2e::$FAKE_SMOKE_FAIL"; exit 1; fi
+    echo "browser smoke: PASS, Playwright 1.64.0, Chromium 999.1, local page loaded and closed" ;;
   *) exit 99 ;;
 esac
+SH
+
+# R133: dpkg-query reports every package installed unless FAKE_DPKG_MISSING (not installed) or
+# FAKE_DPKG_UNKNOWN (unknown to dpkg: no line, exit 1) names it; FAKE_DPKG_STATUS forces an exit.
+cat > "$FAKE_BIN/dpkg-query" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" = "-W" ] && [ "${2:-}" = '-f=${Package} ${db:Status-Status}\n' ] || exit 64
+shift 2
+printf 'dpkg-query %s\n' "$#" >> "$FAKE_LOG"
+status=0
+for pkg in "$@"; do
+  case ",${FAKE_DPKG_UNKNOWN:-}," in *",$pkg,"*) status=1; continue ;; esac
+  case ",${FAKE_DPKG_MISSING:-}," in *",$pkg,"*) printf '%s not-installed\n' "$pkg"; continue ;; esac
+  printf '%s installed\n' "$pkg"
+done
+[ -z "${FAKE_DPKG_JUNK:-}" ] || echo "junk line"
+exit "${FAKE_DPKG_STATUS:-$status}"
+SH
+
+cat > "$FAKE_BIN/uname" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = "-m" ]; then echo "${FAKE_MACHINE:-x86_64}"; exit 0; fi
+exec /usr/bin/uname "$@"
 SH
 
 printf '#!/usr/bin/env bash\nexit 0\n' > "$FAKE_BIN/sleep"
@@ -242,7 +272,11 @@ setup() {
   TREE="$WORK/tree"
   rm -rf "$TREE" "$WORK/temp"
   mkdir -p "$TREE/scripts/qa" "$TREE/scripts/dev" "$TREE/frontend" "$TREE/backend" "$WORK/temp"
-  cp "$SRC/scripts/qa/e2e_gate.sh" "$SRC/scripts/qa/e2e_check.py" "$SRC/scripts/qa/image_build_check.py" "$TREE/scripts/qa/"
+  cp "$SRC/scripts/qa/e2e_gate.sh" "$SRC/scripts/qa/e2e_check.py" "$SRC/scripts/qa/image_build_check.py" "$SRC/scripts/qa/e2e_browser_smoke.mjs" "$TREE/scripts/qa/"
+  # R133: the host file of the dependency lists is the one constant changed in the copy.
+  sed -i "s#^readonly os_release=/etc/os-release\$#readonly os_release=$WORK/os-release#" "$TREE/scripts/qa/e2e_gate.sh"
+  grep -qx "readonly os_release=$WORK/os-release" "$TREE/scripts/qa/e2e_gate.sh" || { echo "ABORT: os_release constant not found" >&2; exit 2; }
+  printf 'NAME="Ubuntu"\nVERSION_ID="24.04"\nID=ubuntu\n' > "$WORK/os-release"
   cp "$SRC/scripts/dev/init_env.py" "$SRC/scripts/dev/init_frontend_env.py" "$TREE/scripts/dev/"
   cp "$SRC/.env.example" "$TREE/.env.example"
   cp "$SRC/frontend/.nvmrc" "$TREE/frontend/.nvmrc"
@@ -313,6 +347,14 @@ if grep -q 'Uvicorn running on' "$WORK/temp/e2e-summary/summary.json" "$WORK/tem
 # R133: the sized bucket reaches the main backend process only, and nothing else changes.
 if [ "$(grep '^backend-env ' "$FAKE_LOG")" = "backend-env api_rps=1000 api_burst=1000 authfail=unset ingest_rps=unset ingest_burst=unset" ]; then note_pass; else note_fail "main backend rate-limit environment"; fi
 if [ "$(grep -c '^npx-env ' "$FAKE_LOG")" -ge 4 ] && ! grep '^npx-env ' "$FAKE_LOG" | grep -qv '^npx-env api_rps=unset api_burst=unset$'; then note_pass; else note_fail "rate-limit settings leaked into Playwright"; fi
+# R133 (CI browser): the browser only, never system packages; then the package and launch checks.
+if [ "$(grep -c 'playwright install chromium$' "$FAKE_LOG")" = "1" ]; then note_pass; else note_fail "browser not installed exactly once"; fi
+if grep -Eq -- '--with-deps|install-deps|apt-get' "$FAKE_LOG"; then note_fail "system packages were installed"; else note_pass; fi
+if grep -qx 'dpkg-query 33' "$FAKE_LOG"; then note_pass; else note_fail "dependency check did not query the 33 packages"; fi
+if [ "$(grep -c '^node-smoke ' "$FAKE_LOG")" = "1" ]; then note_pass; else note_fail "browser launch check not run once"; fi
+order="$(grep -nE 'playwright install chromium$|^dpkg-query |^node-smoke ' "$FAKE_LOG" | cut -d: -f2- | cut -c1-12 | tr '\n' '|')"
+if [ "$order" = "npx LLMI_E2E|dpkg-query 3|node-smoke .|" ]; then note_pass; else note_fail "browser checks out of order: $order"; fi
+if grep -q 'browser deps: ' "$WORK/out.log" && grep -q 'browser smoke: PASS' "$WORK/out.log"; then note_pass; else note_fail "browser checks not reported"; fi
 password="$(grep '^POSTGRES_PASSWORD=' "$TREE/.env" | cut -d= -f2-)"
 token="$(grep '^LLMI_ADMIN_TOKEN=' "$TREE/.env" | cut -d= -f2-)"
 if [ -n "$password" ] && ! grep -q -- "$password" "$WORK/out.log" "$FAKE_LOG" && ! grep -q -- "$token" "$WORK/out.log" "$FAKE_LOG"; then note_pass; else note_fail "a generated value was printed"; fi
@@ -378,6 +420,108 @@ fail_at "F wrong Playwright" frontend "unexpected Playwright version" "FAKE_PW_V
 fail_at "G npm ci" frontend "" FAKE_NPM_CI_FAIL=1
 fail_at "G build" frontend "" FAKE_BUILD_FAIL=1
 fail_at "bundle scan" frontend "" FAKE_BUNDLE_FAIL=1
+
+echo "== R133 browser dependencies and launch (gate)"
+fail_at "R133 library package missing" frontend "BROWSER_DEPENDENCIES_MISSING 1 library packages not installed, libnss3" FAKE_DPKG_MISSING=libnss3
+if grep -q '^node-smoke ' "$FAKE_LOG"; then note_fail "launch check ran after a missing library"; else note_pass; fi
+fail_at "R133 library package unknown to dpkg" frontend "BROWSER_DEPENDENCIES_MISSING 2 library packages not installed, libgbm1 libxkbcommon0" FAKE_DPKG_UNKNOWN=libgbm1,libxkbcommon0
+fail_at "R133 dpkg-query error" frontend "BROWSER_DEPENDENCIES_UNVERIFIED dpkg-query exit 2" FAKE_DPKG_STATUS=2
+fail_at "R133 dpkg-query output altered" frontend "BROWSER_DEPENDENCIES_UNVERIFIED unexpected dpkg-query output" FAKE_DPKG_JUNK=1
+fail_at "R133 other machine" frontend "BROWSER_HOST" FAKE_MACHINE=aarch64
+setup; until_phase frontend
+printf 'NAME="Ubuntu"\nVERSION_ID="22.04"\nID=ubuntu\n' > "$WORK/os-release"
+expect_fail "R133 other Ubuntu release" frontend "BROWSER_HOST"
+setup; until_phase frontend
+rm -f "$WORK/os-release"
+expect_fail "R133 no OS release file" frontend "BROWSER_HOST"
+fail_at "R133 launch check fails" frontend "BROWSER_DEPENDENCIES_MISSING 1 missing: libgbm.so.1" "FAKE_SMOKE_FAIL=BROWSER_DEPENDENCIES_MISSING 1 missing: libgbm.so.1"
+fail_at "R133 host validation switched off" frontend "refused: PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS is set" PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
+if grep -q '^npm ' "$FAKE_LOG"; then note_fail "frontend work started despite the refusal"; else note_pass; fi
+fail_at "R133 browser download skipped" frontend "refused: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD is set" PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+fail_at "R133 other download host" frontend "refused: PLAYWRIGHT_DOWNLOAD_HOST is set" PLAYWRIGHT_DOWNLOAD_HOST=http://127.0.0.1:9
+setup; until_phase frontend
+expect_ok "R133 font packages missing is a named warning" frontend FAKE_DPKG_MISSING=fonts-wqy-zenhei,xfonts-cyrillic
+if grep -q '::warning title=e2e::BROWSER_RENDERING_PACKAGES_MISSING 2 font or display packages not installed, earlier added by --with-deps, xfonts-cyrillic fonts-wqy-zenhei' "$WORK/out.log"; then note_pass; else note_fail "font packages not named"; fi
+
+echo "== R133 browser launch check (real Node, stub Playwright)"
+if [ -z "$REAL_NODE" ] || ! "$REAL_NODE" --version > /dev/null 2>&1; then
+  note_fail "no real Node for the launch-check tests (set LLMI_REAL_NODE)"
+else
+  STUB="$WORK/stub"
+  make_stub() { # <version>
+    rm -rf "$STUB"
+    mkdir -p "$STUB/frontend/node_modules/@playwright/test"
+    printf '{"private": true}\n' > "$STUB/frontend/package.json"
+    printf '{"name": "@playwright/test", "version": "%s", "main": "index.js"}\n' "$1" > "$STUB/frontend/node_modules/@playwright/test/package.json"
+    cat > "$STUB/frontend/node_modules/@playwright/test/index.js" <<'JS'
+// Stub of @playwright/test: the page is fetched for real from the check's loopback server.
+const fs = require("node:fs");
+const mode = process.env.STUB_MODE || "ok";
+const log = (o) => fs.appendFileSync(process.env.STUB_RECORD, JSON.stringify(o) + "\n");
+const box = (lines) => "\n╔" + "═".repeat(60) + "╗\n" + lines.map((l) => "║ " + l.padEnd(58) + " ║").join("\n") + "\n╚" + "═".repeat(60) + "╝";
+exports.chromium = {
+  async launch(options) {
+    log({ launch: options });
+    if (mode === "missing-libs") throw new Error("browserType.launch: " + box(["Host system is missing dependencies to run browsers.", "Missing libraries:", "    libgbm.so.1", "    libasound.so.2"]));
+    if (mode === "missing-packages") throw new Error("browserType.launch: " + box(["Host system is missing dependencies to run browsers.", "Please install them with the following command:", "", "    sudo npx playwright install-deps", "", "Alternatively, use apt:", "    sudo apt-get install libnss3\\", "        libgbm1", "", "<3 Playwright Team"]));
+    if (mode === "shared-object") throw new Error("browserType.launch: error while loading shared libraries: libnss3.so: cannot open shared object file: No such file or directory");
+    if (mode === "launch-error") throw new Error("browserType.launch: spawn failed\nsecond line");
+    let body = "", status = 0;
+    return {
+      version: () => "999.1",
+      async newPage() {
+        return {
+          async goto(url, opts) {
+            log({ goto: url, opts });
+            const res = await fetch(url);
+            status = mode === "status" ? 500 : res.status;
+            body = await res.text();
+            if (mode === "wrong-text") body = body.replace(/id="smoke">[0-9a-f]+/, 'id="smoke">other');
+            return { status: () => status };
+          },
+          async title() { return (/<title>(.*?)<\/title>/.exec(body) || [])[1]; },
+          async textContent() { return (/id="smoke">([^<]*)</.exec(body) || [])[1]; },
+          async close() {},
+        };
+      },
+      async close() {
+        log({ close: true });
+        if (mode === "close-error") throw new Error("close failed\nmore");
+      },
+    };
+  },
+};
+JS
+  }
+  smoke_case() { # <name> <exit> <required output> [ENV=value ...]
+    local name=$1 want_exit=$2 want=$3 code
+    shift 3
+    : > "$WORK/stub.out"; : > "$WORK/stub.record"
+    (cd "$STUB/frontend" && env STUB_RECORD="$WORK/stub.record" "$@" "$REAL_NODE" "$SRC/scripts/qa/e2e_browser_smoke.mjs") > "$WORK/stub.out" 2>&1
+    code=$?
+    if [ "$code" != "$want_exit" ]; then note_fail "$name: exit $code, expected $want_exit: $(head -c 300 "$WORK/stub.out")"
+    elif ! grep -qF -- "$want" "$WORK/stub.out"; then note_fail "$name: missing '$want' in: $(head -c 300 "$WORK/stub.out")"
+    else note_pass; fi
+  }
+  make_stub 1.64.0
+  smoke_case "S launch, local page and close pass" 0 "browser smoke: PASS, Playwright 1.64.0, Chromium 999.1, local page loaded and closed" STUB_MODE=ok
+  if grep -qx '{"launch":{"headless":true,"timeout":30000}}' "$WORK/stub.record"; then note_pass; else note_fail "S launch options are not exactly the CI browser's: $(head -1 "$WORK/stub.record")"; fi
+  if grep -Eq '^\{"goto":"http://127\.0\.0\.1:[0-9]+/"' "$WORK/stub.record" && grep -qx '{"close":true}' "$WORK/stub.record"; then note_pass; else note_fail "S local page not loaded or browser not closed"; fi
+  smoke_case "S missing libraries named" 1 "::error title=e2e::BROWSER_DEPENDENCIES_MISSING 2 missing: libasound.so.2 libgbm.so.1" STUB_MODE=missing-libs
+  smoke_case "S missing packages named" 1 "::error title=e2e::BROWSER_DEPENDENCIES_MISSING 2 missing: libgbm1 libnss3" STUB_MODE=missing-packages
+  smoke_case "S loader error named" 1 "::error title=e2e::BROWSER_DEPENDENCIES_MISSING 1 missing: libnss3.so" STUB_MODE=shared-object
+  smoke_case "S other launch failure" 1 "::error title=e2e::BROWSER_LAUNCH browserType.launch: spawn failed" STUB_MODE=launch-error
+  if grep -q 'second line' "$WORK/stub.out"; then note_fail "S launch error printed beyond its first line"; else note_pass; fi
+  smoke_case "S page content differs" 1 "::error title=e2e::BROWSER_SMOKE the local page content differs" STUB_MODE=wrong-text
+  smoke_case "S page status differs" 1 "::error title=e2e::BROWSER_SMOKE the local page answered 500" STUB_MODE=status
+  smoke_case "S close fails" 1 "::error title=e2e::BROWSER_CLOSE close failed" STUB_MODE=close-error
+  smoke_case "S host validation switched off" 1 "::error title=e2e::BROWSER_VALIDATION_DISABLED" STUB_MODE=ok PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
+  if grep -q '"launch"' "$WORK/stub.record"; then note_fail "S launched with host validation switched off"; else note_pass; fi
+  make_stub 1.65.0
+  smoke_case "S other Playwright version" 1 "::error title=e2e::BROWSER_SMOKE_SETUP @playwright/test 1.65.0, expected 1.64.0" STUB_MODE=ok
+  rm -rf "$STUB/frontend/node_modules"
+  smoke_case "S Playwright not resolvable" 1 "::error title=e2e::BROWSER_SMOKE_SETUP @playwright/test cannot be resolved from the frontend" STUB_MODE=ok
+fi
 
 echo "== H-L suite outcome"
 fail_at "H server startup (exit 1, no report)" test "REPORT_MISSING" FAKE_PW_EXIT=1 FAKE_NO_REPORT=1 FAKE_NO_SETUP=1 FAKE_NO_TEARDOWN=1
@@ -462,6 +606,11 @@ if head -12 "$GATE" | grep -q '^set -euo pipefail$'; then note_pass; else note_f
 if grep -nE '\|\| *(true|:)\b|set \+e|exit 0' "$GATE"; then note_fail "ignored status in the gate"; else note_pass; fi
 if grep -nE 'docker +(push|run|start|login|system|container|rm)\b|volume +(rm|prune)|--profile|LLMI_E2E_KEEP=' "$GATE"; then note_fail "forbidden docker usage"; else note_pass; fi
 if [ "$(grep -c '|| status=\$?' "$GATE")" = "1" ]; then note_pass; else note_fail "the status capture changed"; fi
+# R133 (CI browser): no system package installation of any kind; the browser checks stay in place.
+if grep -nE -- '--with-deps|install-deps|apt(-get)? |sudo ' "$GATE"; then note_fail "the gate installs system packages"; else note_pass; fi
+if [ "$(grep -c '^    npx playwright install chromium$' "$GATE")" = "1" ]; then note_pass; else note_fail "browser install command changed"; fi
+if grep -q '^  (cd frontend && node ../scripts/qa/e2e_browser_smoke.mjs)$' "$GATE" && grep -q '^  check browser-deps ' "$GATE"; then note_pass; else note_fail "a browser check was removed"; fi
+if grep -qx 'readonly os_release=/etc/os-release' "$GATE"; then note_pass; else note_fail "os-release path changed"; fi
 
 echo
 echo "e2e_gate tests: $passed passed, $failed failed"
