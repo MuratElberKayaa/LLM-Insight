@@ -468,6 +468,9 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] 8A-5 local verification: the 3 database-free integration tests passed; the 25 database tests skip with a reason in normal mode and fail in required mode, shown without a database; see the report for the regressions
 - [ ] **25 database-backed 8A-5 tests: collected, NOT RUN LOCALLY**; they require the GitHub `python` job with `LLMI_TEST_REQUIRE_DB=1`
 - [x] Architectural review of 8A-5, 2026-11-11: conditional GO for one local commit and CI submission (`reports/phase-8a-5.md` §9); the checkpoint closes only when CI passes
+- [x] First CI run of 8A-5 (PR #8, `2f3c698`, run `42944649002`, as reported by the reviewer): six jobs passed; `python` failed with 4 backend setup errors, from a random-date price fixture against the append-only `model_prices` trigger. A test-fixture defect; no production change
+- [x] Fixture correction authorized 2026-11-11: one session-scoped insert at a fixed date, with the precondition asserted; database-free checks pass. Second local commit, not pushed (`reports/phase-8a-5.md` §10)
+- [ ] CI retry of PR #8: all seven jobs, the 8 backend and 20 SDK comparison tests run with `LLMI_TEST_REQUIRE_DB=1`, no new database skip or error; **NOT RUN**
 - [ ] Offline checkpoints 8A-6 and 8A-7
 - [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
 

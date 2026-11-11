@@ -18,7 +18,7 @@ applied (ADR-40). OpenAI uses the verified catalogue, as in `test_ingest_cost.py
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -29,7 +29,6 @@ from sqlalchemy.orm import Session
 from app.models import ModelPrice
 from app.repositories import pricing as pricing_repo
 from app.services import pricing_catalog
-from tests.helpers import letters
 from tests.integration.conftest import ADMIN_AUTH
 from tests.integration.ingest_helpers import post, rows
 from tests.otlp import MS, body, inference_attrs, request, span
@@ -50,6 +49,12 @@ SCENARIOS = {
     "cmp-release-summary": ("cmp.release-summary", "cmp-v1.release-summary"),
 }
 CMP_VERSIONS = sorted(v for _, v in SCENARIOS.values())
+# SYNTHETIC catalogue rows for exactly the free-plan providers and models (ADR-40: never applied).
+UNUSED_PRICE_FROM = datetime(2026, 1, 1, tzinfo=UTC)  # fixed, before every span here
+UNUSED_PRICES = (
+    ("groq", GROQ_MODEL, "synthetic-8a5-groq"),
+    ("openrouter", OPENROUTER_MODEL, "synthetic-8a5-openrouter"),
+)
 # Keys of docs/fixtures/groq_client_span.v1.json: what the Groq adapter emits for a completion.
 GROQ_KEYS = {
     "gen_ai.operation.name",
@@ -157,22 +162,33 @@ def single(i: int, provider: str, requested: str, response: str, version: str, *
     ]
 
 
-def seed_unused_price(engine, provider: str, model: str) -> None:
-    """A catalogue row for exactly this provider and model; ADR-40 says it never applies."""
-    offset = timedelta(seconds=uuid.uuid4().int % 10_000_000)
-    effective = datetime(2026, 1, 1, tzinfo=UTC) + offset
-    with engine.begin() as c:
+@pytest.fixture(scope="session")
+def unused_prices(ingest_engine) -> None:
+    """One catalogue row for exactly each free-plan provider and model; ADR-40 says it never
+    applies.
+
+    `model_prices` is append-only (an insert dated before an existing row of the same provider
+    and model is rejected) and is not truncated between tests. The rows are therefore inserted
+    once per session, at one fixed date before every span here and under fixed versions. The
+    ingest database is created empty for each session and no other test prices these models, so
+    the result does not depend on which tests run or in what order.
+    """
+    with ingest_engine.begin() as c:
         c.execute(
-            insert(ModelPrice).values(
-                version=f"synthetic-{letters()}",
-                provider=provider,
-                model=model,
-                effective_from=effective,
-                input_per_million=Decimal("0.15"),
-                output_per_million=Decimal("0.60"),
-                source_url="https://example.invalid/synthetic",
-                verified_at=effective,
-            )
+            insert(ModelPrice),
+            [
+                {
+                    "version": version,
+                    "provider": provider,
+                    "model": model,
+                    "effective_from": UNUSED_PRICE_FROM,
+                    "input_per_million": Decimal("0.15"),
+                    "output_per_million": Decimal("0.60"),
+                    "source_url": "https://example.invalid/synthetic",
+                    "verified_at": UNUSED_PRICE_FROM,
+                }
+                for provider, model, version in UNUSED_PRICES
+            ],
         )
 
 
@@ -183,9 +199,7 @@ def openai_catalogue(ingest_engine) -> None:
 
 
 @pytest.fixture
-def seeded(api_client, make_key, ingest_engine, openai_catalogue):
-    seed_unused_price(ingest_engine, "groq", GROQ_MODEL)
-    seed_unused_price(ingest_engine, "openrouter", OPENROUTER_MODEL)
+def seeded(api_client, make_key, ingest_engine, unused_prices, openai_catalogue):
     a, b = make_key("p8a5-a"), make_key("p8a5-b")
     spans = [
         *single(
@@ -229,6 +243,17 @@ def group_keys(groups) -> list[tuple]:
 # ---------------------------------------------------------------- A, B, D, L: stored unchanged
 def test_each_comparison_span_is_stored_with_its_identity_and_unknown_cost(seeded, db):
     a, _ = seeded
+    # The precondition of D: a matching price exists and is effective before every span.
+    for provider, model, version in UNUSED_PRICES:
+        effective = rows(
+            db,
+            "SELECT version FROM model_prices"
+            " WHERE provider = :p AND model = :m AND effective_from <= :t",
+            p=provider,
+            m=model,
+            t=AFTER_CATALOGUE,
+        )
+        assert [r["version"] for r in effective] == [version]
     for i, scenario in (
         (3, "cmp-ticket-triage"),
         (4, "cmp-json-aggregate"),

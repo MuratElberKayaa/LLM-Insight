@@ -1,6 +1,6 @@
 # Phase 8A-5 — Multi-provider comparison integration verification (offline)
 
-**Date:** 2026-11-11 UTC. **Status: implemented; locally verified where no database is needed; approved for one local commit and CI submission (§9). Committed locally, not pushed. The 25 database-backed tests are collected and NOT RUN LOCALLY; they require GitHub CI before this checkpoint closes.**
+**Date:** 2026-11-11 UTC. **Status: implemented; locally verified where no database is needed; approved for one local commit and CI submission (§9). The first CI run of PR #8 failed in 4 backend database tests on a test-fixture defect; the authorized correction is a second local commit, not pushed (§10). The 25 database-backed tests are collected and NOT RUN LOCALLY; they require GitHub CI before this checkpoint closes.**
 
 Provider API requests: **0**. No credential, billing account, `.env`, PostgreSQL server, database, volume, Docker container or deployment was touched: every database test was only collected, or run from copies holding no `.env` and with no database URL, where it skips or fails before any connection. `REAL_EXECUTION_ENABLED` is still `False`, `FREE_PLAN_MODELS` is empty and `FREE_PLAN_EVIDENCE_VERIFIED_AT` is `None` in the shipped code. No production code changed. The three user-owned untracked files were not opened, copied or changed. `.env.example` is unchanged (R127 open).
 
@@ -37,7 +37,7 @@ Test code only, reusing the existing integration infrastructure. No new database
 | A | Prompt name, version, provider and model per scenario | `test_each_scenario_is_stored_and_read_back_with_its_exact_identity` (×3), `test_each_scenario_on_the_wire` (×3) | `test_each_comparison_span_is_stored_with_its_identity_and_unknown_cost` |
 | B | Trace, root span, CLIENT span, attempt and usage in PostgreSQL | same, read with SQL: counts (1, 2, 1), parent link, attempt 1, call key `resp:groq:<id>`, tokens 20 / 32 | same, plus "the root never produces usage" |
 | C | A resent export creates no duplicate | `test_a_reexported_comparison_trace_creates_no_duplicate` (the official exporter resends the finished spans twice) | `test_a_resent_comparison_export_adds_nothing` (the same body posted three times) |
-| D | Groq `unknown` / `price_missing` with a matching catalogue row | module-level `priced` row for exactly `groq` and the model; every Groq row asserts `price_missing`, no price version | rows for `groq` and `openrouter` seeded per test; both `price_missing` |
+| D | Groq `unknown` / `price_missing` with a matching catalogue row | module-level `priced` row for exactly `groq` and the model; every Groq row asserts `price_missing`, no price version | rows for `groq` and `openrouter` inserted once per session at a fixed date (§10); the read-back test asserts each is effective before the spans; both `price_missing` |
 | E | Overview counts, tokens and cost completeness | `test_overview_and_compare_keep_one_row_per_scenario`: 3 attempts, 60 / 96 tokens, 3 × `price_missing`, `cost_complete: false`, no price version | `test_overview_counts_tokens_and_cost_completeness`: six rows from four providers, OpenAI cost 0.001575 computed, five unknown, incomplete; filters by provider and prompt version |
 | F | Trace list and detail | identity test: detail roles, children, finish reason, dropped count, usage; list by provider and model | `test_trace_list_and_detail_keep_provider_model_status_and_relationships` |
 | G | Compare keeps the three scenario versions apart | three groups, one per `cmp-v1.*`; the `prompt_version` filter returns one | six groups (OpenAI, Gemini, three Groq, synthetic OpenRouter); Groq filter three; one scenario across two providers |
@@ -150,3 +150,36 @@ The final check before staging confirmed:
 - the three user-owned files are unchanged.
 
 The only changes after §8 are documentation (this section, the status line and `PHASE_STATUS.md`), so no test was rerun; the doc check and `git diff --cached --check` were. §8 records the state before this approval. The commit is not pushed; its SHA is reported to the owner and not recorded in the commit itself.
+
+## 10. PR #8 CI failure and fixture correction (2026-11-11)
+
+**Failure.** As reported by the reviewer from GitHub Actions run `42944649002` on `2f3c698`: six jobs passed. The `python` job failed in backend integration setup, with 1900 passed and 4 errors, on `model_prices is append-only: a later price already exists`. This session did not read that run.
+
+**Root cause: a defect in this phase's test fixture, not in production code.** `seed_unused_price()` was called by the function-scoped `seeded` fixture, so it ran once for each of the five tests that use `seeded`. Each call inserted a price for the same `groq` and `openrouter` models at a random `effective_from`. `model_prices` is not truncated between tests, and migration `0002` rejects an insert dated before an existing row of the same provider and model. Every call dated before the latest earlier row therefore failed in setup. The local verification could not show this, because these tests need PostgreSQL (§5). The 8A-1 safety tests avoid the trigger with a new model name per test; this fixture reused the comparison models.
+
+**Correction** (`backend/tests/integration/test_multi_provider_read.py` only):
+- the random insert is replaced by a session-scoped `unused_prices` fixture that inserts each row once, at one fixed `effective_from` (2026-01-01 UTC, before every span) under fixed versions `synthetic-8a5-groq` and `synthetic-8a5-openrouter`;
+- `seeded` depends on that fixture instead of inserting;
+- the read-back test now asserts its precondition: for each of the two models, exactly that row exists and is effective before the spans. The `unknown` / `price_missing` assertions for Groq and OpenRouter, and the OpenAI catalogue cost, are unchanged.
+
+No production code, migration, constraint or trigger changed, and no price row is updated or deleted. No test is skipped or marked xfail, and no shared fixture changed.
+
+**Order and isolation review.**
+- The ingest database is created empty for each session (`disposable_db`), so the session-scoped insert runs once against an empty table. A rerun is a new session with a new database.
+- No other test prices these two models. The 8A-1 safety tests price `groq` and `openrouter` under per-test model names, and the trigger compares rows only within one provider and model.
+- The OpenAI catalogue seed is the same idempotent call that `test_ingest_cost.py` makes.
+- The tests that count all `model_prices` rows run on their own migration databases.
+- `pytest --setup-plan` shows `unused_prices` set up exactly once for the file, in file order and in reversed order, and once for each of the five tests that use it when run alone.
+
+**Local verification** of the correction, from a copy holding no `.env` and with no database URL:
+
+| Check | Result |
+|---|---|
+| Backend `ruff check .` / `ruff format --check .` | PASS (145 files) |
+| Backend unit | 1208 passed |
+| Collection | 8 in the file; 696 backend integration tests |
+| Normal mode, no database | 8 skipped with a reason |
+| `LLMI_TEST_REQUIRE_DB=1`, no database | 8 errors (no silent skip) |
+| SDK test file | unchanged by the correction |
+
+**NOT RUN LOCALLY:** the 8 corrected backend database tests and the 17 SDK database tests. The SDK tests did not run in the failed CI job either, because it stopped at the backend step. The CI retry must run with `LLMI_TEST_REQUIRE_DB=1`, execute all 8 backend tests in this file and all 20 SDK tests in `test_live_compare.py`, show no new database skip or error, and pass all seven jobs.
