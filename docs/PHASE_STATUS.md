@@ -463,8 +463,17 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] 8A-4 offline verification: SDK clean-install regression 2200 tests, 2119 passed, 0 failed, 81 skipped (database-backed); backend unit 1208 passed; mutations 48 of 48 new and 142 of 142 earlier caught on the final code; history gate 39 = 39
 - [x] Architectural review of 8A-4, 2026-11-10: conditional GO for one local commit only; the credential-binding check and the R127 deferral approved (`reports/phase-8a-4.md` §12)
 - [ ] `.env.example` Groq comment update with its reviewed history-baseline entry (R127); **required before the first real request**
-- [ ] First CI run of 8A-4: all seven jobs NOT RUN; PostgreSQL not run on this code
-- [ ] Offline checkpoints 8A-5 to 8A-7
+- [x] First CI run of 8A-4: PR #7 (`e2a275a`) merged into `main` at `b34a018`. The reviewer reports that the PR run and the post-merge `main` run passed all seven jobs, with 1896 backend and 2200 SDK tests passing and the database required; those runs were not read by the implementing session
+- [x] Checkpoint 8A-5 offline integration implementation, authorized 2026-11-11: `sdk/tests/integration/test_live_compare.py` (20 tests) and `backend/tests/integration/test_multi_provider_read.py` (8 tests); test code only, no production change. Committed locally on `feature/phase-8a5-comparison-integration`, not pushed; 0 provider requests; evidence: `reports/phase-8a-5.md`
+- [x] 8A-5 local verification: the 3 database-free integration tests passed; the 25 database tests skip with a reason in normal mode and fail in required mode, shown without a database; see the report for the regressions
+- [ ] **25 database-backed 8A-5 tests: collected, NOT RUN LOCALLY**; they require the GitHub `python` job with `LLMI_TEST_REQUIRE_DB=1`
+- [x] Architectural review of 8A-5, 2026-11-11: conditional GO for one local commit and CI submission (`reports/phase-8a-5.md` §9); the checkpoint closes only when CI passes
+- [x] First CI run of 8A-5 (PR #8, `2f3c698`, run `42944649002`, as reported by the reviewer): six jobs passed; `python` failed with 4 backend setup errors, from a random-date price fixture against the append-only `model_prices` trigger. A test-fixture defect; no production change
+- [x] Fixture correction authorized 2026-11-11: one session-scoped insert at a fixed date, with the precondition asserted; database-free checks pass. Second local commit, not pushed (`reports/phase-8a-5.md` §10)
+- [x] Second CI run of 8A-5 (PR #8, `9f2a147`, run `42963391108`, as reported by the reviewer): backend 1904 passed; SDK 2213 passed, 1 failed, 6 errors; the other six jobs passed. F1: a second groq price, dated earlier, for the same model in the shared SDK session database. F2: three runner executions inside one test against the one-request-per-process slot. Both are test-design defects; no production change
+- [x] F1 and F2 corrections authorized 2026-11-11: one session-scoped canonical groq price (`sdk/tests/integration/conftest.py`) for both modules; one runner execution per test case, a SYNTHETIC aggregate without the runner, and negative tests for a second execution. Database-free checks pass. Approved 2026-11-11 (conditional GO); a third local commit, not pushed (`reports/phase-8a-5.md` §11)
+- [ ] CI retry of PR #8: all seven jobs; with `LLMI_TEST_REQUIRE_DB=1`, all backend integration tests and all SDK integration tests pass with no skip, including the 8 backend and 25 SDK comparison tests and the 6 `test_live_groq.py` tests; **NOT RUN**
+- [ ] Offline checkpoints 8A-6 and 8A-7
 - [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
 
 ## Commands

@@ -96,7 +96,7 @@ Exit codes: 0 dry run, or completed, validated and export confirmed; 1 failed, b
 - **On the backend** (new `backend/tests/unit/test_comparison_contract.py`, real ingest rules, no database): the prompt identity and `real` provenance are kept under the unchanged `llminsight.attrmap.v1` with no dropped attribute; a catalogue row for `groq` at a listed or zero rate never prices the call (`unknown` / `price_missing`); the three scenarios give three distinct Compare keys, none with the Gemini demo's `v1`.
 - **Expected views**, for the comparison project after one completed request:
   - **Overview:** one trace, one inference call, provider `groq`, tokens as reported, cost unknown with `cost_complete: false`.
-  - **Traces:** the trace, filterable by provider `groq`, model and prompt version; its detail shows the root and the CLIENT span with status and finish reason.
+  - **Traces:** the trace, filterable by provider `groq` and model; its detail shows the root and the CLIENT span with status and finish reason. *(Corrected in 8A-5: this line first said "and prompt version". `GET /api/v1/traces` has no `prompt_version` filter; each item carries the trace's prompt version, and only Overview and Models / Compare filter by it. See `reports/phase-8a-5.md` §2.)*
   - **Models / Compare:** one row (`groq`, model, model, `cmp-v1.<scenario>`) with n = 1, flagged low-sample; a run of another scenario adds its own row.
 - **Not verified here:** storage in PostgreSQL and the read API responses for these spans. That is the integration checkpoint (8A-5), which runs in CI only.
 

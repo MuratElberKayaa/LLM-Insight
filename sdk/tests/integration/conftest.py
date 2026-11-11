@@ -32,6 +32,7 @@ from typing import Any
 import psycopg
 import pytest
 
+from tests.groq_fixtures import MODEL
 from tests.redaction import RedactedUrl
 
 REPO = Path(__file__).resolve().parents[3]
@@ -233,3 +234,28 @@ def live_backend(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LiveBacke
     blocks = backend.log_tracebacks()
     if blocks:
         pytest.fail(f"backend log has {len(blocks)} traceback(s):\n" + "\n---\n".join(blocks))
+
+
+# The one SYNTHETIC catalogue row for exactly `groq` and the fixture model (ADR-40: it must never
+# price a call). `model_prices` is append-only: an insert dated before an existing row of the same
+# provider and model is rejected, and rows are never updated or deleted. The session database is
+# shared by every module, so each module that needs this price depends on this fixture, which
+# inserts it once per session, at one fixed date before every span.
+GROQ_PRICE_VERSION = "synthetic-groq-it"
+GROQ_PRICE_FROM = "2026-01-01T00:00:00Z"
+
+
+@pytest.fixture(scope="session")
+def groq_price(live_backend: LiveBackend) -> LiveBackend:
+    live_backend.query(
+        "INSERT INTO model_prices (version, provider, model, effective_from, input_per_million,"
+        " output_per_million, source_url, verified_at)"
+        " VALUES (%s, 'groq', %s, %s, 0.15, 0.60, 'https://example.invalid/synthetic', %s)"
+        " RETURNING 1",
+        (GROQ_PRICE_VERSION, MODEL, GROQ_PRICE_FROM, GROQ_PRICE_FROM),
+    )
+    rows = live_backend.query(
+        "SELECT version FROM model_prices WHERE provider = 'groq' AND model = %s", (MODEL,)
+    )
+    assert rows == [(GROQ_PRICE_VERSION,)], "exactly one canonical groq price in the session"
+    return live_backend
