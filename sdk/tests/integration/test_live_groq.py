@@ -48,15 +48,9 @@ SECRETS = (
 
 
 @pytest.fixture(scope="module")
-def priced_backend(live_backend: LiveBackend) -> LiveBackend:
-    live_backend.query(
-        "INSERT INTO model_prices (version, provider, model, effective_from, input_per_million,"
-        " output_per_million, source_url, verified_at)"
-        " VALUES ('synthetic-groq-8a2', 'groq', %s, '2026-01-01Z', 0.15, 0.60,"
-        " 'https://example.invalid/synthetic', '2026-01-01Z') RETURNING 1",
-        (MODEL,),
-    )
-    return live_backend
+def priced_backend(groq_price: LiveBackend) -> LiveBackend:
+    """The session's one canonical groq price (`conftest.groq_price`), shared with every module."""
+    return groq_price
 
 
 @pytest.fixture(scope="module")

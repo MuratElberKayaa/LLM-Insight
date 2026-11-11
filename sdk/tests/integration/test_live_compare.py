@@ -13,6 +13,12 @@ spans carry `llminsight.provenance = real`: that label is asserted by the runner
 (`provenance_verified` is false), and every row here is SYNTHETIC, lives in a disposable database
 and is dropped with it. None of this is evidence about a real Groq response (R115).
 
+The runner allows one request per process (ADR-44). Each test case stands for one process
+lifetime (`own_slot`) and runs the runner at most once to a send, except the negative tests, which
+show that a second execution in the same lifetime is refused. The three-scenario Overview and
+Compare set is verified with SYNTHETIC adapter spans that never pass through the runner
+(`test_a_synthetic_comparison_set_*`), labelled `synthetic`, separate from the runner executions.
+
 Tests without `live_backend` need no database and use the local OTLP stub.
 """
 
@@ -39,6 +45,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 import llm_insight_sdk as lli
 from llm_insight_sdk import groq_adapter, groq_live
 from llm_insight_sdk.groq_live import FreePlanModel
+from llm_insight_sdk.providers import TextRequest
 from llm_insight_sdk.telemetry import Telemetry, build_span_exporter
 from tests.conftest import DUMMY_KEY
 from tests.groq_fixtures import (
@@ -144,7 +151,10 @@ def offline() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def own_slot(monkeypatch) -> None:
-    """Each test gets a process slot of its own; the shipped slot is never touched."""
+    """Each test case stands for one process lifetime: it gets one fresh slot, which the runner
+    takes once and never releases, so no test can make a second request
+    (`test_a_second_execution_in_the_same_process_is_refused_*`). The shipped slot is never
+    touched, and the slot is never replaced inside a test."""
     monkeypatch.setattr(groq_live, "_PROCESS_SLOT", threading.Lock())
 
 
@@ -184,16 +194,10 @@ def new_project(live: LiveBackend, label: str) -> Project:
 
 
 @pytest.fixture(scope="module")
-def priced(live_backend: LiveBackend) -> LiveBackend:
-    """A catalogue row for exactly `groq` and the model: it must never price a call (ADR-40)."""
-    live_backend.query(
-        "INSERT INTO model_prices (version, provider, model, effective_from, input_per_million,"
-        " output_per_million, source_url, verified_at)"
-        " VALUES ('synthetic-groq-8a5', 'groq', %s, '2026-02-01Z', 0.15, 0.60,"
-        " 'https://example.invalid/synthetic', '2026-02-01Z') RETURNING 1",
-        (MODEL,),
-    )
-    return live_backend
+def priced(groq_price: LiveBackend) -> LiveBackend:
+    """The session's one canonical catalogue row for exactly `groq` and the model
+    (`conftest.groq_price`): it must never price a call (ADR-40)."""
+    return groq_price
 
 
 @pytest.fixture(scope="module")
@@ -487,56 +491,166 @@ def test_each_scenario_is_stored_and_read_back_with_its_exact_identity(
     assert_clean(text, project.key)
 
 
-# ---------------------------------------------------------------- E, G: one comparison set
-@pytest.mark.usefixtures("released")
-def test_overview_and_compare_keep_one_row_per_scenario(priced, wire):
-    owner = new_project(priced, "set")
-    started = datetime.now(UTC)
-    tids = []
-    for scenario in SCENARIO_IDS:
-        run = run_live(
-            priced, owner, wire, [ok(content=ANSWERS[scenario], response_id=rid())], scenario
-        )
-        assert run.code == 0
-        tids.append(run.trace_id)
-    assert len(wire.requests) == 3 and len(set(tids)) == 3
-    scope = {"project": owner.id, **window(started)}
+# ---------------------------------------------------------------- E, G: Overview and Compare
+# The runner sends at most one request per process (ADR-44, `groq_live._PROCESS_SLOT`), so each
+# runner execution below is its own test case with its own project. The three-row comparison set
+# is verified separately, with SYNTHETIC spans that never pass through the runner.
+def compare_groups(live: LiveBackend, scope: Mapping[str, Any], **params: str) -> list[dict]:
+    return live.api(f"/api/v1/models/compare?{urlencode({**scope, **params})}")["groups"]
 
-    compare = priced.api(f"/api/v1/models/compare?{urlencode(scope)}")
-    groups = compare["groups"]
-    assert sorted(g["prompt_version"] for g in groups) == sorted(v for _, v, _ in IDENTITY.values())
-    for g in groups:
-        assert (g["provider"], g["requested_model"], g["response_model"]) == ("groq", MODEL, MODEL)
-        assert g["attempts"] == 1 and g["errors"]["failed"] == 0
-        assert (g["tokens"]["input_tokens"], g["tokens"]["output_tokens"]) == (20, 32)
-        assert g["cost"]["known_cost_usd"] is None and g["cost"]["cost_complete"] is False
-        assert g["cost"]["unknown_cost_by_reason"]["price_missing"] == 1
-        assert g["by_provenance"]["real"] == 1
-        assert g["latency"]["low_sample"] and all(g["latency"]["low_sample"].values())
-    one = priced.api(
-        f"/api/v1/models/compare?{urlencode({**scope, 'prompt_version': 'cmp-v1.json-aggregate'})}"
-    )
-    assert [g["prompt_version"] for g in one["groups"]] == ["cmp-v1.json-aggregate"]
 
-    overview = priced.api(f"/api/v1/overview?{urlencode(scope)}")
+def assert_unpriced_group(group: dict, prompt_version: str, provenance: str) -> None:
+    assert (
+        group["provider"],
+        group["requested_model"],
+        group["response_model"],
+        group["prompt_version"],
+    ) == ("groq", MODEL, MODEL, prompt_version)
+    assert group["attempts"] == 1 and group["errors"]["failed"] == 0
+    assert (group["tokens"]["input_tokens"], group["tokens"]["output_tokens"]) == (20, 32)
+    assert group["cost"]["known_cost_usd"] is None and group["cost"]["cost_complete"] is False
+    assert group["cost"]["unknown_cost_by_reason"]["price_missing"] == 1
+    assert group["by_provenance"][provenance] == 1 and sum(group["by_provenance"].values()) == 1
+    assert group["latency"]["low_sample"] and all(group["latency"]["low_sample"].values())
+
+
+def assert_unpriced_overview(overview: dict, calls: int) -> None:
     inference = overview["inference"]
-    assert inference["attempts"]["total"] == 3 and overview["traces"]["count"]["total"] == 3
+    assert inference["attempts"]["total"] == calls and overview["traces"]["count"]["total"] == calls
     assert inference["errors"]["total"]["failed"] == 0
     tokens = inference["tokens"]["total"]
-    assert (tokens["input_tokens"], tokens["output_tokens"]) == (60, 96)
+    assert (tokens["input_tokens"], tokens["output_tokens"]) == (20 * calls, 32 * calls)
     assert (
         tokens["calls_with_unknown_input_tokens"] == tokens["calls_with_unknown_output_tokens"] == 0
     )
     cost = inference["cost"]["total"]
     assert cost["known_cost_usd"] is None and cost["computed_cost_calls"] == 0
-    assert cost["unknown_cost_calls"] == 3 and cost["unknown_cost_by_reason"]["price_missing"] == 3
+    assert cost["unknown_cost_calls"] == calls
+    assert cost["unknown_cost_by_reason"]["price_missing"] == calls
     assert cost["cost_complete"] is False
-    assert inference["usage_source"]["total"]["provider_reported"] == 3
+    assert inference["usage_source"]["total"]["provider_reported"] == calls
     assert inference["price_versions"]["items"] == []  # the seeded groq row was never used
     assert overview["provenance_verified"] is False
 
+
+@pytest.mark.usefixtures("released")
+@pytest.mark.parametrize("scenario", SCENARIO_IDS)
+def test_one_runner_execution_gives_one_overview_and_compare_row(priced, wire, scenario):
+    """One real runner execution (one per test case and process lifetime), own project."""
+    owner = new_project(priced, f"one-{scenario}")
+    started = datetime.now(UTC)
+    run = run_live(
+        priced, owner, wire, [ok(content=ANSWERS[scenario], response_id=rid())], scenario
+    )
+    assert run.code == 0 and len(wire.requests) == 1
+    _, prompt_version, _ = IDENTITY[scenario]
+    scope = {"project": owner.id, **window(started)}
+
+    (group,) = compare_groups(priced, scope)
+    assert_unpriced_group(group, prompt_version, "real")
+    assert compare_groups(priced, scope, prompt_version=prompt_version) == [group]
+    for other in sorted({v for _, v, _ in IDENTITY.values()} - {prompt_version}):
+        assert compare_groups(priced, scope, prompt_version=other) == []
+
+    assert_unpriced_overview(priced.api(f"/api/v1/overview?{urlencode(scope)}"), 1)
+    listing = priced.api(f"/api/v1/traces?{urlencode({**scope, 'provider': 'groq'})}")
+    assert [i["trace_id"] for i in listing["items"]] == [run.trace_id]
+
+
+def test_a_synthetic_comparison_set_keeps_one_compare_row_per_scenario(priced):
+    """SYNTHETIC aggregate, NOT a runner execution: three comparison-shaped traces, one per
+    scenario, made by the SDK's Groq adapter on a SYNTHETIC wire with `synthetic` provenance and
+    no send gate, and exported by the official OTLP exporter into one project. It checks how the
+    views combine the three scenarios; the runner itself is checked one execution per test above.
+    """
+    owner = new_project(priced, "synthetic-set")
+    started = datetime.now(UTC)
+    fake = FakeGroq(
+        [
+            ok(content=ANSWERS[s], response_id=f"chatcmpl-SYNTHETIC-compare-set-{i}")
+            for i, s in enumerate(SCENARIO_IDS)
+        ]
+    )
+    telemetry = lli.init(
+        lli.LLMInsightConfig(
+            endpoint=priced.ingest_endpoint,
+            project_key=owner.key,
+            service_name="live-compare-set-it-SYNTHETIC",
+            schedule_delay_millis=100,
+            export_timeout_seconds=3.0,
+        )
+    )
+    tids = []
+    try:
+        adapter = groq_adapter.GroqTextAdapter(
+            groq_adapter.ObservedGroqClient(
+                telemetry, FAKE_GROQ_KEY, http_client=fake.http_client(), provenance="synthetic"
+            )
+        )
+        for scenario_id in SCENARIO_IDS:
+            scenario = cs.SCENARIOS[scenario_id]
+            request = TextRequest(
+                model=MODEL,
+                input_text=cs.compose_input(scenario),
+                max_output_tokens=scenario.max_output_tokens,
+                prompt_name=scenario.prompt_name,
+                prompt_version=scenario.prompt_version,
+            )
+            with telemetry.tracer.start_as_current_span(ROOT_SPAN) as root:
+                assert adapter.generate_text(request).status == "completed"
+            tids.append(format(root.get_span_context().trace_id, "032x"))
+        assert telemetry.force_flush(10_000)
+    finally:
+        telemetry.shutdown()
+    assert len(fake.requests) == 3 and len(set(tids)) == 3
+    scope = {"project": owner.id, **window(started)}
+
+    groups = compare_groups(priced, scope)
+    assert sorted(g["prompt_version"] for g in groups) == sorted(v for _, v, _ in IDENTITY.values())
+    for g in groups:
+        assert_unpriced_group(g, g["prompt_version"], "synthetic")
+    (one,) = compare_groups(priced, scope, prompt_version="cmp-v1.json-aggregate")
+    assert one["prompt_version"] == "cmp-v1.json-aggregate"
+
+    overview = priced.api(f"/api/v1/overview?{urlencode(scope)}")
+    assert_unpriced_overview(overview, 3)
+    assert overview["inference"]["attempts"]["by_provenance"]["real"] == 0
     listing = priced.api(f"/api/v1/traces?{urlencode({**scope, 'provider': 'groq'})}")
     assert sorted(i["trace_id"] for i in listing["items"]) == sorted(tids)
+    assert_clean(stored_text(priced, owner.id) + priced.log_text(), owner.key)
+
+
+# ---------------------------------------------------------------- one request per process
+@pytest.mark.usefixtures("released")
+def test_a_second_execution_in_the_same_process_is_refused_and_stores_no_call(priced, wire):
+    """The limit holds end to end: the second execution sends nothing and records no call. The
+    runner opens its root span before the send gate refuses, so that root alone is exported."""
+    owner = new_project(priced, "second")
+    started = datetime.now(UTC)
+    first = run_live(priced, owner, wire, [ok(content=ANSWERS[TICKET], response_id=rid())], TICKET)
+    second = run_live(priced, owner, wire, [ok(content=ANSWERS[USAGE], response_id=rid())], USAGE)
+    assert (first.code, second.code) == (0, 2) and len(wire.requests) == 1
+    assert "request_limit_reached" in {r["code"] for r in second.doc["refusals"]}
+    assert second.doc["provider_request_state"] == "not_sent"
+    assert second.doc["session"]["physical_attempts"] == 0
+
+    assert counts(priced, owner.id, first.trace_id) == (1, 2, 1)
+    assert counts(priced, owner.id, second.trace_id) == (1, 1, 0)
+    (row,) = priced.query(
+        "SELECT row_to_json(s) FROM spans s WHERE project_id = %s AND trace_id = %s",
+        (owner.id, second.trace_id),
+    )
+    root = row[0]
+    assert (root["name"], root["kind"]) == (ROOT_SPAN, "INTERNAL")
+    assert not any(k.startswith("gen_ai.") for k in root["attributes"])
+    assert project_totals(priced, owner.id) == (2, 3, 1)
+
+    scope = {"project": owner.id, **window(started)}
+    (group,) = compare_groups(priced, scope)
+    assert_unpriced_group(group, IDENTITY[TICKET][1], "real")
+    overview = priced.api(f"/api/v1/overview?{urlencode(scope)}")
+    assert overview["inference"]["attempts"]["total"] == 1
+    assert overview["traces"]["count"]["total"] == 2  # the refused execution's root-only trace
 
 
 # ---------------------------------------------------------------- C: the same export again
@@ -724,3 +838,22 @@ def test_each_scenario_on_the_wire(stub, wire, scenario):
     for received in stub.received:
         assert_clean(received.body.decode("latin-1"))
         assert FAKE_GROQ_KEY not in json.dumps(received.headers)
+
+
+@pytest.mark.usefixtures("released")
+def test_a_second_execution_in_the_same_process_is_refused_on_the_wire(stub, wire):
+    """No database: the second execution in one process lifetime reaches neither the provider
+    nor the attempt span; only the runner's root span is exported for it."""
+    wire.steps = [ok(content=ANSWERS[TICKET], response_id=rid())]
+    first = invoke(compare_env(stub.endpoint, DUMMY_KEY, 7), TICKET)
+    wire.steps = [ok(content=ANSWERS[USAGE], response_id=rid())]
+    second = invoke(compare_env(stub.endpoint, DUMMY_KEY, 7), USAGE)
+    assert (first.code, second.code) == (0, 2) and len(wire.requests) == 1
+    assert "request_limit_reached" in {r["code"] for r in second.doc["refusals"]}
+    assert second.doc["provider_request_state"] == "not_sent"
+    assert second.doc["session"]["physical_attempts"] == 0
+    spans = stub.spans()
+    assert len(spans) == 3 and sum(s["kind"] == "CLIENT" for s in spans) == 1
+    (root,) = [s for s in spans if s["trace_id"] == second.trace_id]
+    assert (root["name"], root["kind"]) == (ROOT_SPAN, "INTERNAL")
+    assert not any(k.startswith("gen_ai.") for k in root["attributes"])

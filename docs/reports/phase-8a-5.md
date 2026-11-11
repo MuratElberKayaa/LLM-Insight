@@ -1,6 +1,6 @@
 # Phase 8A-5 — Multi-provider comparison integration verification (offline)
 
-**Date:** 2026-11-11 UTC. **Status: implemented; locally verified where no database is needed; approved for one local commit and CI submission (§9). The first CI run of PR #8 failed in 4 backend database tests on a test-fixture defect; the authorized correction is a second local commit, not pushed (§10). The 25 database-backed tests are collected and NOT RUN LOCALLY; they require GitHub CI before this checkpoint closes.**
+**Date:** 2026-11-11 UTC. **Status: implemented; locally verified where no database is needed; approved for one local commit and CI submission (§9). The first CI run of PR #8 failed in 4 backend database tests on a test-fixture defect; the correction is a second local commit, not pushed (§10). The second CI run failed in the SDK suite on two test-design defects; their correction was approved and is a third local commit, not pushed (§11). The 29 database-backed tests (21 SDK, 8 backend) are collected and NOT RUN LOCALLY; they require GitHub CI before this checkpoint closes.**
 
 Provider API requests: **0**. No credential, billing account, `.env`, PostgreSQL server, database, volume, Docker container or deployment was touched: every database test was only collected, or run from copies holding no `.env` and with no database URL, where it skips or fails before any connection. `REAL_EXECUTION_ENABLED` is still `False`, `FREE_PLAN_MODELS` is empty and `FREE_PLAN_EVIDENCE_VERIFIED_AT` is `None` in the shipped code. No production code changed. The three user-owned untracked files were not opened, copied or changed. `.env.example` is unchanged (R127 open).
 
@@ -16,7 +16,7 @@ Test code only, reusing the existing integration infrastructure. No new database
 
 | File | Tests | Path exercised |
 |---|---|---|
-| `sdk/tests/integration/test_live_compare.py` | 20 (17 database-backed, 3 wire) | `demo_app.live_compare` → Free Plan guard → the audited `httpx` client → SYNTHETIC wire (`HTTPTransport.handle_request` replaced) → `GroqTextAdapter` → SDK spans → official OTLP/HTTP protobuf exporter → live `python -m app` (the session's `live_backend`) → disposable PostgreSQL → authenticated `/api/v1` |
+| `sdk/tests/integration/test_live_compare.py` | 25 (21 database-backed, 4 wire; 20, 17 and 3 before §11) | `demo_app.live_compare` → Free Plan guard → the audited `httpx` client → SYNTHETIC wire (`HTTPTransport.handle_request` replaced) → `GroqTextAdapter` → SDK spans → official OTLP/HTTP protobuf exporter → live `python -m app` (the session's `live_backend`) → disposable PostgreSQL → authenticated `/api/v1` |
 | `backend/tests/integration/test_multi_provider_read.py` | 8 (all database-backed) | SYNTHETIC OTLP protobuf (`tests/otlp.py`) → real `/v1/traces` → disposable PostgreSQL (the `ingest` database) → authenticated Overview, Traces and Models / Compare |
 
 **Execution lock in the SDK file.** The runner has only the real path, and the shipped code refuses it twice. The tests lift both locks inside the test process only, through the same `released` fixture as the guard's unit tests. One test runs as shipped against the live backend and shows that execution is refused and nothing is stored. Because of this, the stored spans carry `llminsight.provenance = real` although the provider is a fake (R129): `provenance_verified` stays false, every name and response ID says SYNTHETIC, and the rows live only in the disposable CI database.
@@ -37,10 +37,10 @@ Test code only, reusing the existing integration infrastructure. No new database
 | A | Prompt name, version, provider and model per scenario | `test_each_scenario_is_stored_and_read_back_with_its_exact_identity` (×3), `test_each_scenario_on_the_wire` (×3) | `test_each_comparison_span_is_stored_with_its_identity_and_unknown_cost` |
 | B | Trace, root span, CLIENT span, attempt and usage in PostgreSQL | same, read with SQL: counts (1, 2, 1), parent link, attempt 1, call key `resp:groq:<id>`, tokens 20 / 32 | same, plus "the root never produces usage" |
 | C | A resent export creates no duplicate | `test_a_reexported_comparison_trace_creates_no_duplicate` (the official exporter resends the finished spans twice) | `test_a_resent_comparison_export_adds_nothing` (the same body posted three times) |
-| D | Groq `unknown` / `price_missing` with a matching catalogue row | module-level `priced` row for exactly `groq` and the model; every Groq row asserts `price_missing`, no price version | rows for `groq` and `openrouter` inserted once per session at a fixed date (§10); the read-back test asserts each is effective before the spans; both `price_missing` |
-| E | Overview counts, tokens and cost completeness | `test_overview_and_compare_keep_one_row_per_scenario`: 3 attempts, 60 / 96 tokens, 3 × `price_missing`, `cost_complete: false`, no price version | `test_overview_counts_tokens_and_cost_completeness`: six rows from four providers, OpenAI cost 0.001575 computed, five unknown, incomplete; filters by provider and prompt version |
+| D | Groq `unknown` / `price_missing` with a matching catalogue row | the session's one canonical row for exactly `groq` and the model (`conftest.groq_price`, shared with `test_live_groq.py`, §11); every Groq row asserts `price_missing`, no price version | rows for `groq` and `openrouter` inserted once per session at a fixed date (§10); the read-back test asserts each is effective before the spans; both `price_missing` |
+| E | Overview counts, tokens and cost completeness | §11: `test_one_runner_execution_gives_one_overview_and_compare_row` (×3, one real runner execution each): 1 attempt, 20 / 32 tokens, `price_missing`, `cost_complete: false`, no price version. `test_a_synthetic_comparison_set_keeps_one_compare_row_per_scenario` (SYNTHETIC adapter spans, not the runner): 3 attempts, 60 / 96 tokens, 3 × `price_missing` | `test_overview_counts_tokens_and_cost_completeness`: six rows from four providers, OpenAI cost 0.001575 computed, five unknown, incomplete; filters by provider and prompt version |
 | F | Trace list and detail | identity test: detail roles, children, finish reason, dropped count, usage; list by provider and model | `test_trace_list_and_detail_keep_provider_model_status_and_relationships` |
-| G | Compare keeps the three scenario versions apart | three groups, one per `cmp-v1.*`; the `prompt_version` filter returns one | six groups (OpenAI, Gemini, three Groq, synthetic OpenRouter); Groq filter three; one scenario across two providers |
+| G | Compare keeps the three scenario versions apart | the synthetic set: three groups, one per `cmp-v1.*`, the `prompt_version` filter returns one; each runner execution: exactly its own group, no group for the other two versions | six groups (OpenAI, Gemini, three Groq, synthetic OpenRouter); Groq filter three; one scenario across two providers |
 | H | Project isolation in Overview, Traces and Compare | `test_a_comparison_trace_never_appears_in_another_project` (detail 404 identical to a missing trace) | `test_no_view_of_one_project_shows_another_projects_trace` |
 | I | Unsupported or incomplete data fails closed | nine runner cases: 429, timeout, malformed, usage missing, usage inconsistent, incomplete, empty, 402 halt, service-tier halt; each stored once, no zero tokens, no cost, never exit 0 | `test_incomplete_or_invalid_provider_data_manufactures_nothing`: no usage, a negative count (dropped, counted), an error without a response model (its own Compare row) |
 | J | OpenAI and Gemini compatible; OpenRouter clearly synthetic | (Groq only) | OpenAI priced from the verified catalogue, Gemini `price_missing`, both in the same views |
@@ -67,10 +67,10 @@ Test code only, reusing the existing integration infrastructure. No new database
 
 | File | Collected | Database-backed | Run locally |
 |---|---|---|---|
-| `sdk/tests/integration/test_live_compare.py` | 20 | 17 | **NOT RUN** |
+| `sdk/tests/integration/test_live_compare.py` | 25 (20 before §11) | 21 (17 before §11) | **NOT RUN** |
 | `backend/tests/integration/test_multi_provider_read.py` | 8 | 8 | **NOT RUN** |
 
-**25 database-backed tests were written and collected but not executed, which is not a pass.** Both suites' fixtures create disposable databases on the server named by `LLMI_DATABASE_URL` or the repository's `.env`; locally that is the developer's server and `.env`, which this checkpoint may not touch. Their expectations were checked against the code they exercise (the ingest attribute map, the usage ledger, the pricing rules, the trace summary recompute, and the Overview, Compare and Traces payloads), not against a database run.
+**25 database-backed tests (29 after §11) were written and collected but not executed locally, which is not a pass.** Both suites' fixtures create disposable databases on the server named by `LLMI_DATABASE_URL` or the repository's `.env`; locally that is the developer's server and `.env`, which this checkpoint may not touch. Their expectations were checked against the code they exercise (the ingest attribute map, the usage ledger, the pricing rules, the trace summary recompute, and the Overview, Compare and Traces payloads), not against a database run.
 
 ### 5.2 Fail closed when the database is missing
 
@@ -183,3 +183,44 @@ No production code, migration, constraint or trigger changed, and no price row i
 | SDK test file | unchanged by the correction |
 
 **NOT RUN LOCALLY:** the 8 corrected backend database tests and the 17 SDK database tests. The SDK tests did not run in the failed CI job either, because it stopped at the backend step. The CI retry must run with `LLMI_TEST_REQUIRE_DB=1`, execute all 8 backend tests in this file and all 20 SDK tests in `test_live_compare.py`, show no new database skip or error, and pass all seven jobs.
+
+## 11. PR #8 second CI failure: two SDK test-design corrections (2026-11-11)
+
+**Failure.** As reported by the reviewer from GitHub Actions run `42963391108` on `9f2a147`: backend 1904 passed; SDK 2213 passed, 1 failed, 6 errors; the other six jobs passed. This session did not read that run. Both defects are in this phase's SDK tests. Neither is a production defect, and no production code, guard, lock, dependency or migration changed.
+
+**F1: two groq prices for one model in the shared SDK database.**
+- **Cause.** The SDK `live_backend` database is session-scoped and shared by every integration module. `test_live_compare.py` (8A-5) inserted a groq price for the fixture model dated 2026-02-01. `test_live_groq.py` (8A-2) runs after it in file order and inserted an older one, dated 2026-01-01, for the same provider and model. The append-only trigger of migration `0002` correctly refused the second insert, so `test_live_groq.py`'s module fixture failed and all 6 of its tests errored.
+- **Correction.** A session-scoped `groq_price` fixture in `sdk/tests/integration/conftest.py` inserts one canonical row, `synthetic-groq-it`, dated 2026-01-01 UTC (before every span). It then asserts that this row is the only groq price for the model. Both modules' price fixtures (`priced`, `priced_backend`) now only depend on it. The trigger, the price history and every `price_missing` assertion are unchanged.
+- **Order and repetition.** The session database is dropped and created again for every session, so a repeated run starts empty. The three other modules that seed prices use the idempotent OpenAI catalogue CLI, which has no groq entry. `pytest --setup-plan` sets `groq_price` up exactly once in each case: compare then groq, groq then compare, each module alone, the whole integration directory, and every test of both modules in reversed order.
+
+**F2: three runner executions inside one test.**
+- **Cause.** `test_overview_and_compare_keep_one_row_per_scenario` ran the runner three times in one test. The runner takes `groq_live._PROCESS_SLOT` once and never releases it, so it allows one request per process. The `own_slot` fixture gives each test one fresh slot. The second execution in that test was therefore correctly refused, and the test failed. Its assertions about the aggregate never ran, in CI or locally.
+- **Correction:**
+  - The test is removed.
+  - The slot is not reset, released or replaced inside any test. `own_slot` still gives each test case exactly one slot, so one test case stands for one process lifetime; its docstring now says so.
+  - **Real runner executions, one per test case:** `test_one_runner_execution_gives_one_overview_and_compare_row` (×3, one scenario each, in a project of its own). It asserts exactly one Compare group (provenance `real`, low-sample), no group for the other two versions, and Overview with 1 attempt, 20 / 32 tokens, `price_missing` and no price version. The list holds only that trace.
+  - **Synthetic aggregate, not the runner:** `test_a_synthetic_comparison_set_keeps_one_compare_row_per_scenario` sends three comparison-shaped traces into one project. They are made by the SDK's Groq adapter on a SYNTHETIC wire, with `synthetic` provenance and no send gate, and exported by the official OTLP exporter. It asserts three groups, one per `cmp-v1.*`, each with provenance `synthetic`, and the `prompt_version` filter returning one. Overview shows 3 attempts, 60 / 96 tokens, 3 × `price_missing`, no price version, no `real` attempt, and no content or key in storage or the log.
+  - **Negative tests:**
+    - `test_a_second_execution_in_the_same_process_is_refused_on_the_wire` needs no database. The first execution exits 0 and the second exits 2 with `request_limit_reached`, `not_sent` and 0 physical attempts. Exactly one request reaches the wire, and three spans are exported with one CLIENT span. The second execution's only span is the runner's root, with no `gen_ai.*` attribute.
+    - `test_a_second_execution_in_the_same_process_is_refused_and_stores_no_call` uses the database. The second trace is stored as root only: (1 trace, 1 span, 0 usage rows). The project holds (2, 3, 1). Compare has one group, and Overview has 1 attempt and 2 traces.
+- **Finding, not a defect (R131).** A send-time refusal leaves a root-only trace that counts in the Overview trace total but not in attempts, tokens or cost. This was measured locally on the wire and is recorded as R131 for 8A-6. The runner is unchanged.
+
+**Local verification**, from copies holding no `.env` and with no database URL:
+
+| Check | Result |
+|---|---|
+| Collection, `test_live_compare.py` + `test_live_groq.py` | 31 (25 + 6) |
+| Database-free tests of the two modules (4 wire) | **4 passed** |
+| Normal mode, no database | 4 passed, 27 skipped with a reason |
+| `LLMI_TEST_REQUIRE_DB=1`, no database | 4 passed, **27 errors** (no silent skip) |
+| `--setup-plan`, six orders and selections | `groq_price` set up exactly once in each |
+| Mutants of the process-slot guard (slot ignored; slot released after the request), private copies, after a passing control | **2 of 2 caught**, both by the negative wire test |
+| SDK clean-install regression (`LLMI_BACKEND_PYTHON` pointing to a non-existent path, so no database or `.env` is reached) | **2225 tests: 2123 passed, 0 failed, 102 skipped** (2220, 2122 and 98 before: +1 negative wire test passed, +4 database tests skipped) |
+| SDK Ruff `check .` / `format --check .`; mypy strict `src` and `../demo_app` | PASS (57 files; 14 and 11 files) |
+| Bandit gate | PASS, 44 = 44 |
+| QA self-tests | 214 ran, OK, 15 skipped |
+
+**NOT RUN LOCALLY:** the 21 SDK and 8 backend comparison database tests, and the 6 `test_live_groq.py` tests. The CI retry must run with `LLMI_TEST_REQUIRE_DB=1` and pass all seven jobs. All backend integration tests and all SDK integration tests must pass with no skip, including:
+- both affected SDK modules, which share the one session database there;
+- the 25 tests of `test_live_compare.py`;
+- the 6 tests of `test_live_groq.py`.

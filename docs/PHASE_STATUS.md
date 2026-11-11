@@ -470,7 +470,9 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] Architectural review of 8A-5, 2026-11-11: conditional GO for one local commit and CI submission (`reports/phase-8a-5.md` §9); the checkpoint closes only when CI passes
 - [x] First CI run of 8A-5 (PR #8, `2f3c698`, run `42944649002`, as reported by the reviewer): six jobs passed; `python` failed with 4 backend setup errors, from a random-date price fixture against the append-only `model_prices` trigger. A test-fixture defect; no production change
 - [x] Fixture correction authorized 2026-11-11: one session-scoped insert at a fixed date, with the precondition asserted; database-free checks pass. Second local commit, not pushed (`reports/phase-8a-5.md` §10)
-- [ ] CI retry of PR #8: all seven jobs, the 8 backend and 20 SDK comparison tests run with `LLMI_TEST_REQUIRE_DB=1`, no new database skip or error; **NOT RUN**
+- [x] Second CI run of 8A-5 (PR #8, `9f2a147`, run `42963391108`, as reported by the reviewer): backend 1904 passed; SDK 2213 passed, 1 failed, 6 errors; the other six jobs passed. F1: a second groq price, dated earlier, for the same model in the shared SDK session database. F2: three runner executions inside one test against the one-request-per-process slot. Both are test-design defects; no production change
+- [x] F1 and F2 corrections authorized 2026-11-11: one session-scoped canonical groq price (`sdk/tests/integration/conftest.py`) for both modules; one runner execution per test case, a SYNTHETIC aggregate without the runner, and negative tests for a second execution. Database-free checks pass. Approved 2026-11-11 (conditional GO); a third local commit, not pushed (`reports/phase-8a-5.md` §11)
+- [ ] CI retry of PR #8: all seven jobs; with `LLMI_TEST_REQUIRE_DB=1`, all backend integration tests and all SDK integration tests pass with no skip, including the 8 backend and 25 SDK comparison tests and the 6 `test_live_groq.py` tests; **NOT RUN**
 - [ ] Offline checkpoints 8A-6 and 8A-7
 - [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
 
