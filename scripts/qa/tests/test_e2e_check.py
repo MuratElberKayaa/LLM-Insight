@@ -323,11 +323,12 @@ class Reports(Base):
     def passed(self, count=COUNT):
         return self.document([self.spec(i) for i in range(count)])
 
-    def log(self, remaining=(), deleted=(1, 2, 3, 4), setup=True, teardown=True):
+    def log(self, remaining=(), deleted=(1, 2, 3, 4, 5), setup=True, teardown=True):
         lines = []
         if setup:
             lines.append(
-                f"[e2e] run {RUN}: projects main=1 foreign=2 hostile=3 providers=4 (SYNTHETIC)"
+                f"[e2e] run {RUN}: projects main=1 foreign=2 hostile=3 providers=4"
+                " comparison=5 (SYNTHETIC)"
             )
         if teardown:
             body = {"run": RUN, "deleted": list(deleted), "remaining": list(remaining)}
@@ -448,22 +449,117 @@ class Reports(Base):
             "FIXTURE_TEARDOWN", kinds(self.run_check(log=self.log(deleted=[1, 2]))[0])
         )
 
+    def teardown_problems(self, body, setup=True):
+        """Fixture problems for one teardown line (a dict is JSON-encoded, a str is raw)."""
+        text = body if isinstance(body, str) else json.dumps(body)
+        log = self.log(setup=setup, teardown=False) + "[e2e] teardown: " + text + "\n"
+        return [
+            p for p in self.run_check(log=log)[0] if p["kind"].startswith("FIXTURE_")
+        ]
+
+    def test_k_minimum_is_the_committed_suite(self):
+        # 72 tests after Phase 8A-6 (62 + phase8a6.spec.ts). Lowering it hides lost tests.
+        self.assertEqual(check.MIN_TESTS, 72)
+
+    def test_m_exactly_five_distinct_projects_pass(self):
+        self.assertEqual(check.OWNED_PROJECTS, 5)
+        body = {"run": RUN, "deleted": [17, 3, 42, 8, 1001], "remaining": []}
+        self.assertEqual(self.teardown_problems(body), [])
+
+    def test_m_four_or_six_deleted_projects_fail(self):
+        for deleted in ([1, 2, 3, 4], [1, 2, 3, 4, 5, 6], []):
+            with self.subTest(deleted=deleted):
+                body = {"run": RUN, "deleted": deleted, "remaining": []}
+                self.assertEqual(
+                    kinds(self.teardown_problems(body)), {"FIXTURE_TEARDOWN"}
+                )
+
+    def test_m_repeated_or_invalid_project_ids_fail(self):
+        for deleted in (
+            [1, 1, 2, 3, 4],  # five entries, four projects
+            [1, 2, 3, 4, "5"],
+            [1, 2, 3, 4, 5.0],
+            [True, 2, 3, 4, 5],  # a bool is not a project id (and not a duplicate here)
+            [0, 1, 2, 3, 4],
+            [-1, 1, 2, 3, 4],
+            [1, 2, 3, 4, None],
+        ):
+            with self.subTest(deleted=deleted):
+                body = {"run": RUN, "deleted": deleted, "remaining": []}
+                self.assertEqual(
+                    kinds(self.teardown_problems(body)), {"FIXTURE_TEARDOWN"}
+                )
+
+    def test_m_remaining_projects_fail_even_after_a_complete_delete(self):
+        for remaining in ([6], [1], None, "[]", {}):
+            with self.subTest(remaining=remaining):
+                body = {"run": RUN, "deleted": [1, 2, 3, 4, 5], "remaining": remaining}
+                self.assertEqual(
+                    kinds(self.teardown_problems(body)), {"FIXTURE_TEARDOWN"}
+                )
+        body = {"run": RUN, "deleted": [1, 2, 3, 4, 5]}  # no `remaining` reported
+        self.assertEqual(kinds(self.teardown_problems(body)), {"FIXTURE_TEARDOWN"})
+
+    def test_m_wrong_or_missing_run_ids_fail(self):
+        for run in ("000000000000", RUN.upper(), RUN[:-1], "", None, 1):
+            with self.subTest(run=run):
+                body = {"run": run, "deleted": [1, 2, 3, 4, 5], "remaining": []}
+                self.assertEqual(
+                    kinds(self.teardown_problems(body)), {"FIXTURE_TEARDOWN"}
+                )
+        body = {"deleted": [1, 2, 3, 4, 5], "remaining": []}
+        self.assertEqual(kinds(self.teardown_problems(body)), {"FIXTURE_TEARDOWN"})
+
+    def test_m_malformed_teardown_reports_fail(self):
+        for text in (
+            '{"run": "' + RUN + '", "deleted": [1, 2, 3, 4, 5], "remaining": [}',
+            "{not json}",
+            '{"run": "' + RUN + '", "deleted": 5, "remaining": []}',
+            '{"run": "' + RUN + '", "deleted": {"1": 1}, "remaining": []}',
+            '{"run": "' + RUN + '", "deleted": "1,2,3,4,5", "remaining": []}',
+            "[1, 2, 3, 4, 5]",
+            "",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    kinds(self.teardown_problems(text)), {"FIXTURE_TEARDOWN"}
+                )
+
+    def test_m_teardown_reported_twice_fails(self):
+        line = "[e2e] teardown: " + json.dumps(
+            {"run": RUN, "deleted": [1, 2, 3, 4, 5], "remaining": []}
+        )
+        log = self.log(teardown=False) + line + "\n" + line + "\n"
+        self.assertIn("FIXTURE_TEARDOWN", kinds(self.run_check(log=log)[0]))
+
+    def test_l_setup_reported_twice_or_malformed_fails(self):
+        setup = self.log(teardown=False)
+        teardown = self.log(setup=False)
+        for log in (
+            setup + setup + teardown,
+            "[e2e] run ABCDEFABCDEF: projects main=1 (SYNTHETIC)\n" + teardown,
+            f"[e2e] run {RUN}: projects main=1\n" + teardown,
+        ):
+            with self.subTest(log=log.splitlines()[0]):
+                self.assertIn("FIXTURE_SETUP", kinds(self.run_check(log=log)[0]))
+
     def test_kept_data_fails(self):
         log = (
             self.log(teardown=False)
-            + f'[e2e] teardown: {{"run": "{RUN}", "kept": [1, 2, 3, 4]}}\n'
+            + f'[e2e] teardown: {{"run": "{RUN}", "kept": [1, 2, 3, 4, 5]}}\n'
         )
         self.assertIn("FIXTURE_TEARDOWN", kinds(self.run_check(log=log)[0]))
 
     def test_kept_flag_fails_even_with_a_complete_delete(self):
-        body = {"run": RUN, "deleted": [1, 2, 3, 4], "remaining": [], "kept": [1]}
+        body = {"run": RUN, "deleted": [1, 2, 3, 4, 5], "remaining": [], "kept": [1]}
         log = self.log(teardown=False) + "[e2e] teardown: " + json.dumps(body) + "\n"
         self.assertIn("FIXTURE_TEARDOWN", kinds(self.run_check(log=log)[0]))
 
     def test_teardown_of_another_run_fails(self):
         log = (
             self.log(teardown=False)
-            + '[e2e] teardown: {"run": "000000000000", "deleted": [1, 2, 3, 4], "remaining": []}\n'
+            + '[e2e] teardown: {"run": "000000000000", "deleted": [1, 2, 3, 4, 5],'
+            ' "remaining": []}\n'
         )
         self.assertIn("FIXTURE_TEARDOWN", kinds(self.run_check(log=log)[0]))
 
@@ -583,6 +679,27 @@ class E2eInputs(unittest.TestCase):
             int(item) for item in re.findall(r"http://127\.0\.0\.1:(\d{4})/", text)
         }
         self.assertEqual(ports, set(check.RUN_PORTS))
+
+    def test_owned_projects_match_the_fixture_roles(self):
+        """The gate's count is the fixture's own: one role per run-owned project in
+        `e2e_fixtures.names()`, each printed by the Playwright global setup."""
+        import ast
+
+        tree = ast.parse(self.text("scripts/dev/e2e_fixtures.py"))
+        (names,) = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "names"
+        ]
+        (returned,) = [n.value for n in ast.walk(names) if isinstance(n, ast.Return)]
+        self.assertIsInstance(returned, ast.Dict)
+        roles = [k.value for k in returned.keys]
+        self.assertEqual(len(set(roles)), len(roles))
+        self.assertEqual(len(roles), check.OWNED_PROJECTS)
+        setup = self.text("frontend/tests/setup/e2e-global-setup.ts")
+        for role in roles:
+            with self.subTest(role):
+                self.assertIn(f"{role}=${{result.projects.{role}}}", setup)
 
     def test_no_test_mocks_the_backend_or_is_focused(self):
         for path in sorted((REPO / "frontend/tests/e2e").glob("*.spec.ts")):

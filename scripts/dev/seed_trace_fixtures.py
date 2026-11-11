@@ -27,6 +27,10 @@ for the dashboard filters: `openai` (ok and failed), `gcp.gemini` synthetic, `gc
 asserted `real` claim and a response id, a `real` claim without a response id (stored as
 `unknown` by the server's downgrade rule), and a span with no provider, model or claim.
 `--set phase6c-new`: one more SYNTHETIC trace, sent during a browser test.
+`--set phase8a6` (Phase 8A-6, service names `cmp8a6.*`): one SYNTHETIC multi-provider
+comparison set: OpenAI (priced), Gemini, the three Groq comparison scenarios under a
+`demo.live-compare` root, a SYNTHETIC OpenRouter compatibility row, a root-only
+`demo.live-compare` trace (R131) and one adversarial trace (see `phase8a6_set`).
 """
 
 from __future__ import annotations
@@ -647,6 +651,159 @@ def phase6c_new_set(b: Builder) -> None:
     )
 
 
+# Phase 8A-6: the three comparison scenarios of Phase 8A-4 (`demo_app/comparison_scenarios.py`,
+# ADR-45), pinned here so the dashboard fixture does not import the demo app. Distinct token
+# counts per scenario make a merged row visible.
+COMPARISON_SCENARIOS = (
+    ("ticket-triage", "cmp.ticket-triage", "cmp-v1.ticket-triage", (20, 32)),
+    ("json-aggregate", "cmp.json-aggregate", "cmp-v1.json-aggregate", (24, 40)),
+    ("release-summary", "cmp.release-summary", "cmp-v1.release-summary", (30, 64)),
+)
+GROQ_MODEL = "openai/gpt-oss-20b"
+# SYNTHETIC: no OpenRouter adapter exists.
+OPENROUTER_MODEL = "synthetic/compat-only:free"
+CONTENT_SENTINEL = "PHASE8A6-CONTENT-SENTINEL-never-stored"
+REASONING_SENTINEL = "PHASE8A6-REASONING-SENTINEL-never-stored"
+
+
+def phase8a6_set(b: Builder) -> None:
+    """Phase 8A-6: one SYNTHETIC multi-provider comparison set for the dashboard. No provider
+    is called and nothing claims `real`. Every inference span is `synthetic`, with
+    provider-reported usage shaped like each adapter's spans (the Groq ones carry the exact
+    attribute set of `docs/fixtures/groq_client_span.v1.json`). The OpenRouter trace is a
+    SYNTHETIC compatibility representation only, with a model name that says so. Also: a
+    root-only `demo.live-compare` trace (R131: what a send-time refusal leaves), and one
+    adversarial trace whose hostile provider and model, content, reasoning and key-shaped
+    response id the server must drop."""
+
+    def root(t: TraceBuilder, i: int, name: str, kind: str = "INTERNAL") -> None:
+        t.add("root", name, kind, i * 1000 * MS, i * 1000 * MS + 50 * MS)
+
+    def client(
+        t: TraceBuilder,
+        i: int,
+        model: str,
+        attrs: dict[str, object],
+        error: str | None = None,
+    ) -> None:
+        t.add(
+            "llm",
+            f"chat {model}",
+            "CLIENT",
+            i * 1000 * MS + MS,
+            i * 1000 * MS + 40 * MS,
+            parent="root",
+            attrs=attrs,
+            error=error,
+        )
+
+    def call(
+        key: str,
+        provider: str,
+        model: str,
+        prompt: tuple[str, str],
+        usage: tuple[int, int],
+        **extra: object,
+    ) -> dict[str, object]:
+        return inference(
+            model,
+            call_id=uuid_from(b, key),
+            usage=usage,
+            **{
+                "gen_ai.provider.name": provider,
+                "gen_ai.response.model": model,
+                "gen_ai.response.id": f"chatcmpl-SYNTHETIC-8a6-{letters_from(b, key)}",
+                "gen_ai.response.finish_reasons": ["stop"],
+                "gen_ai.prompt.name": prompt[0],
+                "gen_ai.prompt.version": prompt[1],
+                **extra,
+            },
+        )
+
+    # A: OpenAI, priced by the verified catalogue (standard tier, global host), as in
+    # backend/tests/integration/test_multi_provider_read.py: 0.0015750000 USD.
+    t = b.trace("cmp8a6.openai", scope="phase8a6.seed")
+    root(t, 0, "POST /v1/answer", "SERVER")
+    a = call("openai", "openai", "gpt-5.4-mini", ("cmp8a6.baseline", "v1"), (1200, 300))
+    a["gen_ai.response.model"] = "gpt-5.4-mini-2026-03-17"
+    a["gen_ai.usage.cache_read.input_tokens"] = 1000
+    a["gen_ai.usage.reasoning.output_tokens"] = 200
+    a["openai.response.service_tier"] = "default"
+    a["server.address"] = "api.openai.com"
+    client(t, 0, "gpt-5.4-mini", a)
+
+    # B: Gemini, never priced (ADR-35).
+    t = b.trace("cmp8a6.gemini", scope="phase8a6.seed")
+    root(t, 1, "POST /v1/answer", "SERVER")
+    m = "gemini-3.1-flash-lite"
+    client(t, 1, m, call("gemini", "gcp.gemini", m, ("cmp8a6.baseline", "v1"), (18, 6)))
+
+    # C: Groq, one trace per comparison scenario, as the runner exports them: a
+    # `demo.live-compare` root and the adapter's CLIENT span. Never priced (ADR-40).
+    for n, (scenario, name, version, usage) in enumerate(COMPARISON_SCENARIOS):
+        i = 2 + n
+        t = b.trace(f"cmp8a6.groq.{scenario}", scope="phase8a6.seed")
+        root(t, i, "demo.live-compare")
+        attrs = call(
+            f"groq-{scenario}",
+            "groq",
+            GROQ_MODEL,
+            (name, version),
+            usage,
+            **{
+                "gen_ai.request.max_tokens": 1024,
+                "server.address": "api.groq.com",
+                "server.port": 443,
+            },
+        )
+        client(t, i, GROQ_MODEL, attrs)
+
+    # D: OpenRouter, a SYNTHETIC compatibility representation only (no adapter, no runner
+    # support), so its root is not the runner's. Never priced (ADR-40).
+    t = b.trace("cmp8a6.openrouter-synthetic", scope="phase8a6.seed")
+    root(t, 5, "synthetic.openrouter-compat")
+    attrs = call(
+        "openrouter",
+        "openrouter",
+        OPENROUTER_MODEL,
+        ("cmp.ticket-triage", "cmp-v1.ticket-triage"),
+        (20, 32),
+        **{"server.address": "openrouter.ai", "server.port": 443},
+    )
+    client(t, 5, OPENROUTER_MODEL, attrs)
+
+    # R131: the runner's root span alone, as a send-time refusal leaves it. No inference.
+    t = b.trace("cmp8a6.refused-root-only", scope="phase8a6.seed")
+    root(t, 6, "demo.live-compare")
+
+    # Adversarial: hostile labels (kept as text), and six values the server must drop: a
+    # provider and a model with markup, two content attributes, a reasoning attribute and a
+    # key-shaped response id (assembled here, never a literal). No usage reported.
+    t = b.trace(f'<img src=x onerror="{XSS}">cmp8a6.adversarial', scope="phase8a6.seed")
+    t.add("root", f"<script>{XSS}</script>", "INTERNAL", 7000 * MS, 7050 * MS)
+    hostile: dict[str, object] = {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": f"<img src=x onerror={XSS}>",
+        "gen_ai.request.model": f"<script>{XSS}</script>",
+        "gen_ai.response.id": "gsk" + "_" + "Q7xE2EDASH" * 4,
+        "gen_ai.input.messages": CONTENT_SENTINEL,
+        "gen_ai.output.messages": CONTENT_SENTINEL,
+        "llm.reasoning": REASONING_SENTINEL,
+        "llminsight.call_id": uuid_from(b, "adversarial"),
+        "llminsight.attempt": 1,
+        "llminsight.provenance": "synthetic",
+    }
+    t.add(
+        "llm",
+        f"chat <img src=x onerror={XSS}>",
+        "CLIENT",
+        7001 * MS,
+        7040 * MS,
+        parent="root",
+        attrs=hostile,
+    )
+
+
 def isolation_set(b: Builder) -> None:
     t = b.trace("phase3b.isolation")
     t.add("root", "POST /v1/other-project", "SERVER", 0, 20 * MS)
@@ -668,7 +825,7 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument(
         "--set",
-        choices=("edge", "isolation", "phase3c", "phase6c", "phase6c-new"),
+        choices=("edge", "isolation", "phase3c", "phase6c", "phase6c-new", "phase8a6"),
         default="edge",
     )
     args = parser.parse_args(argv)
@@ -696,6 +853,7 @@ def main(argv: list[str]) -> int:
         "phase3c": phase3c_set,
         "phase6c": phase6c_set,
         "phase6c-new": phase6c_new_set,
+        "phase8a6": phase8a6_set,
     }[args.set](b)
 
     request = b.request()

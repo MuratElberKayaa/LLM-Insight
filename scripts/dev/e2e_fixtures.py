@@ -7,11 +7,13 @@ Run with the backend venv (it has the app, `opentelemetry-proto` and `requests`)
     backend/.venv/Scripts/python scripts/dev/e2e_fixtures.py teardown --state <file>
     backend/.venv/Scripts/python scripts/dev/e2e_fixtures.py add-trace --state <file>
 
-`setup` creates four projects owned by this run, named `e2e-<run>-main`, `e2e-<run>-foreign`,
-`e2e-<run>-providers` (Phase 6C-C) and `e2e-<run>-xss <hostile label>` (12 random hex characters per run, so no existing project is
+`setup` creates five projects owned by this run, named `e2e-<run>-main`, `e2e-<run>-foreign`,
+`e2e-<run>-providers` (Phase 6C-C), `e2e-<run>-xss <hostile label>` and
+`e2e-<run>-comparison` (Phase 8A-6) (12 random hex characters per run, so no existing project is
 reused), mints one ingest key per seeded project in memory, sends the SYNTHETIC sets of
 `seed_trace_fixtures.py` through the real `POST /v1/traces` (`edge` + `phase3c` to main,
-`isolation` to foreign, `phase6c` to providers; ids derived from the run, timestamps a few minutes before now, UTC),
+`isolation` to foreign, `phase6c` to providers, `phase8a6` to comparison; ids derived from the
+run, timestamps a few minutes before now, UTC),
 revokes the keys and writes the state file: run id, project ids and names. No key, token or
 password is printed or written. A failed setup removes what it created.
 
@@ -20,7 +22,9 @@ still match the recorded run (the cascade removes their keys, traces, spans and 
 Nothing else is touched: no other project, no price row, no schema object. Set
 `LLMI_E2E_KEEP=1` to keep the data (for screenshots); the state file then says so.
 No provider is called. Nothing claims `real` except one asserted-real SYNTHETIC fixture span in
-the providers project (`seed_trace_fixtures.py --set phase6c`), which tests the label path.
+the providers project (`seed_trace_fixtures.py --set phase6c`), which tests the label path. The
+comparison project's set (`--set phase8a6`) is SYNTHETIC throughout, its OpenRouter row a
+compatibility representation only (no OpenRouter adapter exists).
 
 `add-trace` (Phase 6C-C) sends one more SYNTHETIC trace (`--set phase6c-new`) to this run's
 providers project with a key minted for that call and revoked right after, and prints its trace
@@ -69,6 +73,7 @@ def names(run: str) -> dict[str, str]:
         "foreign": f"e2e-{run}-foreign",
         "providers": f"e2e-{run}-providers",
         "hostile": f"e2e-{run}-xss {HOSTILE}",
+        "comparison": f"e2e-{run}-comparison",
     }
 
 
@@ -136,6 +141,7 @@ def setup(state_path: Path, endpoint: str) -> int:
             ("main", "phase3c"),
             ("foreign", "isolation"),
             ("providers", "phase6c"),
+            ("comparison", "phase8a6"),
         ):
             result = _seed(keys[role][0], set_name, f"e2e-{run}-{set_name}", endpoint)
             rejected += result["rejected_spans"]
