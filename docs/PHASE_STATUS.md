@@ -518,6 +518,15 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [ ] GitHub CI of this branch: **NOT RUN** (not pushed); PR #11 CI: queued when read
 - [ ] Real requests: **NO-GO for Groq, OpenRouter and Gemini** (`reports/phase-8c.md` §F); one request per provider only after its evidence, a reviewed release and a separate written authorization
 
+## Phase 8D — Real provider readiness (2026-11-12; evidence: `reports/phase-8d.md`)
+- [x] PR #12 merged (`0ab5e71`); its PR run and post-merge `main` run successful (public API)
+- [x] Official docs re-read for the three models; operator attestations recorded as attestations, not billing evidence
+- [x] Targeted offline tests 1414 passed; dry-run readiness probe: only the code locks remain (Groq 3, Gemini 1, OpenRouter 4)
+- [x] Project 1 accepted for the local test; trace mixing documented (filter by `prompt_version`)
+- [ ] Groq: account Limits evidence and a reviewed release; **NO-GO**
+- [ ] Gemini: AI Studio check and a reviewed evidence re-release (which alone unlocks Gemini, R140); R123 review confirmation; **NO-GO**
+- [ ] OpenRouter: R135 and free-endpoint routability under `data_collection: deny` unresolved; **NO-GO**
+
 ## Commands
 
 | Command (run from) | Exists | Purpose |
