@@ -36,11 +36,11 @@ finish() {
 trap finish EXIT
 
 cat > "$FAKE_BIN/mk_report.py" <<'PY'
-"""Writes a synthetic Playwright JSON report: 62 tests unless the FAKE_* variables say otherwise."""
+"""Writes a synthetic Playwright JSON report: 72 tests unless the FAKE_* variables say otherwise."""
 import json, os, sys
 target, listed = sys.argv[1], sys.argv[2] == "list"
 get = os.environ.get
-count = int(get("FAKE_LIST_COUNT", "62")) if listed else int(get("FAKE_RUN_COUNT", get("FAKE_LIST_COUNT", "62")))
+count = int(get("FAKE_LIST_COUNT", "72")) if listed else int(get("FAKE_RUN_COUNT", get("FAKE_LIST_COUNT", "72")))
 specs = []
 expected = 0
 for i in range(count):
@@ -180,10 +180,10 @@ case "$*" in
     [ -z "${FAKE_LIST_FAIL:-}" ] || exit 42
     exec "$LLMI_REAL_PYTHON" -I "$FAKE_BIN/mk_report.py" "$PLAYWRIGHT_JSON_OUTPUT_NAME" list ;;
   "playwright test --reporter=list,json")
-    [ -n "${FAKE_NO_SETUP:-}" ] || echo "[e2e] run abcdefabcdef: projects main=1 foreign=2 hostile=3 providers=4 (SYNTHETIC)"
+    [ -n "${FAKE_NO_SETUP:-}" ] || echo "[e2e] run abcdefabcdef: projects main=1 foreign=2 hostile=3 providers=4 comparison=5 (SYNTHETIC)"
     if [ -n "${FAKE_LEAK:-}" ]; then grep '^POSTGRES_PASSWORD=' ../.env; fi
     "$LLMI_REAL_PYTHON" -I "$FAKE_BIN/mk_report.py" "$PLAYWRIGHT_JSON_OUTPUT_NAME" run
-    [ -n "${FAKE_NO_TEARDOWN:-}" ] || echo "[e2e] teardown: {\"run\": \"abcdefabcdef\", \"deleted\": [1, 2, 3, 4], \"remaining\": ${FAKE_REMAINING:-[]}}"
+    [ -n "${FAKE_NO_TEARDOWN:-}" ] || echo "[e2e] teardown: {\"run\": \"abcdefabcdef\", \"deleted\": ${FAKE_DELETED:-[1, 2, 3, 4, 5]}, \"remaining\": ${FAKE_REMAINING:-[]}}"
     exit "${FAKE_PW_EXIT:-0}" ;;
 esac
 exit 99
@@ -371,8 +371,8 @@ fail_at "I failed test with exit 0" test "TEST_FAILED" FAKE_RUN_FAIL=1
 fail_at "I exit 1 clean report" test "PLAYWRIGHT_FAILED" FAKE_PW_EXIT=1
 fail_at "J timeout" test "PLAYWRIGHT_TIMEOUT" FAKE_TIMEOUT=1
 fail_at "K empty discovery" test "DISCOVERY_EMPTY" FAKE_LIST_COUNT=0
-fail_at "K too few tests" test "DISCOVERY_TOO_FEW" FAKE_LIST_COUNT=61
-fail_at "K fewer executed" test "EXECUTION_MISMATCH" FAKE_RUN_COUNT=61
+fail_at "K too few tests" test "DISCOVERY_TOO_FEW" FAKE_LIST_COUNT=71
+fail_at "K fewer executed" test "EXECUTION_MISMATCH" FAKE_RUN_COUNT=71
 fail_at "K discovery command fails" test "" FAKE_LIST_FAIL=1
 fail_at "L setup failed" test "FIXTURE_SETUP" FAKE_NO_SETUP=1
 fail_at "L global error" test "GLOBAL_ERROR" FAKE_GLOBAL_ERROR=1
@@ -387,6 +387,9 @@ expect_fail "backend process exited" test "the backend process exited"
 fail_at "busy UI port" test "PORT_BUSY" FAKE_PORT_BUSY=run
 fail_at "M teardown missing" test "FIXTURE_TEARDOWN" FAKE_NO_TEARDOWN=1
 fail_at "M project left behind" test "FIXTURE_TEARDOWN" 'FAKE_REMAINING=[99]'
+fail_at "M only four projects deleted" test "FIXTURE_TEARDOWN" 'FAKE_DELETED=[1,2,3,4]'
+fail_at "M six projects deleted" test "FIXTURE_TEARDOWN" 'FAKE_DELETED=[1,2,3,4,5,6]'
+fail_at "M a project id repeated" test "FIXTURE_TEARDOWN" 'FAKE_DELETED=[1,1,2,3,4]'
 
 echo "== report privacy"
 setup; until_phase test

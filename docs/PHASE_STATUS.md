@@ -478,6 +478,9 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] 8A-6 local verification: frontend typecheck, lint, 353 unit tests, build, bundle scan and the CI-style listing (72 tests) pass; backend unit 1216 passed; fixture mutants 8 of 8 caught
 - [ ] **10 browser E2E tests of 8A-6: listed, NOT RUN LOCALLY** (they need the running backend, PostgreSQL and `frontend/.env.local`); they require the GitHub `e2e` job
 - [x] Architectural review of 8A-6, 2026-11-11: conditional GO for one local commit (`reports/phase-8a-6.md` §11); the checkpoint closes only when the CI `e2e` job passes
+- [x] First CI run of 8A-6 (PR #9, `7f393fc`, run `42985427705`, as reported by the reviewer): all 72 browser tests passed and the teardown deleted five projects, but the `e2e` job failed in `scripts/qa/e2e_check.py`, which still expected four run-owned projects; the other six jobs passed
+- [x] E2E lifecycle gate correction authorized 2026-11-11: five projects, at least 72 tests, distinct positive ids required; self-tests extended (65 and 102 passed); gate mutants 11 of 11 caught. Second local commit, not pushed (`reports/phase-8a-6.md` §12)
+- [ ] CI retry of PR #9: all seven jobs green, the `e2e` job with 72 tests and five projects deleted; **NOT RUN**
 - [ ] Offline checkpoint 8A-7
 - [ ] Real Groq or OpenRouter request: NO-GO until blockers B1 to B7 clear and each request is separately approved
 

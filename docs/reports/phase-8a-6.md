@@ -1,6 +1,6 @@
 # Phase 8A-6 — Multi-provider dashboard E2E verification (offline)
 
-**Date:** 2026-11-11 UTC. **Status: implemented; locally verified where no running backend or database is needed; approved for one local commit (§11). Committed locally, not pushed. The 10 new browser E2E tests are listed and NOT RUN LOCALLY; they require the GitHub `e2e` job before this checkpoint closes.**
+**Date:** 2026-11-11 UTC. **Status: implemented; locally verified where no running backend or database is needed; approved for one local commit (§11). In the first CI run of PR #9 all 72 browser tests passed, but the E2E lifecycle gate still expected four projects; its correction is a second local commit, not pushed (§12). The 10 new browser tests have not run locally; the checkpoint closes when the CI retry is green.**
 
 Provider API requests: **0**. No credential, billing account, `.env`, `.env.example`, `frontend/.env.local`, PostgreSQL server, database, volume, Docker container or deployment was touched. Every check ran from a copy holding no `.env`, or from a frontend copy with a dummy, non-secret `.env.local`. `REAL_EXECUTION_ENABLED` is still `False`, `FREE_PLAN_MODELS` is empty and `FREE_PLAN_EVIDENCE_VERIFIED_AT` is `None`. No production code, dependency, migration, Docker or CI file changed. The three user-owned untracked files were not opened, copied or changed.
 
@@ -61,7 +61,7 @@ The existing run-owned mechanism is extended by one role and reused unchanged ot
 
 ### 2.3 CI listing constraint
 
-The CI gate first lists the suite (`e2e_gate.sh test`: `playwright test --list`) with only the four existing project ids set. `e2e-env.ts` throws at import when a required id is missing. The comparison id is therefore read lazily, through `comparisonProject()` in the spec's `beforeAll`, which the listing never runs. The gate, `e2e_check.py` and their self-tests need no change. The local listing with exactly the gate's four variables shows 72 tests, 10 of them new, and 0 errors (§5).
+The CI gate first lists the suite (`e2e_gate.sh test`: `playwright test --list`) with only the four existing project ids set. `e2e-env.ts` throws at import when a required id is missing. The comparison id is therefore read lazily, through `comparisonProject()` in the spec's `beforeAll`, which the listing never runs. The listing step itself needs no change. The local listing with exactly the gate's four variables shows 72 tests, 10 of them new, and 0 errors (§5). *(Corrected in §12: this section first said `e2e_check.py` and its self-tests needed no change. They did: the gate pinned four run-owned projects and at least 62 tests.)*
 
 ## 3. E2E test matrix (`frontend/tests/e2e/phase8a6.spec.ts`)
 
@@ -273,3 +273,34 @@ The final check before staging confirmed:
 - the three user-owned files are unchanged.
 
 The only changes after §10 are documentation (this section, the status line and `PHASE_STATUS.md`), so no test was rerun; the doc check and `git diff --cached --check` were. §10 records the state before this approval. The commit is not pushed; its SHA is reported to the owner and not recorded in the commit itself.
+
+## 12. PR #9 CI failure: the E2E lifecycle gate (2026-11-11)
+
+**Failure.** As reported by the reviewer from GitHub Actions run `42985427705` on PR #9 (`7f393fc`): all 72 Playwright tests passed, including the 10 of `phase8a6.spec.ts`. The global teardown reported `deleted: [1, 2, 3, 4, 5]` and `remaining: []`. The `e2e` job still failed after the tests, because `scripts/qa/e2e_check.py` expected `OWNED_PROJECTS = 4`. The other six jobs passed. This session did not read that run.
+
+**Cause: a gap in this phase's implementation.** §2.3 checked the gate's listing step but missed the two constants in `e2e_check.py` that pin the suite: four run-owned projects in the teardown report, and at least 62 discovered tests. No product code or E2E test was at fault.
+
+**Correction**, authorized as a narrowly scoped QA gate fix:
+- `e2e_check.py`: `OWNED_PROJECTS = 5` and `MIN_TESTS = 72`.
+- The teardown check is tightened, not relaxed. `deleted` must also hold distinct positive integer ids, so a repeated id or a non-integer value no longer counts as a deleted project. All earlier conditions stay: exactly one setup and one teardown line, the same run id, `remaining == []`, and no `kept`.
+- `scripts/qa/tests/test_e2e_check.py` (55 → 65 tests):
+  - the defaults are now five projects;
+  - new cases: exactly five distinct ids pass; four, six or none fail; repeated, string, float, bool, zero, negative and null ids fail; a remaining, missing or mistyped `remaining` fails; wrong, missing, upper-case or truncated run ids fail;
+  - malformed, non-object and twice-reported teardown lines fail; a twice-reported or malformed setup line fails;
+  - the minimum is pinned at 72;
+  - a drift guard reads `e2e_fixtures.names()` from source and requires its role count to equal `OWNED_PROJECTS`, with every role printed by the Playwright global setup.
+- `scripts/qa/tests/test_e2e_gate.sh`: the fake Playwright run reports 72 tests and five projects. The "too few" boundaries move to 71. Three new end-to-end gate cases: four deleted, six deleted, a repeated id.
+
+No E2E test, fixture, teardown, workflow, production code, dependency or credential changed.
+
+**Local verification:**
+
+| Check | Result |
+|---|---|
+| `python -I -m unittest discover -s scripts/qa/tests -p test_e2e_check.py` | **65 passed** |
+| `bash scripts/qa/tests/test_e2e_gate.sh` (offline fakes) | **102 passed, 0 failed** (99 before; the unchanged tree passes 99 of 99) |
+| Gate mutants against the self-tests, in private copies, after a passing control | **11 of 11 caught**: count back to 4, raised to 6, distinct, integer, positive and bool checks removed, `remaining`, run and `kept` checks removed, minimum lowered to 62, a second teardown report accepted |
+| The new self-tests against the gate as committed in `7f393fc` | they fail (6 tests), as they must |
+| Ruff format and E/F/W lint on the two Python files | formatted; no new finding compared with the base |
+
+**Required in CI:** the `e2e` job green with the same 72 tests and five projects deleted; the `security` job's QA self-tests green; all seven jobs green.

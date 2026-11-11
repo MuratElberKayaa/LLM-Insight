@@ -35,12 +35,14 @@ DATABASE_PORT = 55432
 RUN_PORTS = (8001, 8002, 3001, 3002, 3003, 3004, 3005)
 ALL_PORTS = (DATABASE_PORT, 8000, *RUN_PORTS)
 # The suite as committed. A lower number means tests disappeared; raise it when tests are added.
-MIN_TESTS = 62
+MIN_TESTS = 72
 SCHEMA_SUMMARY = "llm-insight/e2e-summary/v1"
 SECRET_ENV = ibc.GENERATED_VALUES
 SETUP_LINE = re.compile(r"\[e2e\] run ([0-9a-f]{12}): projects .*\(SYNTHETIC\)")
 TEARDOWN_LINE = re.compile(r"\[e2e\] teardown: (\{.*\})")
-OWNED_PROJECTS = 4
+# The run-owned projects of scripts/dev/e2e_fixtures.py `names()`: main, foreign,
+# providers, hostile and (Phase 8A-6) comparison. The teardown must delete each once.
+OWNED_PROJECTS = 5
 MAX_ANNOTATED = 20
 LIMITATIONS = [
     "Chromium bundled with Playwright is not the Microsoft Edge used by the local default.",
@@ -238,12 +240,16 @@ def check_lifecycle(log_path):
         result = json.loads(found[0])
     except ValueError:
         return [problem("FIXTURE_TEARDOWN", "the teardown output cannot be parsed")]
+    deleted = result.get("deleted") if isinstance(result, dict) else None
     if (
         not isinstance(result, dict)
         or result.get("run") != runs[0]
         or result.get("remaining") != []
-        or not isinstance(result.get("deleted"), list)
-        or len(result["deleted"]) != OWNED_PROJECTS
+        or not isinstance(deleted, list)
+        or len(deleted) != OWNED_PROJECTS
+        # Distinct positive integer ids: a repeated id is not a second deleted project.
+        or not all(type(p) is int and p > 0 for p in deleted)
+        or len(set(deleted)) != OWNED_PROJECTS
         or "kept" in result
     ):
         return [problem("FIXTURE_TEARDOWN", "the run's projects were not all removed")]
