@@ -34,6 +34,14 @@ export const FOREIGN_PROJECT = required("LLMI_E2E_FOREIGN_PROJECT");
 export const HOSTILE_PROJECT = required("LLMI_E2E_HOSTILE_PROJECT");
 /** Phase 6C-C: the run's project with openai / gcp.gemini / unknown-provider traces and one asserted-real fixture span. */
 export const PROVIDERS_PROJECT = required("LLMI_E2E_PROVIDERS_PROJECT");
+/**
+ * Phase 8A-6: the run's multi-provider comparison project (SYNTHETIC, `--set phase8a6`). Read
+ * lazily, inside tests: the CI gate lists the suite (`playwright test --list`) with the four
+ * project ids above only, and a module-level read would make that listing fail.
+ */
+export function comparisonProject(): string {
+  return required("LLMI_E2E_COMPARISON_PROJECT");
+}
 export const SHOTS = process.env.LLMI_SCREENSHOT_DIR;
 
 /** A dashboard path with `project=<id>` as the first query parameter. */

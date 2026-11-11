@@ -30,7 +30,8 @@ export default function globalSetup(): void {
   process.env.LLMI_E2E_FOREIGN_PROJECT = String(result.projects.foreign);
   process.env.LLMI_E2E_HOSTILE_PROJECT = String(result.projects.hostile);
   process.env.LLMI_E2E_PROVIDERS_PROJECT = String(result.projects.providers);
+  process.env.LLMI_E2E_COMPARISON_PROJECT = String(result.projects.comparison);
   console.log(
-    `[e2e] run ${result.run}: projects main=${result.projects.main} foreign=${result.projects.foreign} hostile=${result.projects.hostile} providers=${result.projects.providers} (SYNTHETIC)`,
+    `[e2e] run ${result.run}: projects main=${result.projects.main} foreign=${result.projects.foreign} hostile=${result.projects.hostile} providers=${result.projects.providers} comparison=${result.projects.comparison} (SYNTHETIC)`,
   );
 }
