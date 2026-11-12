@@ -533,6 +533,12 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [ ] Gemini real request: **NO-GO** until the evidence re-release and the switch release, two separate reviewed changes, and the authorization
 - [ ] GitHub CI of this commit: **NOT RUN** (not pushed)
 
+## Phase 8G-A — Groq Free Plan evidence (2026-11-12; evidence: `reports/phase-8g.md`)
+- [x] Operator account Limits evidence recorded for `openai/gpt-oss-20b` (Free, operator attestation; 30 RPM, 1000 RPD, 8000 TPM, 200000 TPD)
+- [x] Evidence-only change: `FREE_PLAN_MODELS` = `openai/gpt-oss-20b`, `FREE_PLAN_EVIDENCE_VERIFIED_AT` 2026-11-12 06:00 UTC (window ends 2026-11-26 06:00 UTC); `groq_adapter.REAL_EXECUTION_ENABLED` stays false
+- [x] Offline: 1108 unit tests passed; Groq dry run refused only by `real_execution_disabled`
+- [ ] Groq real request: **NO-GO** until CI on this commit, the written authorization and the reviewed release (patch B)
+
 ## Commands
 
 | Command (run from) | Exists | Purpose |

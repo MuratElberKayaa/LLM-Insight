@@ -219,19 +219,21 @@ def as_shipped(monkeypatch) -> None:
     monkeypatch.setattr(groq_live, "FREE_PLAN_MODELS", SHIPPED_MODELS)
 
 
-def test_as_shipped_nothing_is_released():
+def test_as_shipped_only_the_evidence_is_released():
+    """Phase 8G evidence-only change: one model and its evidence date; execution stays locked."""
     assert SHIPPED_LOCK is False
-    assert SHIPPED_VERIFIED_AT is None
-    assert SHIPPED_MODELS == {}
+    assert SHIPPED_VERIFIED_AT is not None
+    assert SHIPPED_VERIFIED_AT.isoformat() == "2026-11-12T06:00:00+00:00"
+    assert list(SHIPPED_MODELS) == [MODEL]
 
 
 @pytest.mark.usefixtures("as_shipped")
 def test_as_shipped_a_perfect_environment_is_refused():
-    assert codes(decide()) == {
-        "real_execution_disabled",
-        "free_plan_evidence_missing",
-        "model_not_free_plan_verified",
-    }
+    """Inside the released evidence window, the execution lock is the one remaining refusal."""
+    assert SHIPPED_VERIFIED_AT is not None
+    inside = SHIPPED_VERIFIED_AT + timedelta(hours=1)
+    env = env_with(LLMI_GROQ_PLAN_CHECKED_ON=inside.date().isoformat())
+    assert codes(decide(env, now=inside)) == {"real_execution_disabled"}
 
 
 @pytest.mark.usefixtures("as_shipped")
