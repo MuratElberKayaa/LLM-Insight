@@ -347,7 +347,10 @@ def assert_clean(text: str, *extra: str) -> None:
 
 
 # ---------------------------------------------------------------- as shipped: nothing is stored
-def test_as_shipped_an_execution_is_refused_and_stores_nothing(live_backend, wire):
+def test_as_shipped_an_execution_is_refused_and_stores_nothing(live_backend, wire, monkeypatch):
+    # The release change ships the Groq lock released for one authorized request; the locked
+    # path, and what it stores, stays covered here.
+    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", False)
     owner = new_project(live_backend, "shipped")
     before = project_totals(live_backend, owner.id)
     run = invoke(compare_env(live_backend.ingest_endpoint, owner.key, owner.id), TICKET)

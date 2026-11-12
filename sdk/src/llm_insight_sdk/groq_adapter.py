@@ -83,9 +83,9 @@ GROQ_HOST = "api.groq.com"
 GROQ_PORT = 443
 ENDPOINT_URL = f"https://{GROQ_HOST}/openai/v1/chat/completions"
 
-# The guard exists (`groq_live`, ADR-44), but no Free Plan evidence has been released and real
-# requests remain NO-GO. Enabling this is a reviewed code change.
-REAL_EXECUTION_ENABLED: bool = False
+# Released by the reviewed execution-release change (Phase 8G patch B), after the owner's written
+# authorization for one request. Revert to False after that request is reviewed.
+REAL_EXECUTION_ENABLED: bool = True
 
 MAX_OUTPUT_TOKENS = 1024
 MAX_INPUT_BYTES = 32_768

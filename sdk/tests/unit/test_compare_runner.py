@@ -203,7 +203,10 @@ def assert_exported_without_content(stub) -> None:
 
 # ---------------------------------------------------------------- as shipped: nothing is possible
 @pytest.mark.parametrize("scenario", [TICKET, USAGE, SUMMARY])
-def test_as_shipped_the_dry_run_reports_the_locks_and_sends_nothing(stub, wire, scenario):
+def test_as_shipped_the_dry_run_reports_the_locks_and_sends_nothing(
+    stub, wire, scenario, monkeypatch
+):
+    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", False)  # the locked path (8G)
     never = NeverBuilt()
     code, doc, _ = run(
         ["--provider", "groq", "--scenario", scenario],
@@ -227,6 +230,7 @@ def test_as_shipped_execute_is_refused_before_any_client_exists(stub, wire, monk
         raise AssertionError("the audited client must not be built")
 
     monkeypatch.setattr(groq_adapter, "build_groq_http_client", forbidden)
+    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", False)  # the locked path (8G)
     code, doc, _ = execute(stub, TICKET, http_factory=None)
     assert code == 2 and wire.requests == [] and stub.spans() == []
     assert doc["mode"] == "execute" and codes(doc) >= SHIPPED_REFUSALS
@@ -234,7 +238,7 @@ def test_as_shipped_execute_is_refused_before_any_client_exists(stub, wire, monk
 
 
 def test_as_shipped_the_constants_are_still_locked():
-    assert groq_adapter.REAL_EXECUTION_ENABLED is False
+    assert groq_adapter.REAL_EXECUTION_ENABLED is True  # released by 8G patch B
     assert list(groq_live.FREE_PLAN_MODELS) == [MODEL]
     assert groq_live.FREE_PLAN_EVIDENCE_VERIFIED_AT is not None
 

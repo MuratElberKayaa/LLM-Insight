@@ -538,6 +538,7 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [x] Evidence-only change: `FREE_PLAN_MODELS` = `openai/gpt-oss-20b`, `FREE_PLAN_EVIDENCE_VERIFIED_AT` 2026-11-12 06:00 UTC (window ends 2026-11-26 06:00 UTC); `groq_adapter.REAL_EXECUTION_ENABLED` stays false
 - [x] Offline: 1108 unit tests passed; Groq dry run refused only by `real_execution_disabled`
 - [ ] Groq real request: **NO-GO** until CI on this commit, the written authorization and the reviewed release (patch B)
+- [x] Phase 8G-B execution release prepared on `release/groq-first-observed-request` (`groq_adapter.REAL_EXECUTION_ENABLED = True`; Gemini and OpenRouter locked); unit 2461 passed, export integration 41 passed / 112 skipped; **CI NOT RUN until pushed**
 
 ## Commands
 

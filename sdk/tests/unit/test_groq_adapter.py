@@ -1151,8 +1151,8 @@ def test_an_invalid_key_is_refused_without_quoting_it(telemetry, key):
         assert key not in str(caught.value)
 
 
-def test_real_provenance_is_refused_at_this_checkpoint(telemetry):
-    assert groq_adapter.REAL_EXECUTION_ENABLED is False
+def test_real_provenance_is_refused_at_this_checkpoint(telemetry, monkeypatch):
+    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", False)  # the locked path (8G)
     http = build_groq_http_client()
     try:
         with pytest.raises(ConfigError, match="not enabled"):

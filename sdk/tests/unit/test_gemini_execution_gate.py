@@ -325,6 +325,7 @@ def test_the_shipped_evidence_and_allowlist_are_unchanged():
 
 # ---------------------------------------------------------------- Groq and OpenRouter unchanged
 def test_the_gemini_switch_releases_neither_groq_nor_openrouter(monkeypatch):
+    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", False)  # Groq locked (8G)
     monkeypatch.setattr(gemini_live, "REAL_EXECUTION_ENABLED", True)
     assert groq_adapter.REAL_EXECUTION_ENABLED is False
     assert openrouter_adapter.REAL_EXECUTION_ENABLED is False
