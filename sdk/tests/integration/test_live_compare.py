@@ -353,7 +353,9 @@ def test_as_shipped_an_execution_is_refused_and_stores_nothing(live_backend, wir
     run = invoke(compare_env(live_backend.ingest_endpoint, owner.key, owner.id), TICKET)
     assert run.code == 2 and wire.requests == []
     codes = {r["code"] for r in run.doc["refusals"]}
-    assert {"real_execution_disabled", "free_plan_evidence_missing"} <= codes
+    # Since the evidence-only release (2026-11-12 06:00 UTC, reports/phase-8g.md) the Groq evidence
+    # exists but postdates this module's fixed clock (2026-11-09); the execution lock still refuses.
+    assert {"real_execution_disabled", "free_plan_evidence_not_yet_valid"} <= codes
     assert run.doc["environment"]["backend"] == {"ready": True, "reason": "ready"}
     assert run.doc["correlation"]["trace_id"] is None
     assert project_totals(live_backend, owner.id) == before == (0, 0, 0)
