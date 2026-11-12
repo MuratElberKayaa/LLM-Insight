@@ -328,7 +328,7 @@ def test_the_gemini_switch_releases_neither_groq_nor_openrouter(monkeypatch):
     monkeypatch.setattr(gemini_live, "REAL_EXECUTION_ENABLED", True)
     assert groq_adapter.REAL_EXECUTION_ENABLED is False
     assert openrouter_adapter.REAL_EXECUTION_ENABLED is False
-    assert groq_live.FREE_PLAN_MODELS == {} and groq_live.FREE_PLAN_EVIDENCE_VERIFIED_AT is None
+    assert list(groq_live.FREE_PLAN_MODELS) == ["openai/gpt-oss-20b"]  # evidence only (8G)
     assert openrouter_live.FREE_MODELS == {}
     assert openrouter_live.ZERO_PRICE_ROUTING_VERIFIED_AT is None
     groq = groq_live.evaluate_free_plan_policy({}, now=NOW)

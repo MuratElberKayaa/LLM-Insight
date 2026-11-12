@@ -89,10 +89,21 @@ class FreePlanModel:
     sources: tuple[str, ...]
 
 
-# Released at the evidence gate, after blockers B1 and B2 of `reports/phase-8a-0.md` are cleared.
-# Empty is the fail-closed state: nothing here was verified, so no model is listed.
-FREE_PLAN_EVIDENCE_VERIFIED_AT: datetime | None = None
-FREE_PLAN_MODELS: Mapping[str, FreePlanModel] = {}
+# Released 2026-11-12 in an evidence-only change; execution stays disabled
+# (groq_adapter.REAL_EXECUTION_ENABLED is false). The official pages list openai/gpt-oss-20b as a
+# production model, not deprecated; its Free Plan limits come only from the operator's account
+# Limits page, recorded in docs/reports/phase-8g.md (the public tables are for the Developer plan).
+FREE_PLAN_EVIDENCE_VERIFIED_AT: datetime | None = datetime(2026, 11, 12, 6, 0, tzinfo=UTC)
+FREE_PLAN_MODELS: Mapping[str, FreePlanModel] = {
+    "openai/gpt-oss-20b": FreePlanModel(
+        "openai/gpt-oss-20b",
+        (
+            "https://console.groq.com/docs/models",
+            "https://console.groq.com/docs/deprecations",
+            "operator: account Limits page (docs/reports/phase-8g.md)",
+        ),
+    ),
+}
 FREE_PLAN_EVIDENCE_MAX_AGE = timedelta(days=14)
 ATTESTATION_MAX_AGE_DAYS = 1
 
