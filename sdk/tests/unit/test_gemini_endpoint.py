@@ -40,6 +40,8 @@ sys.path.insert(0, str(REPO))
 
 from demo_app import live_gemini  # noqa: E402
 
+pytestmark = pytest.mark.usefixtures("gemini_released")  # ADR-50, test-only release
+
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
 

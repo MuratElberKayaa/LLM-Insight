@@ -47,7 +47,7 @@ sys.path.insert(0, str(REPO))  # demo_app lives at the repository root, outside 
 
 from demo_app import live_gemini  # noqa: E402
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("gemini_released")]  # ADR-50
 
 SECRETS = (FAKE_GEMINI_KEY, PROMPT_SENTINEL, OUTPUT_SENTINEL, THOUGHT_SENTINEL, ERROR_SENTINEL)
 

@@ -61,7 +61,7 @@ sys.path.insert(0, str(REPO))  # demo_app lives at the repository root, outside 
 from demo_app import comparison_scenarios as cs  # noqa: E402
 from demo_app import live_compare as runner  # noqa: E402
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("gemini_released")]  # ADR-50
 
 SCENARIO = "cmp-ticket-triage"
 PROMPT_VERSION = "cmp-v1.ticket-triage"

@@ -63,6 +63,16 @@ def make_config() -> Callable[..., lli.LLMInsightConfig]:
 
 
 @pytest.fixture
+def gemini_released(monkeypatch) -> None:
+    """Test-only release of the Gemini execution switch (ADR-50), in this test process only, as
+    the Groq and OpenRouter tests release theirs. The shipped constant stays False, which
+    `tests/unit/test_gemini_execution_gate.py` checks without this fixture."""
+    from llm_insight_sdk import gemini_live
+
+    monkeypatch.setattr(gemini_live, "REAL_EXECUTION_ENABLED", True)
+
+
+@pytest.fixture
 def telemetry(stub, make_config) -> Iterator[lli.Telemetry]:
     t = lli.init(make_config(stub.endpoint))
     yield t

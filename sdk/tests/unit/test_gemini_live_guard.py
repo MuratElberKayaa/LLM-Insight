@@ -14,6 +14,8 @@ from llm_insight_sdk.instrumentation import TokenUsage
 from llm_insight_sdk.providers import AttemptRecord
 from tests.gemini_fixtures import FAKE_GEMINI_KEY, MODEL
 
+pytestmark = pytest.mark.usefixtures("gemini_released")  # ADR-50, test-only release
+
 NOW = gemini_live.FREE_TIER_VERIFIED_AT + timedelta(hours=2)
 TODAY = NOW.date().isoformat()
 

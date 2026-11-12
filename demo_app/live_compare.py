@@ -461,6 +461,7 @@ def _gemini_constraints() -> dict[str, Any]:
         "api": GEMINI_API,
         "automatic_function_calling": False,
         "automatic_continuation": False,
+        "real_execution_enabled": gemini_live.REAL_EXECUTION_ENABLED,  # ADR-50
         "free_tier_models_released": len(gemini_live.FREE_TIER_MODELS),
         "free_tier_evidence_verified_at": _iso(evidence_at),
         "free_tier_evidence_max_age_days": gemini_live.FREE_TIER_MAX_AGE.days,
