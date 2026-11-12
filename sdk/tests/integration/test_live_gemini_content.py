@@ -60,7 +60,7 @@ sys.path.insert(0, str(REPO))  # demo_app lives at the repository root, outside 
 from demo_app import content_preview, gemini_scenarios  # noqa: E402
 from demo_app import live_gemini_content as runner  # noqa: E402
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("gemini_released")]  # ADR-50
 
 TICKET = "support-ticket-classification"
 WEEKLY = "json-data-interpretation"

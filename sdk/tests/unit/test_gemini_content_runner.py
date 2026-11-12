@@ -59,6 +59,8 @@ GOOD_WEEKLY = json.dumps(
         "observation": "Errors peaked on Wednesday.",
     }
 )
+
+pytestmark = pytest.mark.usefixtures("gemini_released")  # ADR-50, test-only release
 TRACE_ID = re.compile(r"[0-9a-f]{32}")
 
 

@@ -42,6 +42,8 @@ sys.path.insert(0, str(REPO))  # demo_app lives at the repository root, outside 
 from demo_app import comparison_scenarios as cs  # noqa: E402
 from demo_app import live_compare as runner  # noqa: E402
 
+pytestmark = pytest.mark.usefixtures("gemini_released")  # ADR-50, test-only release
+
 NOW = gemini_live.FREE_TIER_VERIFIED_AT + timedelta(hours=2)
 STALE = gemini_live.FREE_TIER_VERIFIED_AT + gemini_live.FREE_TIER_MAX_AGE + timedelta(minutes=1)
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"

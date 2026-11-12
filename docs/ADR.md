@@ -659,3 +659,31 @@ The architectural review of `reports/phase-8a-0.md` authorized checkpoint 8A-1 (
 - **Consequences:** the three providers run the same pinned scenarios through one runner, each through its own guard, one request per process. R123 is fixed, for review. Gemini stays refused until its evidence is re-released.
 - **Affected files:** `sdk/src/llm_insight_sdk/{gemini_live,gemini_adapter}.py`, `demo_app/{live_gemini,live_compare}.py`, `SECURITY.md` §6, `README.md`, `sdk/README.md`.
 - **Tests:** `sdk/tests/unit/{test_gemini_live_guard,test_gemini_endpoint,test_compare_runner,test_compare_runner_gemini}.py`, `sdk/tests/integration/test_live_compare_three_providers.py`.
+
+
+### ADR-50 — Independent Gemini execution switch, false as shipped (resolves R140; amends ADR-35 and ADR-49)
+- **Status:** Implemented offline by the Phase 8E instruction (2026-11-12); for the architectural review. **Amends ADR-35** (the Free Tier policy gains a refusal) and **ADR-49** (the comparison runner reports the switch). ADR-34, ADR-36 and the R123 hardening are unchanged. **It permits no provider request.**
+- **Context:**
+  - Groq and OpenRouter each have a reviewed code-level execution flag beside their evidence (ADR-44, ADR-47).
+  - Gemini had only its evidence window. The Phase 8D readiness probe showed `free_tier_evidence_stale` as Gemini's **only** remaining refusal (R140), so a reviewed evidence refresh would have re-enabled real requests in the same step.
+  - The owner approved a separate, default-disabled switch (2026-11-12).
+- **Decision:**
+  - **Switch:** `gemini_live.REAL_EXECUTION_ENABLED: bool = False`, a reviewed code constant. **No environment variable** can set or override it.
+  - **Policy:** while it is false, `evaluate_free_tier_policy` refuses with `real_execution_disabled`, whatever the evidence, attestation, consent, key, model or caps. Every other refusal is still reported.
+  - **Session:** `FreeTierSession.reserve` refuses with the same code, so the shared `live_gemini.run_single_request` cannot send even with a policy object obtained another way.
+  - **Blocked paths:** `demo_app.live_gemini`, `demo_app.live_gemini_content` and `demo_app.live_compare --provider gemini`. The last also re-reads the policy immediately before the send.
+  - **Reporting:** the comparison runner reports `constraints.real_execution_enabled` for Gemini, with no credential.
+  - **Release:** two separate reviewed changes, either alone insufficient:
+    - re-releasing the evidence (`FREE_TIER_VERIFIED_AT`);
+    - setting the switch to true.
+  - **Tests:** the existing Gemini tests release the switch inside the test process only (`tests/conftest.py`, fixture `gemini_released`), as the Groq and OpenRouter tests do.
+- **Alternatives rejected:**
+  - an environment variable: an operator shell could unlock it, which ADR-44 and ADR-47 also refuse;
+  - a flag in `gemini_adapter`: the Gemini adapter's real provenance is used by the endpoint tests and both runners, so the policy and the session are the narrowest points that cover every path;
+  - refreshing the evidence in the same change: R140 again.
+- **Consequences:**
+  - Gemini's dry-run blockers become `real_execution_disabled` and `free_tier_evidence_stale`.
+  - A first real Gemini request needs both reviewed changes, a current attestation and the per-request authorization.
+  - Groq and OpenRouter are unchanged.
+- **Affected files:** `sdk/src/llm_insight_sdk/gemini_live.py`, `demo_app/live_compare.py`, `sdk/tests/conftest.py`, the Gemini test modules.
+- **Tests:** `sdk/tests/unit/test_gemini_execution_gate.py` (as shipped, no release fixture), plus the existing Gemini unit and integration modules under the test-only release.

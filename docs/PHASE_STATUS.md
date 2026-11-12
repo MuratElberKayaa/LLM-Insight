@@ -527,6 +527,12 @@ Phase 4B added migration `0003` (`test_datasets`, `failure_reviews`, `test_cases
 - [ ] Gemini: AI Studio check and a reviewed evidence re-release (which alone unlocks Gemini, R140); R123 review confirmation; **NO-GO**
 - [ ] OpenRouter: R135 and free-endpoint routability under `data_collection: deny` unresolved; **NO-GO**
 
+## Phase 8E — Independent Gemini execution switch (2026-11-12; evidence: `reports/phase-8e.md`)
+- [x] `gemini_live.REAL_EXECUTION_ENABLED = False` (ADR-50): refused in the policy and the session reservation, no environment override; R140 resolved, for review
+- [x] Both Gemini runners, the content runner and `live_compare --provider gemini` blocked; 30 as-shipped gate tests; Gemini dry-run blockers now `real_execution_disabled` and `free_tier_evidence_stale`
+- [ ] Gemini real request: **NO-GO** until the evidence re-release and the switch release, two separate reviewed changes, and the authorization
+- [ ] GitHub CI of this commit: **NOT RUN** (not pushed)
+
 ## Commands
 
 | Command (run from) | Exists | Purpose |

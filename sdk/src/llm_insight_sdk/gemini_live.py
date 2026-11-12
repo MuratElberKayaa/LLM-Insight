@@ -27,6 +27,12 @@ ceiling. The input bound is the UTF-8 byte count plus a framing allowance, as in
 on `FREE_TIER_VERIFIED_AT`; after `FREE_TIER_MAX_AGE` the guard refuses until the pages are
 re-read and the allowlist re-released.
 
+**Execution switch (ADR-50).** `REAL_EXECUTION_ENABLED` is a reviewed code constant, false as
+shipped, and no environment variable can change it. While it is false the policy refuses
+(`real_execution_disabled`) whatever the evidence, attestation or consent, and the session refuses
+every reservation, so neither Gemini runner nor the comparison runner can send. Releasing it is a
+reviewed code change, separate from re-releasing the Free Tier evidence (R140).
+
 Messages name the setting and the rule, never a value (like `live` and `config`).
 """
 
@@ -79,6 +85,11 @@ CLIENT_ENV_OVERRIDES = (
 # R123 (1): exactly YYYY-MM-DD. `date.fromisoformat` alone also accepts other ISO 8601 forms of
 # the same length, such as the week date `2026-W45-1`.
 _UTC_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+# ADR-50: the independent execution switch. Enabling it is a reviewed code change; it is read only
+# here and in `FreeTierSession.reserve`, never from the environment.
+REAL_EXECUTION_ENABLED: bool = False
 
 
 @dataclass(frozen=True)
@@ -185,6 +196,8 @@ def evaluate_free_tier_policy(
     """Every reason a real Gemini Free Tier call is not allowed, or none. Reads
     `GEMINI_API_KEY` for presence only; the value is never stored, compared or returned."""
     r = _Reader(os.environ if env is None else env)
+    if not REAL_EXECUTION_ENABLED:
+        r.refuse("real_execution_disabled", "real Gemini requests are not enabled in this version")
     if r.raw("LLMI_PROVIDER_MODE") != "real":
         r.refuse("provider_mode_not_real", "LLMI_PROVIDER_MODE must be 'real'")
     mode = r.raw("LLMI_GEMINI_MODE")
@@ -288,6 +301,14 @@ class FreeTierSession:
         """Admit the session's request or raise `LiveRefusal` (nothing is sent)."""
         p = self.policy
         refusals: list[Refusal] = []
+        # Checked again here, so a policy object obtained another way cannot send either.
+        if not REAL_EXECUTION_ENABLED:
+            refusals.append(
+                Refusal(
+                    "real_execution_disabled",
+                    "real Gemini requests are not enabled in this version",
+                )
+            )
         if provider not in p.providers:
             refusals.append(Refusal("provider_not_allowed", "provider is not in the allowlist"))
         if model not in p.models or model not in FREE_TIER_MODELS:
