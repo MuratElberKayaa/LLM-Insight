@@ -69,6 +69,13 @@ def require(ok: object, code: str) -> None:
         raise Refused(code)
 
 
+def smoke_file(path: Path | None) -> Path:
+    """The smoke result a non-smoke-first batch requires (narrows the optional path)."""
+    if path is None:
+        raise Refused("smoke_result_required")
+    return path
+
+
 def digest(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -629,10 +636,10 @@ def prepare(
     rc, doc = run_child(spec, env, False)
     check_dry(spec, doc, rc)
     if not smoke_first:
-        check_smoke(spec, smoke_path, env, now)
+        check_smoke(spec, smoke_file(smoke_path), env, now)
     spec.update(
         quota_sha256=digest(q),
-        smoke_sha256=None if smoke_first else digest(read(smoke_path)),
+        smoke_sha256=None if smoke_first else digest(read(smoke_file(smoke_path))),
     )
     folder = STORE / spec["batch_id"]
     folder.mkdir(parents=True, exist_ok=False)
@@ -665,7 +672,7 @@ def execute(
     if spec["smoke_first"]:
         require(spec["smoke_sha256"] is None, "plan_schema")
     else:
-        require(digest(read(smoke_path)) == spec["smoke_sha256"], "smoke_changed")
+        require(digest(read(smoke_file(smoke_path))) == spec["smoke_sha256"], "smoke_changed")
     quota_check(
         q,
         spec["model"],
@@ -678,7 +685,7 @@ def execute(
     )
     require(stamp(q["checked_at"]) >= latest_reservation(), "quota_predates_local_usage")
     if not spec["smoke_first"]:
-        check_smoke(spec, smoke_path, env, time.time())
+        check_smoke(spec, smoke_file(smoke_path), env, time.time())
     lock = STORE / "execution.lock"
     save_new(lock, {"batch_id": batch_id})  # O_EXCL prevents concurrent managers
     journal = folder / "journal.jsonl"
@@ -696,7 +703,7 @@ def execute(
         seen_traces = (
             set()
             if spec["smoke_first"]
-            else {(read(smoke_path).get("correlation") or {}).get("trace_id")}
+            else {(read(smoke_file(smoke_path)).get("correlation") or {}).get("trace_id")}
         )
         for trial in range(1, spec["planned_requests"] + 1):
             while time.monotonic() < next_send:
@@ -812,7 +819,8 @@ def inspect(batch_id: str) -> dict[str, Any]:
 def assert_no_active_batch_process() -> None:
     """Fail closed if another SDK-venv Python process may be running a batch or child runner."""
     powershell = shutil.which("powershell.exe") or shutil.which("powershell")
-    require(powershell is not None, "process_check_unavailable")
+    if powershell is None:
+        raise Refused("process_check_unavailable")
     target = json.dumps(str((ROOT / "sdk" / ".venv" / "Scripts" / "python.exe").resolve()))
     script = (
         f"$target={target}; $self={os.getpid()}; "
@@ -842,7 +850,9 @@ def stopped_batch_state(
     folder = STORE / batch_id
     plan_doc = read(folder / "plan.json")
     spec = plan_doc.get("spec")
-    require(isinstance(spec, dict) and digest(spec) == plan_doc.get("spec_sha256"), "parent_plan_corrupt")
+    if not isinstance(spec, dict):
+        raise Refused("parent_plan_corrupt")
+    require(digest(spec) == plan_doc.get("spec_sha256"), "parent_plan_corrupt")
     require(
         spec.get("batch_id") == batch_id
         and spec.get("planned_requests") == COUNT
@@ -902,9 +912,10 @@ def stopped_batch_state(
         )
         recovery_doc = read(folder / plan_name)
         recovery_spec = recovery_doc.get("spec")
+        if not isinstance(recovery_spec, dict):
+            raise Refused("recovery_plan_corrupt")
         require(
-            isinstance(recovery_spec, dict)
-            and digest(recovery_spec) == recovery_doc.get("spec_sha256")
+            digest(recovery_spec) == recovery_doc.get("spec_sha256")
             and recovery_spec.get("batch_id") == batch_id
             and recovery_spec.get("recovery_sequence", 1) == recovery_sequence,
             "recovery_plan_corrupt",
@@ -1098,7 +1109,9 @@ def execute_recovery(
     approval_name = "recovery-approval-consumed.json" if sequence == 1 else f"recovery-approval-consumed-{sequence}.json"
     saved = read(folder / plan_name)
     spec = saved.get("spec")
-    require(isinstance(spec, dict) and digest(spec) == saved.get("spec_sha256"), "recovery_plan_corrupt")
+    if not isinstance(spec, dict):
+        raise Refused("recovery_plan_corrupt")
+    require(digest(spec) == saved.get("spec_sha256"), "recovery_plan_corrupt")
     require(approval == digest(spec) == saved["spec_sha256"], "recovery_approval_mismatch")
     require(
         spec.get("recovery_sequence") == sequence

@@ -48,6 +48,7 @@ import importlib
 import os
 import re
 import sys
+import types
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -1115,7 +1116,7 @@ def _run(
     executable = entry.executable
     state.provider = executable.provider
 
-    registry = comparison_scenarios
+    registry: types.ModuleType = comparison_scenarios
     if args.suite is not None:
         from demo_app import prompt_ab_scenarios
 

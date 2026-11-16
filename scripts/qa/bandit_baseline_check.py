@@ -97,7 +97,8 @@ COMPARED = (
     "text_sha256",
 )
 # Earliest release tag whose tree contains the identical finding (absent from the tag before).
-ORIGINS = {f"phase-{n}" for n in range(1, 7)} | {"UNVERIFIED HISTORICAL ORIGIN"}
+# phase-8: introduced by the untagged Phase 8 live-comparison work (first in commit 3472800).
+ORIGINS = {f"phase-{n}" for n in range(1, 7)} | {"phase-8", "UNVERIFIED HISTORICAL ORIGIN"}
 # Closed set: a baseline cannot invent a class. (test ids, severities, required path prefix)
 CLASSIFICATIONS = {
     "F5": ({"B202"}, {"HIGH"}, ""),

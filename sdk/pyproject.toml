@@ -12,9 +12,9 @@ requires-python = ">=3.12,<3.13"
 # Exact pins, the same versions as backend/requirements.lock (ARCHITECTURE.md §6, CR-09).
 # The SDK never imports the backend package (ADR-01).
 dependencies = [
-    "opentelemetry-api==1.45.1",
-    "opentelemetry-sdk==1.45.1",
-    "opentelemetry-exporter-otlp-proto-http==1.45.1",
+    "opentelemetry-api==1.45.2",
+    "opentelemetry-sdk==1.45.2",
+    "opentelemetry-exporter-otlp-proto-http==1.45.2",
 ]
 
 [project.optional-dependencies]

@@ -40,9 +40,9 @@ def test_distribution_metadata_and_pinned_dependencies():
     assert dist.version == llm_insight_sdk.__version__
     runtime = sorted(r for r in dist.requires or [] if "extra ==" not in r)
     assert runtime == [
-        "opentelemetry-api==1.45.1",
-        "opentelemetry-exporter-otlp-proto-http==1.45.1",
-        "opentelemetry-sdk==1.45.1",
+        "opentelemetry-api==1.45.2",
+        "opentelemetry-exporter-otlp-proto-http==1.45.2",
+        "opentelemetry-sdk==1.45.2",
     ]
     files = {str(f).replace("\\", "/") for f in dist.files or []}
     assert "llm_insight_sdk/py.typed" in files

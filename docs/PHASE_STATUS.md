@@ -1,5 +1,23 @@
 # LLM Insight — Phase Status
 
+**Phase 8H-CI, CI repair after `3472800` (2026-11-17):** in progress; not committed. CI run
+43933570995 failed in three jobs. Each failure was reproduced locally and fixed at its cause:
+- SDK format and 42 `demo_app` mypy errors fixed with real type narrowing;
+- OpenTelemetry 1.45.1 → 1.45.2 for CVE-2026-126360, within the two-week rule (R142);
+- six Phase 8 Bandit findings reviewed and added as BL-46…BL-51 (F8 ×5, F6 ×1);
+- Gemini execution switch re-locked (`gemini_live.REAL_EXECUTION_ENABLED = False`, user decision); evidence date, timeout and the Groq/OpenRouter switches unchanged.
+
+Results:
+- SDK suite: 2724/2724;
+- backend suite: 1953 passed, plus one intermittent resilience test that then passed 4/4;
+- pip-audit and Bandit gates: PASS;
+- `verify_phase0`: 865 PASS.
+
+The npm R102 chain matches again with the committed policy. Still open:
+- **waiting for the two-week rule:** `next` 16.4.5 for GHSA-mfr8-8qww-v76h, published after the push. The user chose no exception; it becomes eligible 2026-11-17T18:01Z, and the `frontend` job fails until then.
+
+[Report](reports/phase-8h-ci.md).
+
 **Phase UI-5, experiment diff view (2026-11-16):** completed; gate reached; not committed.
 This is the last step of the UI refresh (UI-1…UI-5). The experiment report gains A (baseline)
 and B (compared) version cards and a per-case "Change (B vs A)" column. A case reads Pass →

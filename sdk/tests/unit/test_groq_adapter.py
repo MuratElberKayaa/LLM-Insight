@@ -1576,6 +1576,9 @@ def test_rate_limit_headers_are_reduced_to_bounded_numeric_signals_only():
         "tokens_remaining": 4096,
         "tokens_reset_seconds": 2.0,
     }
-    assert groq_adapter._rate_limit_signals(
-        httpx.Headers({"x-ratelimit-remaining-requests": "unknown"})
-    ) is None
+    assert (
+        groq_adapter._rate_limit_signals(
+            httpx.Headers({"x-ratelimit-remaining-requests": "unknown"})
+        )
+        is None
+    )

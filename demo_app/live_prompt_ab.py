@@ -25,6 +25,8 @@ import httpx
 
 from demo_app import live_batch as batch
 from demo_app import prompt_ab_scenarios as suite
+from demo_app.comparison_scenarios import compose_input
+from llm_insight_sdk.live import input_token_bound
 
 ROOT = batch.ROOT
 STORE = ROOT / "docs" / "reports" / "prompt-ab"
@@ -79,7 +81,7 @@ def child_env(model: str, source: dict[str, str], quota: dict[str, Any]) -> dict
 
 def spec_for(run_id: str) -> dict[str, Any]:
     require(re.fullmatch(r"[a-f0-9]{32}", run_id), "invalid_run_id")
-    jobs = []
+    jobs: list[dict[str, Any]] = []
     for model in MODELS:
         for key in suite.ordered_scenarios():
             sc = suite.SCENARIOS[key]
@@ -96,7 +98,7 @@ def spec_for(run_id: str) -> dict[str, Any]:
                     "variant": key.split("-")[-1],
                     "prompt_version": sc.prompt_version,
                     "input_sha256": sc.input_sha256,
-                    "max_input_tokens": batch.input_token_bound(suite.compose_input(sc)),
+                    "max_input_tokens": input_token_bound(compose_input(sc)),
                     "max_output_tokens": 1024,
                     "project_id": 1,
                     **({"timeout_seconds": 30.0} if model == MODELS[1] else {}),
@@ -123,7 +125,7 @@ def spec_for(run_id: str) -> dict[str, Any]:
     }
 
 
-def run_child(job: dict[str, Any], env: dict[str, str], execute: bool):
+def run_child(job: dict[str, Any], env: dict[str, str], execute: bool) -> tuple[int, Any]:
     args = [
         sys.executable,
         "-m",
@@ -193,7 +195,9 @@ def validate_result(job: dict[str, Any], doc: dict[str, Any], rc: int) -> dict[s
     )
     require((doc.get("correlation") or {}).get("project_id") == 1, "wrong_project")
     items = v.get("rules")
-    require(isinstance(items, list) and len(items) == len(suite.RULE_NAMES), "invalid_rules")
+    if not isinstance(items, list):
+        raise Refused("invalid_rules")
+    require(len(items) == len(suite.RULE_NAMES), "invalid_rules")
     require(
         all(
             isinstance(i, dict)
@@ -232,7 +236,8 @@ def quotas_for(paths: dict[str, Path], *, fresh: bool) -> dict[str, dict[str, An
 def check_reader(source: dict[str, str]) -> None:
     """Verify read-back access before spending any of the approved requests."""
     token = source.get("LLMI_BATCH_READ_TOKEN")
-    require(bool(token), "backend_read_token_missing")
+    if not token:
+        raise Refused("backend_read_token_missing")
     with httpx.Client(trust_env=False, follow_redirects=False, timeout=5) as client:
         response = client.get(
             "http://127.0.0.1:8010/api/v1/projects",
@@ -282,7 +287,9 @@ def prepare(paths: dict[str, Path], source: dict[str, str]) -> dict[str, Any]:
     return result
 
 
-def execute(run_id: str, approval: str, paths: dict[str, Path], source: dict[str, str]):
+def execute(
+    run_id: str, approval: str, paths: dict[str, Path], source: dict[str, str]
+) -> dict[str, Any]:
     expected = spec_for(run_id)
     folder = STORE / run_id
     saved = batch.read(folder / "plan.json")

@@ -117,7 +117,7 @@ def test_resource_is_explicit_and_ignores_otel_resource_env(stub, make_config, m
         "deployment.environment.name": "test",
         "telemetry.sdk.name": "opentelemetry",
         "telemetry.sdk.language": "python",
-        "telemetry.sdk.version": "1.45.1",
+        "telemetry.sdk.version": "1.45.2",
         "llminsight.sdk.version": lli.__version__,
     }
 

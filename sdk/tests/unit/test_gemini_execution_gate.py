@@ -1,7 +1,7 @@
-"""The independent Gemini execution switch (ADR-50), including its released state.
+"""The independent Gemini execution switch (ADR-50), tested exactly as shipped.
 
 No test here uses the `gemini_released` fixture: `gemini_live.REAL_EXECUTION_ENABLED` keeps its
-shipped value in the release-state test; other tests explicitly lock it again. The
+shipped value unless a test sets it explicitly to show what the other gates still refuse. The
 clock is inside the Free Tier evidence window and every other setting is valid, so the switch is
 the only thing that can refuse. Only `httpx.HTTPTransport.handle_request` is replaced (`wire`),
 and every non-loopback connection fails the test.
@@ -49,12 +49,6 @@ def offline() -> Iterator[None]:
     with block_network(attempts):
         yield
     assert attempts == [], f"a test tried to reach the network: {attempts}"
-
-
-@pytest.fixture(autouse=True)
-def switch_off(monkeypatch, request) -> None:
-    if request.node.name != "test_the_switch_is_released_by_the_reviewed_change":
-        monkeypatch.setattr(gemini_live, "REAL_EXECUTION_ENABLED", False)
 
 
 @pytest.fixture(autouse=True)
@@ -121,9 +115,9 @@ def emitted(out: io.StringIO) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- the shipped switch
-def test_the_switch_is_released_by_the_reviewed_change():
-    assert SHIPPED is True
-    assert gemini_live.REAL_EXECUTION_ENABLED is True
+def test_the_switch_ships_false():
+    assert SHIPPED is False
+    assert gemini_live.REAL_EXECUTION_ENABLED is False
 
 
 def test_off_it_is_the_only_refusal_of_an_otherwise_valid_request(stub):
@@ -164,10 +158,7 @@ def test_no_environment_variable_can_enable_it(stub, monkeypatch, name):
 
 def test_the_module_reads_the_switch_from_code_only():
     source = Path(gemini_live.__file__).read_text(encoding="utf-8")
-    declarations = [
-        line for line in source.splitlines() if line.startswith("REAL_EXECUTION_ENABLED")
-    ]
-    assert declarations == ["REAL_EXECUTION_ENABLED: bool = True"]
+    assert source.count("REAL_EXECUTION_ENABLED: bool = False") == 1
     for line in source.splitlines():
         if "REAL_EXECUTION_ENABLED" in line:
             assert "environ" not in line and "getenv" not in line and "r.raw(" not in line

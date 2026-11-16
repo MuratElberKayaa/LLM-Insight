@@ -27,9 +27,8 @@ ceiling. The input bound is the UTF-8 byte count plus a framing allowance, as in
 on `FREE_TIER_VERIFIED_AT`; after `FREE_TIER_MAX_AGE` the guard refuses until the pages are
 re-read and the allowlist re-released.
 
-**Execution switch (ADR-50).** `REAL_EXECUTION_ENABLED` is a reviewed code constant, temporarily
-enabled for operator-authorized local validation; no environment variable can change it.
-While it is false the policy refuses
+**Execution switch (ADR-50).** `REAL_EXECUTION_ENABLED` is a reviewed code constant, false as
+shipped, and no environment variable can change it. While it is false the policy refuses
 (`real_execution_disabled`) whatever the evidence, attestation or consent, and the session refuses
 every reservation, so neither Gemini runner nor the comparison runner can send. Releasing it is a
 reviewed code change, separate from re-releasing the Free Tier evidence (R140).
@@ -90,9 +89,8 @@ _UTC_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 # ADR-50: the independent execution switch. Enabling it is a reviewed code change; it is read only
 # here and in `FreeTierSession.reserve`, never from the environment.
-# Operator-approved local validation only (phase-8f.md); GitHub release remains deferred.
-# Each individual provider call still requires separate local consent. Re-lock after validation.
-REAL_EXECUTION_ENABLED: bool = True
+# Re-locked after the Phase 8F local validation (phase-8h-ci.md); enabled only in `3472800`.
+REAL_EXECUTION_ENABLED: bool = False
 
 
 @dataclass(frozen=True)

@@ -227,7 +227,8 @@ def test_smoke_first_uses_trial_one_then_one_approval_for_remaining_nineteen(har
     ]
     smoke_index = next(i for i, event in enumerate(events) if event["event"] == "smoke_verified")
     second_reservation = next(
-        i for i, event in enumerate(events)
+        i
+        for i, event in enumerate(events)
         if event["event"] == "reserved" and event["trial_id"] == 2
     )
     assert smoke_index < second_reservation
@@ -352,8 +353,9 @@ def test_gemini_quota_refresh_reuses_schema_and_only_advances_time_after_attesta
 def test_gemini_quota_refresh_requires_environment_and_exact_operator_confirmation(tmp_path):
     source_path, output_path = tmp_path / "old.json", tmp_path / "new.json"
     prior = quota(MODEL)
-    prior.update(daily_reset_at=None, daily_used=None,
-                 usage_basis="operator_attested_sufficient_headroom")
+    prior.update(
+        daily_reset_at=None, daily_used=None, usage_basis="operator_attested_sufficient_headroom"
+    )
     source_path.write_text(json.dumps(prior), encoding="utf-8")
     with pytest.raises(b.Refused, match="missing_batch_environment"):
         b.refresh_gemini_quota_snapshot(source_path, output_path, {})
@@ -730,15 +732,12 @@ def test_recovery_executes_only_trials_two_to_twenty_then_releases_lock(harness,
         return rc, doc
 
     monkeypatch.setattr(b, "run_child", child)
-    result = b.execute_recovery(
-        batch_id, recovery["approve_sha256"], h.q, h.smoke, h.env
-    )
+    result = b.execute_recovery(batch_id, recovery["approve_sha256"], h.q, h.smoke, h.env)
     assert result["completed_before_recovery"] == 1
     assert result["verified_recovery_trials"] == 19
     assert result["verified_total_trials"] == 20
     journal = [
-        json.loads(line)
-        for line in (b.STORE / batch_id / "journal.jsonl").read_text().splitlines()
+        json.loads(line) for line in (b.STORE / batch_id / "journal.jsonl").read_text().splitlines()
     ]
     assert [e["trial_id"] for e in journal if e.get("event") == "reserved"] == list(range(1, 21))
     assert (b.STORE / batch_id / "recovery-approval-consumed.json").exists()
