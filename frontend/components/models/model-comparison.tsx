@@ -64,7 +64,7 @@ function LatencyCell({ g }: { g: ModelGroup }) {
       <span className="block">
         p50 {formatMs(l.p50_ms) ?? <NullValue>no sample</NullValue>} · p95 {formatMs(l.p95_ms) ?? <NullValue>no sample</NullValue>}
         {l.low_sample.p95 && (
-          <span className="ml-1 text-warning" title="Fewer than 20 samples: the p95 is not reliable">
+          <span className="ml-1 text-warning-ink" title="Fewer than 20 samples: the p95 is not reliable">
             ▲<span className="sr-only"> low sample for p95</span>
           </span>
         )}
@@ -96,7 +96,7 @@ function TokensCell({ g }: { g: ModelGroup }) {
           ? "subsets not reported"
           : `subsets: cached ${t.subsets.cached_input_tokens.sum === null ? "n/r" : formatInt(t.subsets.cached_input_tokens.sum)} · reasoning ${t.subsets.reasoning_output_tokens.sum === null ? "n/r" : formatInt(t.subsets.reasoning_output_tokens.sum)}`}
       </span>
-      {g.usage_source.estimated > 0 && <span className="block text-xs text-warning">{formatInt(g.usage_source.estimated)} estimated</span>}
+      {g.usage_source.estimated > 0 && <span className="block text-xs text-warning-ink">{formatInt(g.usage_source.estimated)} estimated</span>}
     </span>
   );
 }

@@ -1,7 +1,7 @@
-"""The independent Gemini execution switch (ADR-50), tested exactly as shipped.
+"""The independent Gemini execution switch (ADR-50), including its released state.
 
 No test here uses the `gemini_released` fixture: `gemini_live.REAL_EXECUTION_ENABLED` keeps its
-shipped value unless a test sets it explicitly to show what the other gates still refuse. The
+shipped value in the release-state test; other tests explicitly lock it again. The
 clock is inside the Free Tier evidence window and every other setting is valid, so the switch is
 the only thing that can refuse. Only `httpx.HTTPTransport.handle_request` is replaced (`wire`),
 and every non-loopback connection fails the test.
@@ -49,6 +49,12 @@ def offline() -> Iterator[None]:
     with block_network(attempts):
         yield
     assert attempts == [], f"a test tried to reach the network: {attempts}"
+
+
+@pytest.fixture(autouse=True)
+def switch_off(monkeypatch, request) -> None:
+    if request.node.name != "test_the_switch_is_released_by_the_reviewed_change":
+        monkeypatch.setattr(gemini_live, "REAL_EXECUTION_ENABLED", False)
 
 
 @pytest.fixture(autouse=True)
@@ -115,9 +121,9 @@ def emitted(out: io.StringIO) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- the shipped switch
-def test_the_switch_ships_false():
-    assert SHIPPED is False
-    assert gemini_live.REAL_EXECUTION_ENABLED is False
+def test_the_switch_is_released_by_the_reviewed_change():
+    assert SHIPPED is True
+    assert gemini_live.REAL_EXECUTION_ENABLED is True
 
 
 def test_off_it_is_the_only_refusal_of_an_otherwise_valid_request(stub):
@@ -158,7 +164,10 @@ def test_no_environment_variable_can_enable_it(stub, monkeypatch, name):
 
 def test_the_module_reads_the_switch_from_code_only():
     source = Path(gemini_live.__file__).read_text(encoding="utf-8")
-    assert source.count("REAL_EXECUTION_ENABLED: bool = False") == 1
+    declarations = [
+        line for line in source.splitlines() if line.startswith("REAL_EXECUTION_ENABLED")
+    ]
+    assert declarations == ["REAL_EXECUTION_ENABLED: bool = True"]
     for line in source.splitlines():
         if "REAL_EXECUTION_ENABLED" in line:
             assert "environ" not in line and "getenv" not in line and "r.raw(" not in line
@@ -317,7 +326,7 @@ def test_switched_on_expired_evidence_still_refuses(stub, monkeypatch):
 
 
 def test_the_shipped_evidence_and_allowlist_are_unchanged():
-    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-10-28T13:00:00+00:00"
+    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-11-12T13:06:58+00:00"
     assert list(gemini_live.FREE_TIER_MODELS) == [MODEL]
     assert gemini_live.MAX_REQUESTS_CAP == 1 and gemini_live.RETRIES_RANGE == (0, 0)
     assert gemini_live.MAX_OUTPUT_TOKENS_CAP == 1024
@@ -329,7 +338,7 @@ def test_the_gemini_switch_releases_neither_groq_nor_openrouter(monkeypatch):
     monkeypatch.setattr(gemini_live, "REAL_EXECUTION_ENABLED", True)
     assert groq_adapter.REAL_EXECUTION_ENABLED is False
     assert openrouter_adapter.REAL_EXECUTION_ENABLED is False
-    assert list(groq_live.FREE_PLAN_MODELS) == ["openai/gpt-oss-20b"]  # evidence only (8G)
+    assert list(groq_live.FREE_PLAN_MODELS) == ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
     assert openrouter_live.FREE_MODELS == {}
     assert openrouter_live.ZERO_PRICE_ROUTING_VERIFIED_AT is None
     groq = groq_live.evaluate_free_plan_policy({}, now=NOW)

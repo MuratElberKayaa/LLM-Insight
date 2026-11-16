@@ -1552,3 +1552,30 @@ def test_every_category_the_adapter_can_report_is_a_stable_one():
         "http_error",
     ):
         assert category in ERROR_CATEGORIES and f'"{category}"' in source
+
+
+def test_rate_limit_headers_are_reduced_to_bounded_numeric_signals_only():
+    parsed = groq_adapter._rate_limit_signals(
+        httpx.Headers(
+            {
+                "x-ratelimit-limit-requests": "1000",
+                "x-ratelimit-remaining-requests": "999",
+                "x-ratelimit-reset-requests": "2m59.56s",
+                "x-ratelimit-limit-tokens": "8000",
+                "x-ratelimit-remaining-tokens": "4096",
+                "x-ratelimit-reset-tokens": "2s",
+                "x-ratelimit-custom": "secret-like-value",
+            }
+        )
+    )
+    assert parsed == {
+        "requests_limit": 1000,
+        "requests_remaining": 999,
+        "requests_reset_seconds": 179.56,
+        "tokens_limit": 8000,
+        "tokens_remaining": 4096,
+        "tokens_reset_seconds": 2.0,
+    }
+    assert groq_adapter._rate_limit_signals(
+        httpx.Headers({"x-ratelimit-remaining-requests": "unknown"})
+    ) is None

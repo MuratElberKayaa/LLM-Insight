@@ -37,6 +37,7 @@ WRITE_TABLES = (
     "test_cases",
     "experiments",
     "experiment_results",
+    "imported_experiments",
 )
 TRACE = "0" * 31 + "1"
 API_DIR = Path(app.api.__file__).parent
@@ -60,6 +61,10 @@ API_ROUTES = {
     ("GET", "/api/v1/experiments"),
     ("GET", "/api/v1/experiments/{experiment_id}"),
     ("GET", "/api/v1/experiment-options"),
+    # ADR-51: imported live-experiment snapshots.
+    ("POST", "/api/v1/imported-experiments"),
+    ("GET", "/api/v1/imported-experiments"),
+    ("GET", "/api/v1/imported-experiments/{experiment_id}"),
 }
 PATH_VALUES = {"trace_id": TRACE, "review_id": "1", "dataset_id": "1", "experiment_id": "1"}
 # Over the JSON body cap and not JSON: if a refused write read its body, it would answer

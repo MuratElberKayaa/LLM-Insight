@@ -181,12 +181,14 @@ class GroqCallError(Exception):
         *,
         http_status: int | None = None,
         provider_reason: str | None = None,
+        rate_limit_signals: dict[str, int | float] | None = None,
     ) -> None:
         super().__init__(error_type)
         self.error_type = error_type  # read by `instrumentation.classify_error`
         self.category = category
         self.http_status = http_status
         self.provider_reason = provider_reason
+        self.rate_limit_signals = rate_limit_signals
 
 
 def _malformed() -> GroqCallError:
@@ -313,6 +315,7 @@ class GroqCompletion:
         "service_tier_withheld",
         "usage",
         "verdict",
+        "rate_limit_signals",
     )
 
     def __init__(
@@ -326,6 +329,7 @@ class GroqCompletion:
         usage: TokenUsage | None,
         verdict: GroqVerdict,
         service_tier_withheld: bool = False,
+        rate_limit_signals: dict[str, int | float] | None = None,
     ) -> None:
         self._text = text
         self.response_id = response_id
@@ -335,6 +339,7 @@ class GroqCompletion:
         self.service_tier_withheld = service_tier_withheld
         self.usage = usage
         self.verdict = verdict
+        self.rate_limit_signals = rate_limit_signals
 
     @property
     def text(self) -> str | None:
@@ -509,7 +514,42 @@ def _http_failure(response: httpx.Response, deadline: float) -> GroqCallError:
         status_category(status, keywords),
         http_status=status,
         provider_reason=keywords[0] if keywords else None,
+        rate_limit_signals=_rate_limit_signals(response.headers),
     )
+
+
+_RATE_HEADERS = {
+    "x-ratelimit-limit-requests": "requests_limit",
+    "x-ratelimit-remaining-requests": "requests_remaining",
+    "x-ratelimit-limit-tokens": "tokens_limit",
+    "x-ratelimit-remaining-tokens": "tokens_remaining",
+    "x-ratelimit-reset-requests": "requests_reset_seconds",
+    "x-ratelimit-reset-tokens": "tokens_reset_seconds",
+}
+
+
+def _rate_limit_signals(headers: httpx.Headers) -> dict[str, int | float] | None:
+    """Keep only bounded numeric rate headers; never retain arbitrary response metadata."""
+    result: dict[str, int | float] = {}
+    for header, name in _RATE_HEADERS.items():
+        raw = headers.get(header)
+        if raw is None or len(raw) > 32:
+            continue
+        value = raw.strip()
+        if name.endswith("_seconds"):
+            duration = re.fullmatch(r"(?:(\d{1,5})m)?(\d{1,3}(?:\.\d+)?)s", value)
+            if duration is None:
+                continue
+            number = int(duration.group(1) or 0) * 60 + float(duration.group(2))
+        else:
+            try:
+                number = int(value)
+            except (ValueError, OverflowError):
+                continue
+        if number < 0 or number > (86400 if name.endswith("_seconds") else MAX_TOKEN_COUNT):
+            continue
+        result[name] = number
+    return result or None
 
 
 # ---------------------------------------------------------------- HTTP client boundary
@@ -769,6 +809,11 @@ def _request_body(model: str, input_text: str, max_tokens: int) -> bytes:
         "stream": False,
         "include_reasoning": False,
     }
+    # Qwen uses the documented reasoning_format contract; GPT-OSS stays byte-identical.
+    # This is transport support only: account evidence must separately release the model.
+    if model == "qwen/qwen3.8-27b":
+        del body["include_reasoning"]
+        body["reasoning_format"] = "hidden"
     return json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
@@ -902,11 +947,13 @@ class ObservedGroqClient:
         so the exception, which holds the request and its header, does not escape."""
         deadline = time.monotonic() + TOTAL_DEADLINE_SECONDS
         failure: GroqCallError | None = None
+        rate_limits: dict[str, int | float] | None = None
         raw = b""
         try:
             if permit is not None:
                 permit.transmission_starting()
             response = self._http.send(request, stream=True, follow_redirects=False, auth=None)
+            rate_limits = _rate_limit_signals(response.headers)
             if permit is not None:
                 permit.response_received()
             try:
@@ -928,7 +975,9 @@ class ObservedGroqClient:
             failure = GroqCallError(f"httpx.{type(exc).__name__}", "unexpected_error")
         if failure is not None:
             raise failure
-        return parse_completion(raw, requested_model)
+        completion = parse_completion(raw, requested_model)
+        completion.rate_limit_signals = rate_limits
+        return completion
 
     def create_chat_completion(
         self,
@@ -986,11 +1035,20 @@ class GroqTextAdapter:
                         response_model=outcome.response_model,
                         service_tier=outcome.service_tier,
                         error_category=outcome.verdict.category,
+                        rate_limit_signals=outcome.rate_limit_signals,
                     )
                 )
                 return
             category = outcome.category if isinstance(outcome, GroqCallError) else None
-            records.append(AttemptRecord(attempt, error_category=category or "unexpected_error"))
+            records.append(
+                AttemptRecord(
+                    attempt,
+                    error_category=category or "unexpected_error",
+                    rate_limit_signals=(
+                        outcome.rate_limit_signals if isinstance(outcome, GroqCallError) else None
+                    ),
+                )
+            )
 
         started = time.monotonic()
         try:
@@ -1017,6 +1075,7 @@ class GroqTextAdapter:
                 error_category=records[-1].error_category if records else "unexpected_error",
                 duration_ms=_elapsed(started),
                 provider_reason=exc.provider_reason if isinstance(exc, GroqCallError) else None,
+                rate_limit_signals=records[-1].rate_limit_signals if records else None,
             )
         verdict = completion.verdict
         return TextOutcome(
@@ -1033,6 +1092,7 @@ class GroqTextAdapter:
             provider_response=completion,
             incomplete_reason=verdict.reason if verdict.status == "incomplete" else None,
             provider_reason=verdict.reason,
+            rate_limit_signals=completion.rate_limit_signals,
         )
 
 

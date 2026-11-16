@@ -1,0 +1,921 @@
+{
+  "items": [
+    {
+      "trace_id": "361347207064b6576c7b5bd013a49f3f",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:21:06.016448600Z",
+      "ended_at": "2026-11-12T23:21:07.547471300Z",
+      "start_time_unix_nano": "1794525666016448600",
+      "end_time_unix_nano": "1794525667547471300",
+      "duration_ns": "1531022700",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 86,
+        "output_tokens": 19,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "94ba83a936845608b2dfad58fe7f7b85",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:20:55.097751200Z",
+      "ended_at": "2026-11-12T23:20:58.296616100Z",
+      "start_time_unix_nano": "1794525655097751200",
+      "end_time_unix_nano": "1794525658296616100",
+      "duration_ns": "3198864900",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 148,
+        "output_tokens": 17,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "20b8c0a47f1dc195cb3a26ab47a3d5da",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:20:43.801393900Z",
+      "ended_at": "2026-11-12T23:20:47.353549400Z",
+      "start_time_unix_nano": "1794525643801393900",
+      "end_time_unix_nano": "1794525647353549400",
+      "duration_ns": "3552155500",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 150,
+        "output_tokens": 19,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "b9679f0f86a6bed1408056b109513428",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:20:33.319650400Z",
+      "ended_at": "2026-11-12T23:20:36.177696500Z",
+      "start_time_unix_nano": "1794525633319650400",
+      "end_time_unix_nano": "1794525636177696500",
+      "duration_ns": "2858046100",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 88,
+        "output_tokens": 24,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "0453e9f653875dae52e57e1e89fbd9b1",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:20:22.669609300Z",
+      "ended_at": "2026-11-12T23:20:25.645591600Z",
+      "start_time_unix_nano": "1794525622669609300",
+      "end_time_unix_nano": "1794525625645591600",
+      "duration_ns": "2975982300",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 86,
+        "output_tokens": 19,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "10bcb0f4674dd4c8b468c03194068b79",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:20:12.686496800Z",
+      "ended_at": "2026-11-12T23:20:15.012511100Z",
+      "start_time_unix_nano": "1794525612686496800",
+      "end_time_unix_nano": "1794525615012511100",
+      "duration_ns": "2326014300",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 148,
+        "output_tokens": 12,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "62e3a1c88f6f5d748e2bd038d765b4d8",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:20:01.336235100Z",
+      "ended_at": "2026-11-12T23:20:04.844406100Z",
+      "start_time_unix_nano": "1794525601336235100",
+      "end_time_unix_nano": "1794525604844406100",
+      "duration_ns": "3508171000",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 148,
+        "output_tokens": 14,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "46ad411ad063f8994f89f0f5df036b02",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:19:50.862904400Z",
+      "ended_at": "2026-11-12T23:19:53.521932500Z",
+      "start_time_unix_nano": "1794525590862904400",
+      "end_time_unix_nano": "1794525593521932500",
+      "duration_ns": "2659028100",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 86,
+        "output_tokens": 26,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "9a526e9f85ce3d2a7abe7b566826be1e",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:19:39.438346500Z",
+      "ended_at": "2026-11-12T23:19:43.202059700Z",
+      "start_time_unix_nano": "1794525579438346500",
+      "end_time_unix_nano": "1794525583202059700",
+      "duration_ns": "3763713200",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 84,
+        "output_tokens": 24,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "de9485d432fec85806bcd6e6af15fc90",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:19:30.341588200Z",
+      "ended_at": "2026-11-12T23:19:31.996158100Z",
+      "start_time_unix_nano": "1794525570341588200",
+      "end_time_unix_nano": "1794525571996158100",
+      "duration_ns": "1654569900",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 146,
+        "output_tokens": 12,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "efb3cd925c11babac4cb246df7634422",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:19:20.312578500Z",
+      "ended_at": "2026-11-12T23:19:22.817161700Z",
+      "start_time_unix_nano": "1794525560312578500",
+      "end_time_unix_nano": "1794525562817161700",
+      "duration_ns": "2504583200",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 148,
+        "output_tokens": 12,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "56194630487be60ddbd1e79d764dc74a",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:19:10.851577100Z",
+      "ended_at": "2026-11-12T23:19:12.791345400Z",
+      "start_time_unix_nano": "1794525550851577100",
+      "end_time_unix_nano": "1794525552791345400",
+      "duration_ns": "1939768300",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 86,
+        "output_tokens": 19,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "gcp.gemini",
+              "requested_model": "gemini-3.1-flash-lite",
+              "response_model": "gemini-3.1-flash-lite",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "556fd442d6a8328ee9675eeb207241e5",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:18:35.903382400Z",
+      "ended_at": "2026-11-12T23:18:36.577852900Z",
+      "start_time_unix_nano": "1794525515903382400",
+      "end_time_unix_nano": "1794525516577852900",
+      "duration_ns": "674470500",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 154,
+        "output_tokens": 213,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "25c003668326ab6777806bcb5ddb8fff",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:18:01.862835200Z",
+      "ended_at": "2026-11-12T23:18:02.570854700Z",
+      "start_time_unix_nano": "1794525481862835200",
+      "end_time_unix_nano": "1794525482570854700",
+      "duration_ns": "708019500",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 216,
+        "output_tokens": 111,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "38b45f0393c2bdb1d6b4f569e2bc96f2",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:17:27.671962600Z",
+      "ended_at": "2026-11-12T23:17:28.361586300Z",
+      "start_time_unix_nano": "1794525447671962600",
+      "end_time_unix_nano": "1794525448361586300",
+      "duration_ns": "689623700",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 217,
+        "output_tokens": 129,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "541dbd30787f61fc8ac5a81906bacd32",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:16:53.671873800Z",
+      "ended_at": "2026-11-12T23:16:54.427747000Z",
+      "start_time_unix_nano": "1794525413671873800",
+      "end_time_unix_nano": "1794525414427747000",
+      "duration_ns": "755873200",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 155,
+        "output_tokens": 175,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "9468eed85fa2eb7aa93205e5d3b3b1ad",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:16:19.751046000Z",
+      "ended_at": "2026-11-12T23:16:20.334720100Z",
+      "start_time_unix_nano": "1794525379751046000",
+      "end_time_unix_nano": "1794525380334720100",
+      "duration_ns": "583674100",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 154,
+        "output_tokens": 115,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "1b850630d23322f8e2824ee3e370b3b1",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:15:45.776894300Z",
+      "ended_at": "2026-11-12T23:15:46.493699300Z",
+      "start_time_unix_nano": "1794525345776894300",
+      "end_time_unix_nano": "1794525346493699300",
+      "duration_ns": "716805000",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 216,
+        "output_tokens": 96,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "2746e87a66f6fe58f17e40e68ab2cf0e",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:15:11.681553900Z",
+      "ended_at": "2026-11-12T23:15:12.358632000Z",
+      "start_time_unix_nano": "1794525311681553900",
+      "end_time_unix_nano": "1794525312358632000",
+      "duration_ns": "677078100",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 215,
+        "output_tokens": 84,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "bcf56175e53be90de1050260451915ab",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:14:37.878456900Z",
+      "ended_at": "2026-11-12T23:14:38.379357500Z",
+      "start_time_unix_nano": "1794525277878456900",
+      "end_time_unix_nano": "1794525278379357500",
+      "duration_ns": "500900600",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 153,
+        "output_tokens": 104,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "271965bcc96b48c3fe3f0f10978a0b13",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:14:03.590138300Z",
+      "ended_at": "2026-11-12T23:14:04.566387700Z",
+      "start_time_unix_nano": "1794525243590138300",
+      "end_time_unix_nano": "1794525244566387700",
+      "duration_ns": "976249400",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 152,
+        "output_tokens": 222,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "ef12ef939968ca00ced6a1a6bab29be6",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:13:29.582749200Z",
+      "ended_at": "2026-11-12T23:13:30.306589300Z",
+      "start_time_unix_nano": "1794525209582749200",
+      "end_time_unix_nano": "1794525210306589300",
+      "duration_ns": "723840100",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 214,
+        "output_tokens": 98,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "70186c3ff50c9afd5e60cc6c6216303a",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:12:55.677950600Z",
+      "ended_at": "2026-11-12T23:12:56.322610900Z",
+      "start_time_unix_nano": "1794525175677950600",
+      "end_time_unix_nano": "1794525176322610900",
+      "duration_ns": "644660300",
+      "status": "ok",
+      "prompt_version": "live-ticket-v2",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 215,
+        "output_tokens": 81,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    },
+    {
+      "trace_id": "394f73bb199eef7e85505d5dd5d4f191",
+      "service_name": "llm-insight-live-prompt-ab",
+      "started_at": "2026-11-12T23:12:21.487244800Z",
+      "ended_at": "2026-11-12T23:12:22.194685800Z",
+      "start_time_unix_nano": "1794525141487244800",
+      "end_time_unix_nano": "1794525142194685800",
+      "duration_ns": "707441000",
+      "status": "ok",
+      "prompt_version": "live-ticket-v1",
+      "provenance": "real",
+      "provenance_verified": false,
+      "span_count": 2,
+      "usage": {
+        "inference_calls": 1,
+        "input_tokens": 153,
+        "output_tokens": 90,
+        "calls_with_unknown_tokens": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1,
+        "models": {
+          "items": [
+            {
+              "provider": "groq",
+              "requested_model": "openai/gpt-oss-20b",
+              "response_model": "openai/gpt-oss-20b",
+              "calls": 1
+            }
+          ],
+          "distinct": 1,
+          "truncated": false
+        }
+      },
+      "reviews": {
+        "total": 0,
+        "not_closed": 0
+      }
+    }
+  ],
+  "next_cursor": null,
+  "window": {
+    "from": "2026-11-12T23:12:19.505872Z",
+    "to": "2026-11-12T23:21:09.291303Z"
+  }
+}

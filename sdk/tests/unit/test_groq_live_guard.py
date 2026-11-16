@@ -224,8 +224,8 @@ def test_as_shipped_the_evidence_and_the_lock_are_released():
     """Phase 8G: the evidence (patch A) and the execution lock (patch B, one authorized request)."""
     assert SHIPPED_LOCK is True
     assert SHIPPED_VERIFIED_AT is not None
-    assert SHIPPED_VERIFIED_AT.isoformat() == "2026-11-12T06:00:00+00:00"
-    assert list(SHIPPED_MODELS) == [MODEL]
+    assert SHIPPED_VERIFIED_AT.isoformat() == "2026-11-12T16:19:56+00:00"
+    assert list(SHIPPED_MODELS) == [MODEL, "qwen/qwen3.8-27b"]
 
 
 @pytest.mark.usefixtures("as_shipped")

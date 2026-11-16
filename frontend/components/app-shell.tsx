@@ -1,9 +1,13 @@
 import { Suspense, type ReactNode } from "react";
+import { BrandMark, LockIcon } from "./icons";
 import { SideNav, SideNavFallback } from "./side-nav";
+import { ThemeToggle } from "./theme-toggle";
 
 /**
- * Application shell: skip link, left navigation (a horizontal strip below `lg`), header
- * and the main landmark. Server component; the header's status slot is passed in.
+ * Application shell: skip link, the sidebar (brand, grouped navigation and a footer with the
+ * backend status, the local-only notice and the theme toggle; a top strip below `lg`) and the
+ * main landmark. There is no separate top bar: each page renders its own header. Server
+ * component; the status slot is passed in.
  */
 export function AppShell({ status, children }: { status: ReactNode; children: ReactNode }) {
   return (
@@ -14,27 +18,33 @@ export function AppShell({ status, children }: { status: ReactNode; children: Re
       >
         Skip to content
       </a>
-      <aside className="border-b border-line bg-surface lg:sticky lg:top-0 lg:h-dvh lg:border-b-0 lg:border-r">
-        <div className="flex items-center gap-2 px-6 pt-4 lg:pt-6">
-          <span aria-hidden="true" className="inline-block h-3 w-3 rounded-sm bg-series-1" />
-          <span className="text-sm font-semibold tracking-tight text-ink">LLM Insight</span>
+      <aside className="flex flex-col border-b border-line bg-surface lg:sticky lg:top-0 lg:h-dvh lg:border-b-0 lg:border-r" data-testid="app-sidebar">
+        <div className="flex items-center gap-2.5 px-5 pt-4 lg:pt-5">
+          <BrandMark />
+          <div className="flex min-w-0 flex-col leading-tight">
+            <span className="text-sm font-semibold tracking-tight text-ink">LLM Insight</span>
+            <span className="text-[11px] text-ink-3">Observability · local</span>
+          </div>
         </div>
         <Suspense fallback={<SideNavFallback />}>
           <SideNav />
         </Suspense>
-      </aside>
-      <div className="min-w-0">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6 lg:px-8">
-          <p className="text-sm text-ink-3">
-            <span className="rounded border border-line px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-ink-2">Local only</span>
-            <span className="ml-2">Served on loopback; no login, not for public deployment.</span>
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t border-line px-5 py-3 lg:mt-auto lg:flex-col lg:items-stretch lg:py-4">
           {status}
-        </header>
-        <main id="main" className="px-4 py-6 sm:px-6 lg:px-8">
-          {children}
-        </main>
-      </div>
+          <p className="flex items-center gap-2 text-xs text-ink-3" title="Served on loopback; no login, not for public deployment." data-testid="local-only-notice">
+            <LockIcon />
+            <span>
+              <span className="font-medium text-ink-2">Local only</span>
+              <span className="hidden sm:inline"> · loopback, no login</span>
+              <span className="sr-only">. Not for public deployment.</span>
+            </span>
+          </p>
+          <ThemeToggle />
+        </div>
+      </aside>
+      <main id="main" className="min-w-0 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        {children}
+      </main>
     </div>
   );
 }

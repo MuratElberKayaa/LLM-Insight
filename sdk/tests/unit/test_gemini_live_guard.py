@@ -18,6 +18,8 @@ pytestmark = pytest.mark.usefixtures("gemini_released")  # ADR-50, test-only rel
 
 NOW = gemini_live.FREE_TIER_VERIFIED_AT + timedelta(hours=2)
 TODAY = NOW.date().isoformat()
+# Keep the format regression tied to the actual evidence date, including after refreshes.
+WEEK_DATE = "{}-W{:02d}-{}".format(*NOW.date().isocalendar())
 
 
 def gemini_env(**overrides: str | None) -> dict[str, str]:
@@ -58,7 +60,7 @@ def test_complete_explicit_configuration_is_allowed_with_the_hard_caps():
     p = policy()
     assert p.models == (MODEL,) and p.providers == frozenset({"gcp.gemini"})
     assert (p.max_requests, p.max_retries, p.max_attempts, p.max_concurrency) == (1, 0, 1, 1)
-    assert p.timeout_seconds == gemini_live.DEFAULT_TIMEOUT_SECONDS
+    assert p.timeout_seconds == gemini_live.DEFAULT_TIMEOUT_SECONDS == 30.0
     assert p.tier_checked_on.isoformat() == TODAY
 
 
@@ -100,8 +102,14 @@ def test_an_api_key_alone_never_enables_execution():
         ({"LLMI_GEMINI_TIER_CHECKED_ON": None}, "free_tier_unverified"),
         ({"LLMI_GEMINI_TIER_CHECKED_ON": "yesterday"}, "free_tier_unverified"),
         ({"LLMI_GEMINI_TIER_CHECKED_ON": "2026-10-28T10:00"}, "free_tier_unverified"),
-        ({"LLMI_GEMINI_TIER_CHECKED_ON": "2026-10-29"}, "free_tier_attestation_invalid"),
-        ({"LLMI_GEMINI_TIER_CHECKED_ON": "2026-10-26"}, "free_tier_attestation_stale"),
+        (
+            {"LLMI_GEMINI_TIER_CHECKED_ON": (NOW + timedelta(days=1)).date().isoformat()},
+            "free_tier_attestation_invalid",
+        ),
+        (
+            {"LLMI_GEMINI_TIER_CHECKED_ON": (NOW - timedelta(days=2)).date().isoformat()},
+            "free_tier_attestation_stale",
+        ),
         ({"LLMI_LIVE_PROVIDERS": "openai"}, "provider_not_allowed"),
         ({"LLMI_LIVE_PROVIDERS": "gcp.gemini,gcp.vertex_ai"}, "provider_not_allowed"),
         ({"LLMI_LIVE_PROVIDERS": None}, "setting_missing"),
@@ -139,7 +147,7 @@ def test_every_client_environment_override_is_refused(var):
 @pytest.mark.parametrize(
     "value",
     [
-        "2026-W44-3",  # the ISO week date of TODAY: same length, accepted before the fix
+        WEEK_DATE,  # the ISO week date of TODAY: same length, accepted before the fix
         "2026-W44",
         "2026-301",  # ordinal date
         "20261028",  # basic format
@@ -160,7 +168,7 @@ def test_r123_the_week_date_really_names_today():
     """The rejected week date is not a stale or invalid date: only its format is refused."""
     from datetime import date
 
-    assert date.fromisoformat("2026-W44-3").isoformat() == TODAY
+    assert date.fromisoformat(WEEK_DATE).isoformat() == TODAY
 
 
 def test_r123_tls_key_logging_is_refused_by_the_policy():

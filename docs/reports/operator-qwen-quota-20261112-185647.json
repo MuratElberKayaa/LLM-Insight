@@ -1,0 +1,21 @@
+﻿{
+    "model":  "qwen/qwen3.8-27b",
+    "checked_at":  "2026-11-12T18:56:47.8182913+00:00",
+    "valid_until":  "2026-11-12T19:41:47.8182913+00:00",
+    "daily_reset_at":  null,
+    "exclusive_account":  true,
+    "all_scopes_checked":  true,
+    "free_account":  true,
+    "model_access":  true,
+    "project_1_ingest":  true,
+    "limits":  {
+                   "rpm":  30,
+                   "rpd":  1000,
+                   "tpm":  8000,
+                   "tpd":  200000,
+                   "itpm":  null,
+                   "otpm":  null
+               },
+    "daily_used":  null,
+    "usage_basis":  "operator_attested_sufficient_headroom"
+}

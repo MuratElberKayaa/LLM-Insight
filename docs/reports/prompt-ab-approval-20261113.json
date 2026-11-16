@@ -1,0 +1,16 @@
+{
+  "scope": "live-ticket-six-v1 / two actual prompt versions",
+  "models": ["openai/gpt-oss-20b", "gemini-3.1-flash-lite"],
+  "cases_per_model": 6,
+  "versions_per_case": 2,
+  "max_requests_per_model": 12,
+  "max_requests_total": 24,
+  "max_retries": 0,
+  "paid_fallback": false,
+  "user_scope_response": "Groq GPT-OSS 20B + Gemini Flash Lite: 24 çağrı (önerilen)",
+  "user_quota_response": "Evet, iki sağlayıcı için de şimdi kontrol ettim ve doğruluyorum",
+  "quota_question_scope": "Both accounts still free, enough headroom for 12 calls/model, no concurrent account use during the experiment.",
+  "conservative_checked_at_utc": "2026-11-12T22:57:23Z",
+  "timestamp_basis": "Conservative lower bound from the tool clock preceding the user's confirmation, not an inferred account usage counter. No account-side consumption or reset time is invented.",
+  "published_or_committed": false
+}

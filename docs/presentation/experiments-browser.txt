@@ -1,0 +1,33 @@
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+
+LOCAL ONLYServed on loopback; no login, not for public deployment.
+
+●
+Backend ready
+Experiments
+
+Prompt version A vs B on one golden dataset, evaluated by deterministic rules. Runs use the scripted mock provider only: every result is SYNTHETIC.
+
+Fetched 22:32:32 UTC
+New mock experiment
+↻
+Refresh
+PROJECT
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+
+Showing project #1 · phase3a-demo
+
+Experiments of this project, newest first
+Experiment	Dataset	A vs B	Model	Mode	State	Results	Started (UTC)
+#58	golden-synthetic-v1	golden-prompt-v2 vs golden-prompt-v1	gpt-4.1-mini	MOCK · SYNTHETIC	Finished	24	2026-11-12 12:03:44 UTC
+#57	golden-synthetic-v1	golden-prompt-v2 vs golden-prompt-v1	gpt-5-mini-2025-08-07	MOCK · SYNTHETIC	Finished	24	2026-11-09 08:29:45 UTC

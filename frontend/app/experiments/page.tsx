@@ -11,6 +11,8 @@ import { formatInt, formatUtcTime } from "../../lib/format";
 import { formatIsoNs } from "../../lib/nanos";
 import { parseProjectParam } from "../../lib/project";
 import { loadExperimentsPage } from "../../lib/server/experiments";
+import { loadImportedExperiments } from "../../lib/server/imported-experiments";
+import { ImportedList } from "../../components/experiments/imported-report";
 
 export const metadata: Metadata = { title: "Experiments" };
 
@@ -20,13 +22,16 @@ type PageProps = { searchParams: Promise<Record<string, string | string[] | unde
 export default async function ExperimentsPage({ searchParams }: PageProps) {
   await connection();
   const sp = await searchParams;
-  const ctx = await loadExperimentsPage(parseProjectParam(sp.project));
+  const [ctx, live] = await Promise.all([
+    loadExperimentsPage(parseProjectParam(sp.project)),
+    loadImportedExperiments(parseProjectParam(sp.project)),
+  ]);
   const { projectId, experiments, fetchedAt } = ctx;
   return (
     <NavigationTransition>
       <PageHeader
         title="Experiments"
-        description="Prompt version A vs B on one golden dataset, evaluated by deterministic rules. Runs use the scripted mock provider only: every result is SYNTHETIC."
+        description="Compare prompt versions using fixed rules. Review completed live comparisons and scripted mock experiments. Opening a report runs nothing."
         meta={<span>Fetched {formatUtcTime(fetchedAt)}</span>}
         actions={
           <>
@@ -45,6 +50,13 @@ export default async function ExperimentsPage({ searchParams }: PageProps) {
       />
       <ProjectSelector context={ctx} action="/experiments" hidden={[]} />
       <PendingRegion>
+        <section className="mb-8 space-y-3" aria-label="Completed live comparisons">
+          <h2 className="text-xl font-semibold">Completed live comparisons</h2>
+          <p className="text-sm text-ink-2">Actual model calls on synthetic inputs. Imported rule results with verified trace links; six cases per prompt, no general winner.</p>
+          {live.ok ? <ImportedList items={live.data.items} /> : <ErrorState error={live.error} resource="the completed live comparisons" />}
+          {live.ok && live.data.truncated && <p className="text-xs text-ink-3">Only the newest 200 live comparisons are shown.</p>}
+        </section>
+        <h2 className="mb-3 text-xl font-semibold">Mock experiments</h2>
         {!experiments.ok ? (
           <ErrorState error={experiments.error} resource="the experiments" />
         ) : experiments.data.items.length === 0 ? (

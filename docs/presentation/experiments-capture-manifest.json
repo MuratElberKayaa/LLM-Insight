@@ -1,0 +1,324 @@
+{
+  "list": {
+    "url": "http://127.0.0.1:3001/experiments?project=1",
+    "height": 1000,
+    "boxes": [
+      {
+        "tag": "H1",
+        "text": "Experiments",
+        "x": 272,
+        "y": 73,
+        "w": 768,
+        "h": 32
+      },
+      {
+        "tag": "SECTION",
+        "text": "Completed live comparisons\n\nActual model calls on synthetic inputs. Imported rule results with verified trace links; six cases per",
+        "x": 272,
+        "y": 269,
+        "w": 1136,
+        "h": 212
+      },
+      {
+        "tag": "H2",
+        "text": "Completed live comparisons",
+        "x": 272,
+        "y": 269,
+        "w": 1136,
+        "h": 28
+      },
+      {
+        "tag": "TABLE",
+        "text": "Completed live A/B comparisons\nModel\tPrompt versions\tV1 passed\tV2 passed\tSource\tCalls\nGroq · GPT-OSS 20B\tlive-ticket-v1 vs live-ti",
+        "x": 273,
+        "y": 342,
+        "w": 1134,
+        "h": 138
+      },
+      {
+        "tag": "H2",
+        "text": "Mock experiments",
+        "x": 272,
+        "y": 513,
+        "w": 1136,
+        "h": 28
+      },
+      {
+        "tag": "TABLE",
+        "text": "Experiments of this project, newest first\nExperiment\tDataset\tA vs B\tModel\tMode\tState\tResults\tStarted (UTC)\n#58\tgolden-synthetic-v1",
+        "x": 273,
+        "y": 554,
+        "w": 1140.875,
+        "h": 106
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      }
+    ]
+  },
+  "groq": {
+    "url": "http://127.0.0.1:3001/experiments/live/2?project=1",
+    "height": 1455,
+    "boxes": [
+      {
+        "tag": "H1",
+        "text": "Groq · GPT-OSS 20B",
+        "x": 272,
+        "y": 73,
+        "w": 282.75,
+        "h": 32
+      },
+      {
+        "tag": "SECTION",
+        "text": "Real provider calls · synthetic test inputs\n\n12 completed calls, six paired cases, eight fixed checks. Opening this report sends n",
+        "x": 272,
+        "y": 153,
+        "w": 1136,
+        "h": 146
+      },
+      {
+        "tag": "H2",
+        "text": "Real provider calls · synthetic test inputs",
+        "x": 289,
+        "y": 170,
+        "w": 1102,
+        "h": 28
+      },
+      {
+        "tag": "SECTION",
+        "text": "V1 · Short instruction\n\nChoose category and priority; return only the two required JSON fields.",
+        "x": 272,
+        "y": 323,
+        "w": 560,
+        "h": 106
+      },
+      {
+        "tag": "H2",
+        "text": "V1 · Short instruction",
+        "x": 289,
+        "y": 340,
+        "w": 526,
+        "h": 24
+      },
+      {
+        "tag": "SECTION",
+        "text": "V2 · Explicit business rules\n\nAdds category definitions and impact-based priority, ignoring urgency words. Requires JSON without M",
+        "x": 848,
+        "y": 323,
+        "w": 560,
+        "h": 106
+      },
+      {
+        "tag": "H2",
+        "text": "V2 · Explicit business rules",
+        "x": 865,
+        "y": 340,
+        "w": 526,
+        "h": 24
+      },
+      {
+        "tag": "TABLE",
+        "text": "Observed results on this six-case dataset\nPrompt\tAll checks passed\tCLIENT p50\tReported tokens (input / output)\tCost\nlive-ticket-v1",
+        "x": 273,
+        "y": 454,
+        "w": 1134,
+        "h": 138
+      },
+      {
+        "tag": "TABLE",
+        "text": "Paired cases · a pass requires every fixed check\nCase\tV1\tV2\nt01 · Login blocked\t\nPassed\n\nAll eight checks passed\n\nOpen trace · 394",
+        "x": 273,
+        "y": 618,
+        "w": 1134,
+        "h": 622
+      },
+      {
+        "tag": "SECTION",
+        "text": "Reading the result\n\nA strict pass includes both format and label checks. A higher total does not necessarily mean higher category/",
+        "x": 272,
+        "y": 1265,
+        "w": 1136,
+        "h": 166
+      },
+      {
+        "tag": "H2",
+        "text": "Reading the result",
+        "x": 289,
+        "y": 1282,
+        "w": 1102,
+        "h": 20
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      }
+    ]
+  },
+  "gemini": {
+    "url": "http://127.0.0.1:3001/experiments/live/1?project=1",
+    "height": 1455,
+    "boxes": [
+      {
+        "tag": "H1",
+        "text": "Gemini · Flash Lite",
+        "x": 272,
+        "y": 73,
+        "w": 282.75,
+        "h": 32
+      },
+      {
+        "tag": "SECTION",
+        "text": "Real provider calls · synthetic test inputs\n\n12 completed calls, six paired cases, eight fixed checks. Opening this report sends n",
+        "x": 272,
+        "y": 153,
+        "w": 1136,
+        "h": 146
+      },
+      {
+        "tag": "H2",
+        "text": "Real provider calls · synthetic test inputs",
+        "x": 289,
+        "y": 170,
+        "w": 1102,
+        "h": 28
+      },
+      {
+        "tag": "SECTION",
+        "text": "V1 · Short instruction\n\nChoose category and priority; return only the two required JSON fields.",
+        "x": 272,
+        "y": 323,
+        "w": 560,
+        "h": 106
+      },
+      {
+        "tag": "H2",
+        "text": "V1 · Short instruction",
+        "x": 289,
+        "y": 340,
+        "w": 526,
+        "h": 24
+      },
+      {
+        "tag": "SECTION",
+        "text": "V2 · Explicit business rules\n\nAdds category definitions and impact-based priority, ignoring urgency words. Requires JSON without M",
+        "x": 848,
+        "y": 323,
+        "w": 560,
+        "h": 106
+      },
+      {
+        "tag": "H2",
+        "text": "V2 · Explicit business rules",
+        "x": 865,
+        "y": 340,
+        "w": 526,
+        "h": 24
+      },
+      {
+        "tag": "TABLE",
+        "text": "Observed results on this six-case dataset\nPrompt\tAll checks passed\tCLIENT p50\tReported tokens (input / output)\tCost\nlive-ticket-v1",
+        "x": 273,
+        "y": 454,
+        "w": 1134,
+        "h": 138
+      },
+      {
+        "tag": "TABLE",
+        "text": "Paired cases · a pass requires every fixed check\nCase\tV1\tV2\nt01 · Login blocked\t\nPassed\n\nAll eight checks passed\n\nOpen trace · 561",
+        "x": 273,
+        "y": 618,
+        "w": 1134,
+        "h": 622
+      },
+      {
+        "tag": "SECTION",
+        "text": "Reading the result\n\nA strict pass includes both format and label checks. A higher total does not necessarily mean higher category/",
+        "x": 272,
+        "y": 1265,
+        "w": 1136,
+        "h": 166
+      },
+      {
+        "tag": "H2",
+        "text": "Reading the result",
+        "x": 289,
+        "y": 1282,
+        "w": 1102,
+        "h": 20
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      }
+    ]
+  }
+}

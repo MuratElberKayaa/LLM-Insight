@@ -6,6 +6,11 @@
  * dataviz palette validator: provenance real/synthetic/mixed and succeeded/failed both pass
  * lightness, chroma, CVD (adjacent and all-pairs) and 3:1 contrast. Identity is never
  * carried by color alone: every swatch sits next to a text label.
+ *
+ * The values below are the DARK theme and the default. The light theme (further down)
+ * overrides the same variables, so every utility (bg-surface, text-ink, ...) and every chart
+ * follows the theme without per-component code. Status hues good/warning/serious/critical
+ * are fixed in both themes; text uses the *-ink variants, which are themed.
  */
 @theme {
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -34,10 +39,70 @@
   --color-critical: #d03b3b;
   /* Text on dark surfaces: the status red is 3.6:1, too low for small text. */
   --color-critical-ink: #f08a8a;
+  /* Status text in the warning hue (9.8:1 on the dark surface). */
+  --color-warning-ink: #fab219;
+  /* Chart hover wash behind the active category. */
+  --color-cursor: rgb(255 255 255 / 0.05);
 }
 
 :root {
   color-scheme: dark;
+}
+
+/*
+ * Light theme. Applied when the OS asks for light (unless the header toggle forced dark) or
+ * when the toggle forces light. The two blocks must stay identical; tests/unit/theme.test.ts
+ * checks that, and that every themed token has a light value.
+ *
+ * Validated against the light surface #fcfcfb: provenance real/synthetic/mixed pass the
+ * dataviz validator all-pairs (mixed is 2.7:1, below 3:1, so the relief rule applies: it is
+ * always shown next to its text label). Text contrast on canvas/surface/raised: ink >= 14.8,
+ * ink-2 >= 7.5, ink-3 >= 4.7, critical-ink >= 5.1, warning-ink >= 4.9 (WCAG AA for small text).
+ */
+@media (prefers-color-scheme: light) {
+  :root:where(:not([data-theme="dark"])) {
+    color-scheme: light;
+    --color-canvas: #f4f4f1;
+    --color-surface: #fcfcfb;
+    --color-raised: #ecebe6;
+    --color-line: #dedcd5;
+    --color-grid: #e6e4de;
+    --color-axis: #b9b7ad;
+    --color-ink: #18181b;
+    --color-ink-2: #4a4945;
+    --color-ink-3: #68675f;
+    --color-focus: #2a78d6;
+    --color-real: #2a78d6;
+    --color-synthetic: #eb6834;
+    --color-mixed: #1baf7a;
+    --color-unknown: #8a8882;
+    --color-series-1: #2a78d6;
+    --color-critical-ink: #b42f2f;
+    --color-warning-ink: #8a5a00;
+    --color-cursor: rgb(11 11 11 / 0.05);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-canvas: #f4f4f1;
+  --color-surface: #fcfcfb;
+  --color-raised: #ecebe6;
+  --color-line: #dedcd5;
+  --color-grid: #e6e4de;
+  --color-axis: #b9b7ad;
+  --color-ink: #18181b;
+  --color-ink-2: #4a4945;
+  --color-ink-3: #68675f;
+  --color-focus: #2a78d6;
+  --color-real: #2a78d6;
+  --color-synthetic: #eb6834;
+  --color-mixed: #1baf7a;
+  --color-unknown: #8a8882;
+  --color-series-1: #2a78d6;
+  --color-critical-ink: #b42f2f;
+  --color-warning-ink: #8a5a00;
+  --color-cursor: rgb(11 11 11 / 0.05);
 }
 
 html,

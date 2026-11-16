@@ -76,6 +76,7 @@ class AttemptRecord:
     response_model: str | None = None
     service_tier: str | None = None
     error_category: str | None = None
+    rate_limit_signals: dict[str, int | float] | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,7 @@ class TextOutcome:
     provider_response: object | None = field(default=None, repr=False, compare=False)
     incomplete_reason: str | None = None
     provider_reason: str | None = None
+    rate_limit_signals: dict[str, int | float] | None = None
 
 
 class TextGenerationAdapter(Protocol):

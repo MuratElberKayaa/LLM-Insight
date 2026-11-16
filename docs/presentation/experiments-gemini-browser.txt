@@ -1,0 +1,125 @@
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+
+LOCAL ONLYServed on loopback; no login, not for public deployment.
+
+●
+Backend ready
+Gemini · Flash Lite
+
+Completed live prompt comparison · V1 vs V2
+
+All experiments
+Real provider calls · synthetic test inputs
+
+12 completed calls, six paired cases, eight fixed checks. Opening this report sends no model request.
+
+Telemetry was checked against this project’s traces at import. Rule results come from the recorded evaluator; raw responses are not stored and are not re-evaluated here.
+
+Six cases, one sample per version: no general winner or statistical significance. Cost is unknown. “Real” is the SDK’s declared provenance.
+
+V1 · Short instruction
+
+Choose category and priority; return only the two required JSON fields.
+
+V2 · Explicit business rules
+
+Adds category definitions and impact-based priority, ignoring urgency words. Requires JSON without Markdown.
+
+Observed results on this six-case dataset
+Prompt	All checks passed	CLIENT p50	Reported tokens (input / output)	Cost
+live-ticket-v1	3 / 6	2744.4 ms	516 / 131	Unknown
+live-ticket-v2	5 / 6	2835.3 ms	888 / 86	Unknown
+Paired cases · a pass requires every fixed check
+Case	V1	V2
+t01 · Login blocked	
+Passed
+
+All eight checks passed
+
+Open trace · 56194630
+	
+Passed
+
+All eight checks passed
+
+Open trace · efb3cd92
+
+t02 · Invoice download workaround	
+Failed checks
+
+No Markdown, Expected category
+
+Open trace · 9a526e9f
+	
+Failed checks
+
+Expected category
+
+Open trace · de9485d4
+
+t03 · Urgent feature request	
+Failed checks
+
+No Markdown
+
+Open trace · 46ad411a
+	
+Passed
+
+All eight checks passed
+
+Open trace · 62e3a1c8
+
+t04 · Saving blocked	
+Passed
+
+All eight checks passed
+
+Open trace · 0453e9f6
+	
+Passed
+
+All eight checks passed
+
+Open trace · 10bcb0f4
+
+t05 · Browser login workaround	
+Failed checks
+
+No Markdown
+
+Open trace · b9679f0f
+	
+Passed
+
+All eight checks passed
+
+Open trace · 20b8c0a4
+
+t06 · User guide question	
+Passed
+
+All eight checks passed
+
+Open trace · 36134720
+	
+Passed
+
+All eight checks passed
+
+Open trace · 94ba83a9
+Reading the result
+
+A strict pass includes both format and label checks. A higher total does not necessarily mean higher category/priority accuracy; inspect the failed rules above.
+
+The invoice case can overlap billing and bug definitions. A reference-label mismatch alone does not establish model error. The original rubric is kept unchanged.
+
+These are live-ticket-v1/v2, actual instructions sent to the models. The older golden-prompt-v1/v2 mock fixtures remain separate.
+
+Evidence identifiers

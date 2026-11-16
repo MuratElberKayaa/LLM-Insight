@@ -1,0 +1,61 @@
+{
+  "checked_at_utc": "2026-11-12T13:33:02.841761+00:00",
+  "method": "HTTP GET of existing dashboard, parsed server-rendered text; no browser/visual or client-interaction verification",
+  "pages": {
+    "overview": {
+      "status": 200,
+      "url": "http://127.0.0.1:3001/?project=1&from=2026-11-12T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z&provenance=real",
+      "has_gemini_model": true,
+      "has_groq_model": true,
+      "has_real_asserted": true,
+      "has_unknown_cost": true,
+      "has_low_sample": true,
+      "has_ticket_prompt_version": true,
+      "has_trace_id": true,
+      "has_not_ranked_notice": false
+    },
+    "traces": {
+      "status": 200,
+      "url": "http://127.0.0.1:3001/traces?project=1&from=2026-11-12T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z&provenance=real",
+      "has_gemini_model": true,
+      "has_groq_model": true,
+      "has_real_asserted": true,
+      "has_unknown_cost": true,
+      "has_low_sample": false,
+      "has_ticket_prompt_version": true,
+      "has_trace_id": true,
+      "has_not_ranked_notice": false
+    },
+    "trace_detail": {
+      "status": 200,
+      "url": "http://127.0.0.1:3001/traces/1890d7a6199574d9e98b378255ecbd11?project=1",
+      "has_gemini_model": true,
+      "has_groq_model": false,
+      "has_real_asserted": true,
+      "has_unknown_cost": true,
+      "has_low_sample": false,
+      "has_ticket_prompt_version": true,
+      "has_trace_id": true,
+      "has_not_ranked_notice": false,
+      "input_158_rendered": true,
+      "output_36_rendered": true,
+      "model_latency_9_436_seconds_rendered": true,
+      "root_latency_9_450_seconds_rendered": true
+    },
+    "models": {
+      "status": 200,
+      "url": "http://127.0.0.1:3001/models?project=1&from=2026-11-12T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z&provenance=real&prompt_version=cmp-v1.ticket-triage",
+      "has_gemini_model": true,
+      "has_groq_model": true,
+      "has_real_asserted": true,
+      "has_unknown_cost": true,
+      "has_low_sample": true,
+      "has_ticket_prompt_version": true,
+      "has_trace_id": false,
+      "has_not_ranked_notice": true,
+      "input_158_rendered": true,
+      "output_36_rendered": true,
+      "model_latency_9_44_seconds_rendered": true
+    }
+  }
+}

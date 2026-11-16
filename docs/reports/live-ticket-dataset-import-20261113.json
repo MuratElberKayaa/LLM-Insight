@@ -1,0 +1,25 @@
+{
+  "dataset_id": 98,
+  "name": "golden_synthetic_v2",
+  "project": 1,
+  "cases_created": 6,
+  "case_count": 6,
+  "source_dataset": "live-ticket-six-v1",
+  "source_suite": "ticket-ab-v1",
+  "original_live_rule_version": "ticket-category-priority-v1",
+  "stored_rule": {
+    "version": 1,
+    "type": "exact",
+    "output_format": "json"
+  },
+  "case_ids": {
+    "t01": 317,
+    "t02": 318,
+    "t03": 319,
+    "t04": 320,
+    "t05": 321,
+    "t06": 322
+  },
+  "source_inputs_and_expected_labels_match": true,
+  "new_provider_calls": 0
+}

@@ -1,0 +1,189 @@
+Dataset · LLM Insight
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+Local only
+Served on loopback; no login, not for public deployment.
+○
+Checking backend…
+Loading overview…
+●
+Backend ready
+←
+All datasets
+Dataset: golden_synthetic_v2
+Human-approved test cases, each with its source trace and review, as stored. They are evaluated only by experiments, which you start explicitly.
+Fetched
+06:27:59 UTC
+Set up a mock experiment
+↻
+Refresh
+Project
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+Showing project
+#
+1
+·
+phase3a-demo
+6
+test case
+s
+.
+Test case #
+317
+Exact match with the expected output
+Approved by
+user-approved-live-ticket-import
+Server redaction applied
+Evaluated only by experiments
+Standalone case (no source trace).
+Approved
+2026-11-13 06:27:02.202662 UTC
+.
+Input (human-entered, as stored after redaction)
+Every sign-in attempt fails. I cannot access any work and have no workaround.
+Expected output
+{
+  "category": "login",
+  "priority": "high"
+}
+Rule (
+exact
+)
+{
+  "version": 1,
+  "output_format": "json"
+}
+Test case #
+318
+Exact match with the expected output
+Approved by
+user-approved-live-ticket-import
+Server redaction applied
+Evaluated only by experiments
+Standalone case (no source trace).
+Approved
+2026-11-13 06:27:02.234239 UTC
+.
+Input (human-entered, as stored after redaction)
+The invoice download button fails. I can still download the invoice from email.
+Expected output
+{
+  "category": "billing",
+  "priority": "medium"
+}
+Rule (
+exact
+)
+{
+  "version": 1,
+  "output_format": "json"
+}
+Test case #
+319
+Exact match with the expected output
+Approved by
+user-approved-live-ticket-import
+Server redaction applied
+Evaluated only by experiments
+Standalone case (no source trace).
+Approved
+2026-11-13 06:27:02.243666 UTC
+.
+Input (human-entered, as stored after redaction)
+URGENT: Please add a dark theme next month. All existing functions work.
+Expected output
+{
+  "category": "feature_request",
+  "priority": "low"
+}
+Rule (
+exact
+)
+{
+  "version": 1,
+  "output_format": "json"
+}
+Test case #
+320
+Exact match with the expected output
+Approved by
+user-approved-live-ticket-import
+Server redaction applied
+Evaluated only by experiments
+Standalone case (no source trace).
+Approved
+2026-11-13 06:27:02.252461 UTC
+.
+Input (human-entered, as stored after redaction)
+Saving any document crashes the app. No work can be saved by any other method.
+Expected output
+{
+  "category": "bug",
+  "priority": "high"
+}
+Rule (
+exact
+)
+{
+  "version": 1,
+  "output_format": "json"
+}
+Test case #
+321
+Exact match with the expected output
+Approved by
+user-approved-live-ticket-import
+Server redaction applied
+Evaluated only by experiments
+Standalone case (no source trace).
+Approved
+2026-11-13 06:27:02.260991 UTC
+.
+Input (human-entered, as stored after redaction)
+Sign-in fails in one browser, but I can do all my work using another browser.
+Expected output
+{
+  "category": "login",
+  "priority": "medium"
+}
+Rule (
+exact
+)
+{
+  "version": 1,
+  "output_format": "json"
+}
+Test case #
+322
+Exact match with the expected output
+Approved by
+user-approved-live-ticket-import
+Server redaction applied
+Evaluated only by experiments
+Standalone case (no source trace).
+Approved
+2026-11-13 06:27:02.270544 UTC
+.
+Input (human-entered, as stored after redaction)
+ASAP: Where can I read the user guide? The application is working normally.
+Expected output
+{
+  "category": "other",
+  "priority": "low"
+}
+Rule (
+exact
+)
+{
+  "version": 1,
+  "output_format": "json"
+}

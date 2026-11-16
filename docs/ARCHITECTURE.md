@@ -344,7 +344,40 @@ The `UNIQUE` constraints listed per table are also indexes. A JSONB GIN index is
 
 **Migration sequencing (Phase 1A note, no column change):** `usage_records.model_price_id` references `model_prices`, which does not exist before Phase 2. The Phase 1 migration (`0001`) therefore creates the column without its FK. The Phase 2 migration that creates §4.7 adds `FK model_prices(id) ON DELETE RESTRICT`. Until then no row can be `computed` (no price exists), and the `cost_computed_has_price` check already holds. **Done in Phase 2B:** migration `0002` creates §4.7 and adds `fk_usage_records_model_prices` (`ON DELETE RESTRICT`); existing rows are unchanged (their `model_price_id` is `NULL`), verified by an upgrade-with-data test.
 
+### 4.13 `imported_experiments` — completed live evidence (ADR-51)
+
+| Column | Type | Null | Default | Check / relation | Origin |
+|---|---|---|---|---|---|
+| id | BIGSERIAL | NOT NULL | | PK | database |
+| project_id | BIGINT | NOT NULL | | FK projects(id), ON DELETE CASCADE; indexed | import scope |
+| run_id | TEXT | NOT NULL | | 32 lowercase hex, nonzero | closed live runner |
+| model | TEXT | NOT NULL | | LEN(256) | verified trace identity |
+| payload_sha256 | TEXT | NOT NULL | | LEN(64) | canonical import hash |
+| report | JSONB | NOT NULL | | metadata-only validated snapshot | verified import |
+| imported_at | TIMESTAMPTZ | NOT NULL | now() | | database |
+
+UNIQUE(project_id, run_id, model). Updates are refused by an immutable-row trigger.
+Migration 0006 adds only this table; downgrade refuses while evidence exists. No fake budget,
+new inference or mutation of mock experiments is needed to display completed live evidence.
+Snapshot rules are operator-imported booleans, not newly evaluated answers. Tokens, CLIENT
+durations and trace identity are read from project-scoped telemetry at import. The snapshot
+can outlive trace retention; a later missing trace does not invalidate its historical import.
+
 ## 5. API contract
+
+**ADR-51 additive completed-live import:** authenticated `POST /api/v1/imported-experiments?project=…`
+accepts only `run_id`, the two supported model IDs, `suite=ticket-ab-v1`,
+`rule_version=ticket-category-priority-v1`, and 12 `{case_id, variant, trace_id, rules}` rows.
+Exactly six paired cases, unique traces, eight strict boolean rules; extra text fields rejected.
+All trace reads are project-scoped. Missing trace/project returns 404; identity/provenance/usage
+mismatch returns 409 `evidence_mismatch`; same run/model with changed evidence returns 409
+`import_conflict`. Identical imports return the existing ID, including concurrent imports.
+One transaction, no provider access. Existing POST experiments stays mock-only.
+`GET /api/v1/imported-experiments` returns `{items, truncated}` (newest 200 summaries);
+`GET /api/v1/imported-experiments/{id}` adds paired case metadata. Both use existing authenticated,
+project-scoped read-only snapshots and no-store headers. No budget or computed cost is invented.
+Dashboard `/experiments` lists these above mock runs; `/experiments/live/{id}` shows results,
+rules and trace links. These pages only read; no new Server Action or browser write is enabled.
 
 The backend binds to `127.0.0.1`.
 - `/v1/traces` uses `X-Project-Key` (`TELEMETRY_CONTRACT.md`).

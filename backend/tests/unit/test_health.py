@@ -68,8 +68,11 @@ def test_routes_are_health_otlp_ingest_and_read_api(client):
     # Phase 4A adds the read-only trace diagnostics (ARCHITECTURE.md §5.6); Phase 4B adds
     # failure reviews (CR-03) and datasets / test cases (§5.7); Phase 4C adds the two
     # contract experiment endpoints (§5, §5.9); Phase 4D adds the read-only experiment listing
-    # and run options for the dashboard (§5.10).
+    # and run options for the dashboard (§5.10); ADR-51 adds the imported live-experiment
+    # snapshots (import, list, detail).
     assert set(client.app.openapi()["paths"]) == {
+        "/api/v1/imported-experiments",
+        "/api/v1/imported-experiments/{experiment_id}",
         "/api/v1/failure-reviews",
         "/api/v1/failure-reviews/{review_id}",
         "/api/v1/datasets",

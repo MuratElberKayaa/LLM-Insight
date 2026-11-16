@@ -1,0 +1,211 @@
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+
+LOCAL ONLYServed on loopback; no login, not for public deployment.
+
+●
+Backend ready
+Model comparison
+
+Inference attempts, errors, latency, tokens and estimated cost per provider, requested model, response model and prompt version (M15), computed by the backend.
+
+Window 2026-11-12 23:12 UTC → 2026-11-12 23:21 UTC (custom range, attempt start time)
+Fetched 23:21:49 UTC · not live; refresh to update
+Auto-refresh
+Off
+Every 30 s
+Every 1 min
+Every 5 min
+
+Off. Data changes only when you refresh.
+
+Last successful load 23:21:49 UTC
+
+↻
+Refresh
+PROJECT
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+
+Showing project #1 · phase3a-demo
+
+TIME RANGE
+6 hours
+24 hours
+7 days
+31 days
+PROVENANCE
+All
+Real (asserted)
+Synthetic
+Mixed
+Unknown
+ATTEMPT STATUS
+All
+Not failed
+Failed
+GROUPS
+10
+25
+50
+100
+200
+PROVIDER
+All providers
+gcp.gemini · 12 attempts
+groq · 12 attempts
+MODEL (EXACT)
+Apply
+Matches the requested or response model of an inference call exactly. With a provider, both must match the same call.
+
+Exact backend filters over all stored data of this project and window (not only the rows on this page).
+
+CUSTOM RANGE (UTC)
+From (UTC, inclusive)
+To (UTC, exclusive)
+Apply range
+At most 31 days. Times are UTC regardless of this computer's time zone.
+
+Groups are not ranked
+
+Groups are listed by number of attempts, as returned by the backend. They can differ in sample size, prompt version, provenance and cost completeness, so no group is presented as the best. ▲ marks a p95 from fewer than 20 samples. Unknown cost is never counted as $0; a known cost with unknown calls is a lower bound. No quality score exists in this MVP.
+Inference attempts per group
+
+Physical attempts (M02) split by span status (M04), backend order.
+
+Not failed
+Failed ✕
+0
+2
+4
+6
+8
+gcp.gemini ·gemini-3.1-flash-lit…
+gcp.gemini ·gemini-3.1-flash-lit…
+groq ·openai/gpt-oss-20b→ opena…
+groq ·openai/gpt-oss-20b→ opena…
+Show data table
+p95 attempt latency per group (ms)
+
+From span durations (M06). ▲ = fewer than 20 samples. Groups without a sample have no bar.
+
+0 ms
+900 ms
+1.8K ms
+2.7K ms
+3.6K ms
+▲ gcp.gemini ·gemini-3.1-flash-lit…
+▲ gcp.gemini ·gemini-3.1-flash-lit…
+▲ groq ·openai/gpt-oss-20b→ opena…
+▲ groq ·openai/gpt-oss-20b→ opena…
+Show data table
+Comparison table
+
+One row per provider, requested model, response model and prompt version (M15). Exact backend values; unknown stays unknown.
+
+Model and provider groups (GET /api/v1/models/compare)
+Provider · requested → response model · prompt	Provenance (attempts)	Attempts	Error rate	Latency (attempt)	Tokens in / out	Known cost (USD)
+
+gcp.gemini
+gemini-3.1-flash-lite → 
+response model:
+gemini-3.1-flash-lite
+Prompt version live-ticket-v1
+	
+Real (asserted)
+6
+	6	0%
+0 failed
+	
+p50 2.74 s · p95 3.55 s▲
+low sample for p95
+p99 3.71 s (low sample) · n 6
+	
+516 / 131
+subsets not reported
+	
+unknown
+(no priced attempt)
+0 priced · 6 unknown
+(6 no price)
+
+
+gcp.gemini
+gemini-3.1-flash-lite → 
+response model:
+gemini-3.1-flash-lite
+Prompt version live-ticket-v2
+	
+Real (asserted)
+6
+	6	0%
+0 failed
+	
+p50 2.84 s · p95 3.53 s▲
+low sample for p95
+p99 3.54 s (low sample) · n 6
+	
+888 / 86
+subsets not reported
+	
+unknown
+(no priced attempt)
+0 priced · 6 unknown
+(6 no price)
+
+
+groq
+openai/gpt-oss-20b → 
+response model:
+openai/gpt-oss-20b
+Prompt version live-ticket-v1
+	
+Real (asserted)
+6
+	6	0%
+0 failed
+	
+p50 444.2 ms · p95 676.8 ms▲
+low sample for p95
+p99 722.2 ms (low sample) · n 6
+	
+921 / 919
+subsets: cached n/r · reasoning 810
+	
+unknown
+(no priced attempt)
+0 priced · 6 unknown
+(6 no price)
+
+
+groq
+openai/gpt-oss-20b → 
+response model:
+openai/gpt-oss-20b
+Prompt version live-ticket-v2
+	
+Real (asserted)
+6
+	6	0%
+0 failed
+	
+p50 452.9 ms · p95 466.4 ms▲
+low sample for p95
+p99 467.5 ms (low sample) · n 6
+	
+1,293 / 599
+subsets: cached n/r · reasoning 490
+	
+unknown
+(no priced attempt)
+0 priced · 6 unknown
+(6 no price)
+2.7K

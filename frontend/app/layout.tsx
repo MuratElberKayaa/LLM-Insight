@@ -12,9 +12,14 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
+// Both themes are supported; the OS preference picks one (app/globals.css). Theme colors are
+// the two canvas tokens.
 export const viewport: Viewport = {
-  colorScheme: "dark",
-  themeColor: "#0c0d10",
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f4f4f1" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c0d10" },
+  ],
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

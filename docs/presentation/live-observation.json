@@ -1,0 +1,34 @@
+{
+  "captured_at": "2026-11-12T23:21:30.213591+00:00",
+  "window": {
+    "project": 1,
+    "provenance": "real",
+    "from": "2026-11-12T00:00:00Z",
+    "to": "2026-11-13T00:00:00Z"
+  },
+  "attempts": 84,
+  "errors": 3,
+  "traces": 84,
+  "models": {
+    "openai/gpt-oss-20b": {
+      "attempts": 35,
+      "errors": 0
+    },
+    "qwen/qwen3.8-27b": {
+      "attempts": 21,
+      "errors": 0
+    },
+    "gemini-3.1-flash-lite": {
+      "attempts": 28,
+      "errors": 3
+    }
+  },
+  "unknown_cost_calls": 84,
+  "ab_window": {
+    "project": 1,
+    "provenance": "real",
+    "from": "2026-11-12T23:12:19.505872Z",
+    "to": "2026-11-12T23:21:09.291303Z"
+  },
+  "ab_aggregate_verified": true
+}

@@ -1,0 +1,912 @@
+Model comparison · LLM Insight
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+Local only
+Served on loopback; no login, not for public deployment.
+○
+Checking backend…
+Loading model comparison…
+●
+Backend ready
+Model comparison
+Inference attempts, errors, latency, tokens and estimated cost per provider, requested model, response model and prompt version (M15), computed by the backend.
+Window
+2026-11-12 00:00 UTC
+→
+2026-11-13 00:00 UTC
+(
+custom range
+, attempt start time)
+Fetched
+22:30:51 UTC
+· not live; refresh to update
+Auto-refresh
+Off
+Every
+30 s
+Every
+1 min
+Every
+5 min
+Off. Data changes only when you refresh.
+↻
+Refresh
+Project
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+Showing project
+#
+1
+·
+phase3a-demo
+Time range
+6 hours
+24 hours
+7 days
+31 days
+Provenance
+All
+Real (asserted)
+Synthetic
+Mixed
+Unknown
+Attempt status
+All
+Not failed
+Failed
+Groups
+10
+25
+50
+100
+200
+Provider
+All providers
+groq · 44 attempts
+gcp.gemini · 16 attempts
+Model (exact)
+Apply
+Matches the requested or response model of an inference call exactly. With a provider, both must match the same call.
+Exact backend filters over all stored data of this project and window (not only the rows on this page).
+Custom range (UTC)
+From (UTC, inclusive)
+To (UTC, exclusive)
+Apply range
+At most 31 days. Times are UTC regardless of this computer's time zone.
+Groups are not ranked
+Groups are listed by number of attempts, as returned by the backend. They can differ in sample size, prompt version, provenance and cost completeness, so no group is presented as the best.
+▲ marks a p95 from fewer than 20 samples.
+Unknown cost is never counted as $0; a known cost with unknown calls is a lower bound.
+No quality score exists in this MVP.
+Inference attempts per group
+Physical attempts (M02) split by span status (M04), backend order.
+Not failed
+Failed ✕
+Show data table
+Attempts per group
+Group
+Attempts
+Not failed
+Failed
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.ticket-triage
+22
+22
+0
+groq
+qwen/qwen3.8-27b
+→
+response model:
+qwen/qwen3.8-27b
+Prompt version
+cmp-v1.ticket-triage
+21
+21
+0
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.ticket-triage
+12
+12
+0
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.ticket-triage
+2
+0
+2
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.release-summary
+1
+0
+1
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.json-aggregate
+1
+1
+0
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.json-aggregate
+1
+1
+0
+p95 attempt latency per group (ms)
+From span durations (M06). ▲ = fewer than 20 samples. Groups without a sample have no bar.
+Show data table
+Latency per group
+Group
+p50
+p95
+n
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.ticket-triage
+542.8 ms
+1.03 s
+22
+groq
+qwen/qwen3.8-27b
+→
+response model:
+qwen/qwen3.8-27b
+Prompt version
+cmp-v1.ticket-triage
+340.7 ms
+734.9 ms
+21
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.ticket-triage
+883.9 ms
+4.88 s
+12 (low)
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.ticket-triage
+19.64 s
+19.67 s
+2 (low)
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.release-summary
+29.78 s
+29.78 s
+1 (low)
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.json-aggregate
+7.72 s
+7.72 s
+1 (low)
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.json-aggregate
+627.2 ms
+627.2 ms
+1 (low)
+Comparison table
+One row per provider, requested model, response model and prompt version (M15). Exact backend values; unknown stays unknown.
+Model and provider groups (GET /api/v1/models/compare)
+Provider · requested → response model · prompt
+Provenance (attempts)
+Attempts
+Error rate
+Latency (attempt)
+Tokens in / out
+Known cost (USD)
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.ticket-triage
+Real (asserted)
+22
+22
+0%
+0
+failed
+p50
+542.8 ms
+· p95
+1.03 s
+p99
+1.84 s
+(low sample)
+· n
+22
+4,884
+/
+3,795
+subsets: cached n/r · reasoning 3,039
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+22
+unknown
+(
+22 no price
+)
+groq
+qwen/qwen3.8-27b
+→
+response model:
+qwen/qwen3.8-27b
+Prompt version
+cmp-v1.ticket-triage
+Real (asserted)
+21
+21
+0%
+0
+failed
+p50
+340.7 ms
+· p95
+734.9 ms
+p99
+1.04 s
+(low sample)
+· n
+21
+3,591
+/
+749
+subsets not reported
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+21
+unknown
+(
+21 no price
+)
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.ticket-triage
+Real (asserted)
+12
+12
+0%
+0
+failed
+p50
+883.9 ms
+· p95
+4.88 s
+▲
+low sample for p95
+p99
+8.53 s
+(low sample)
+· n
+12
+1,896
+/
+420
+subsets not reported
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+12
+unknown
+(
+12 no price
+)
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.ticket-triage
+Real (asserted)
+2
+2
+100%
+2
+failed
+✕
+p50
+19.64 s
+· p95
+19.67 s
+▲
+low sample for p95
+p99
+19.67 s
+(low sample)
+· n
+2
+unknown
+(
+not reported
+)
+/
+unknown
+(
+not reported
+)
+unknown:
+2
+in /
+2
+out of
+2
+subsets not reported
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+2
+unknown
+(
+2 no usage
+)
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.release-summary
+Real (asserted)
+1
+1
+100%
+1
+failed
+✕
+p50
+29.78 s
+· p95
+29.78 s
+▲
+low sample for p95
+p99
+29.78 s
+(low sample)
+· n
+1
+unknown
+(
+not reported
+)
+/
+unknown
+(
+not reported
+)
+unknown:
+1
+in /
+1
+out of
+1
+subsets not reported
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+1
+unknown
+(
+1 no usage
+)
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.json-aggregate
+Real (asserted)
+1
+1
+0%
+0
+failed
+p50
+7.72 s
+· p95
+7.72 s
+▲
+low sample for p95
+p99
+7.72 s
+(low sample)
+· n
+1
+189
+/
+50
+subsets not reported
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+1
+unknown
+(
+1 no price
+)
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.json-aggregate
+Real (asserted)
+1
+1
+0%
+0
+failed
+p50
+627.2 ms
+· p95
+627.2 ms
+▲
+low sample for p95
+p99
+627.2 ms
+(low sample)
+· n
+1
+244
+/
+363
+subsets: cached n/r · reasoning 307
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+1
+unknown
+(
+1 no price
+)
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.ticket-triage
+Attempts
+22
+Error rate
+0%
+0
+failed
+Latency (attempt)
+p50
+542.8 ms
+· p95
+1.03 s
+p99
+1.84 s
+(low sample)
+· n
+22
+Tokens in / out
+4,884
+/
+3,795
+subsets: cached n/r · reasoning 3,039
+Known cost (USD)
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+22
+unknown
+(
+22 no price
+)
+Provenance (attempts)
+Real (asserted)
+22
+groq
+qwen/qwen3.8-27b
+→
+response model:
+qwen/qwen3.8-27b
+Prompt version
+cmp-v1.ticket-triage
+Attempts
+21
+Error rate
+0%
+0
+failed
+Latency (attempt)
+p50
+340.7 ms
+· p95
+734.9 ms
+p99
+1.04 s
+(low sample)
+· n
+21
+Tokens in / out
+3,591
+/
+749
+subsets not reported
+Known cost (USD)
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+21
+unknown
+(
+21 no price
+)
+Provenance (attempts)
+Real (asserted)
+21
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.ticket-triage
+Attempts
+12
+Error rate
+0%
+0
+failed
+Latency (attempt)
+p50
+883.9 ms
+· p95
+4.88 s
+▲
+low sample for p95
+p99
+8.53 s
+(low sample)
+· n
+12
+Tokens in / out
+1,896
+/
+420
+subsets not reported
+Known cost (USD)
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+12
+unknown
+(
+12 no price
+)
+Provenance (attempts)
+Real (asserted)
+12
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.ticket-triage
+Attempts
+2
+Error rate
+100%
+2
+failed
+✕
+Latency (attempt)
+p50
+19.64 s
+· p95
+19.67 s
+▲
+low sample for p95
+p99
+19.67 s
+(low sample)
+· n
+2
+Tokens in / out
+unknown
+(
+not reported
+)
+/
+unknown
+(
+not reported
+)
+unknown:
+2
+in /
+2
+out of
+2
+subsets not reported
+Known cost (USD)
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+2
+unknown
+(
+2 no usage
+)
+Provenance (attempts)
+Real (asserted)
+2
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+not reported
+(
+response model not reported
+)
+Prompt version
+cmp-v1.release-summary
+Attempts
+1
+Error rate
+100%
+1
+failed
+✕
+Latency (attempt)
+p50
+29.78 s
+· p95
+29.78 s
+▲
+low sample for p95
+p99
+29.78 s
+(low sample)
+· n
+1
+Tokens in / out
+unknown
+(
+not reported
+)
+/
+unknown
+(
+not reported
+)
+unknown:
+1
+in /
+1
+out of
+1
+subsets not reported
+Known cost (USD)
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+1
+unknown
+(
+1 no usage
+)
+Provenance (attempts)
+Real (asserted)
+1
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+gemini-3.1-flash-lite
+Prompt version
+cmp-v1.json-aggregate
+Attempts
+1
+Error rate
+0%
+0
+failed
+Latency (attempt)
+p50
+7.72 s
+· p95
+7.72 s
+▲
+low sample for p95
+p99
+7.72 s
+(low sample)
+· n
+1
+Tokens in / out
+189
+/
+50
+subsets not reported
+Known cost (USD)
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+1
+unknown
+(
+1 no price
+)
+Provenance (attempts)
+Real (asserted)
+1
+groq
+openai/gpt-oss-20b
+→
+response model:
+openai/gpt-oss-20b
+Prompt version
+cmp-v1.json-aggregate
+Attempts
+1
+Error rate
+0%
+0
+failed
+Latency (attempt)
+p50
+627.2 ms
+· p95
+627.2 ms
+▲
+low sample for p95
+p99
+627.2 ms
+(low sample)
+· n
+1
+Tokens in / out
+244
+/
+363
+subsets: cached n/r · reasoning 307
+Known cost (USD)
+unknown
+(
+no priced attempt
+)
+0
+priced ·
+1
+unknown
+(
+1 no price
+)
+Provenance (attempts)
+Real (asserted)
+1

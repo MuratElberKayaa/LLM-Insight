@@ -1,0 +1,439 @@
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+
+LOCAL ONLYServed on loopback; no login, not for public deployment.
+
+●
+Backend ready
+Overview
+
+Inference attempts, traces, latency, tokens and estimated cost for one project, computed by the backend (M01–M14).
+
+Window 2026-11-12 00:00 UTC → 2026-11-13 00:00 UTC (custom range, event time)
+Fetched 23:21:46 UTC · not live; refresh to update
+Auto-refresh
+Off
+Every 30 s
+Every 1 min
+Every 5 min
+
+Off. Data changes only when you refresh.
+
+Last successful load 23:21:46 UTC
+
+↻
+Refresh
+PROJECT
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+
+Showing project #1 · phase3a-demo
+
+TIME RANGE
+6 hours
+24 hours
+7 days
+31 days
+PROVENANCE
+All
+Real (asserted)
+Synthetic
+Mixed
+Unknown
+PROVIDER
+All providers
+groq · 56 attempts
+gcp.gemini · 28 attempts
+MODEL (EXACT)
+Apply
+Matches the requested or response model of an inference call exactly. With a provider, both must match the same call.
+
+Exact backend filters over all stored data of this project and window (not only the rows on this page).
+
+CUSTOM RANGE (UTC)
+From (UTC, inclusive)
+To (UTC, exclusive)
+Apply range
+At most 31 days. Times are UTC regardless of this computer's time zone.
+
+Custom range
+
+Trend buckets stay aligned to UTC hours or days, so the first and last bucket may cover only part of their width.
+
+Labeled real by the instrumentation
+
+Real (asserted)
+84
+Synthetic
+0
+Mixed
+0
+Unknown
+0
+
+The instrumentation labeled this data real. That label is an assertion and is not verified by the server.
+
+Headline scope: real only. Provenance is asserted by the instrumentation and not verified by the server.
+
+Latest stored trace
+
+In this window and with these filters. Read from the backend at 23:21:46 UTC; it changes only when the page refreshes (not live).
+
+Started (event time reported by the instrumentation)
+2026-11-12 23:21:06.016 UTC
+Duration · status
+1.531 s · 
+●
+OK
+Provenance
+Real (asserted)
+Providers · models (calls)
+gcp.gemini · gemini-3.1-flash-lite ×1
+Open llm-insight-live-prompt-ab (361347207064b6576c7b5bd013a49f3f)
+Traces
+M01
+
+84
+
+Real (asserted)
+84
+Synthetic
+0
+Mixed
+0
+Unknown
+0
+Trace error rate
+M05
+
+3.57%
+
+3 of 84 traces with status error
+
+Trace-level; separate from the inference error rate.
+Inference attempts
+M02 · M03
+
+84
+
+Logical calls: 84
+
+Real (asserted)
+84
+Synthetic
+0
+Unknown
+0
+Inference error rate
+M04
+
+3.57%
+
+3 of 84 attempts failed (span status ERROR)
+
+Each physical attempt counts, retries included.
+Inference latency p95
+M06
+
+7.12 s
+
+○
+Low sample (p99)
+
+p50 624.7 ms · p99 21.39 s · n = 84
+
+Inference span durations. Time to first chunk: not recorded (no streaming).
+Trace latency p95
+M07
+
+7.14 s
+
+○
+Low sample (p99)
+
+p50 825.2 ms · p99 21.40 s · n = 84
+
+Root spans only.
+Tokens (input / output)
+M08 · M09
+
+14,422/7,112
+
+Not reported: input by 3, output by 3 of 84 attempts
+
+Cached input not reported · reasoning 4,646
+
+Sums of reported values only. Cached and reasoning tokens are subsets, never added.
+Known cost (estimate)
+M10 · M11 · M12
+
+Unknown: no call priced
+
+▲
+Incomplete: 84 of 84 unpriced
+
+Priced 0 of 84 attempts · unknown cost 84
+
+Per priced attempt: n/a
+
+USD from provider-reported usage and verified prices; not an invoice. Unknown is never counted as $0.
+Trends
+
+Backend trend buckets per UTC hour; the last bucket (2026-11-12 23:00–00:00 UTC) may still be filling.
+
+Inference attempts
+
+Physical attempts per UTC hour, split by span status
+
+Not failed
+Failed
+00:00
+04:00
+08:00
+12:00
+16:00
+23:00
+0
+6
+12
+18
+24
+Show data table
+Traces
+
+Traces by start time per UTC hour, split by trace status
+
+Not error
+Error
+00:00
+04:00
+08:00
+12:00
+16:00
+23:00
+0
+6
+12
+18
+24
+Show data table
+Known cost (USD, estimate)
+
+Computed rows only. A bucket without a bar has no priced call; unknown-cost calls are in the table and tooltip.
+
+00:00
+04:00
+08:00
+12:00
+16:00
+23:00
+Show data table
+Provenance breakdown
+
+Trace columns use trace provenance; attempt and cost columns use each attempt's own provenance. Totals come from the backend, not from adding rows.
+
+Traces, inference attempts and cost by provenance
+Provenance	Traces	Error traces	Inference attempts	Failed	Known cost	Unknown-cost calls
+
+Real (asserted)
+	84	3	84	3	none computed
+(none computed)
+	84
+
+SYNTHETIC
+	0	0	0	0	none computed
+(none computed)
+	0
+
+Mixed
+	0	0	n/a
+(no usage-level bucket: inference attempts are never mixed)
+	n/a
+(no usage-level bucket: inference attempts are never mixed)
+	n/a
+(no usage-level bucket: inference attempts are never mixed)
+	n/a
+(no usage-level bucket: inference attempts are never mixed)
+
+
+Unknown
+	0	0	0	0	none computed
+(none computed)
+	0
+All provenance	84	3	84	3	none computed
+(none computed)
+	84
+Failed attempts by error type
+
+The instrumentation's error.type identifier; a hypothesis about cause is not implied.
+
+Failed inference attempts by error type (M04)
+Error type	Failed attempts
+504	3
+Model and provider activity
+
+Largest groups by attempts per provider, requested model, response model and prompt version (backend top-N).
+
+Inference attempts by model group (M15)
+Provider	Requested model
+→ response model
+	Prompt version	Attempts	Error rate	p95 latency (n)	Known cost	Unknown-cost calls	Provenance (attempts)
+groq	
+openai/gpt-oss-20b
+→ 
+response model:
+openai/gpt-oss-20b
+	cmp-v1.ticket-triage	22	0%	1.03 s (22)	unknown
+(no priced attempt)
+	22	
+Real (asserted)
+22
+
+groq	
+qwen/qwen3.8-27b
+→ 
+response model:
+qwen/qwen3.8-27b
+	cmp-v1.ticket-triage	21	0%	734.9 ms (21)	unknown
+(no priced attempt)
+	21	
+Real (asserted)
+21
+
+gcp.gemini	
+gemini-3.1-flash-lite
+→ 
+response model:
+gemini-3.1-flash-lite
+	cmp-v1.ticket-triage	12	0%	4.88 s (12)▲
+low sample
+	unknown
+(no priced attempt)
+	12	
+Real (asserted)
+12
+
+gcp.gemini	
+gemini-3.1-flash-lite
+→ 
+response model:
+gemini-3.1-flash-lite
+	live-ticket-v1	6	0%	3.55 s (6)▲
+low sample
+	unknown
+(no priced attempt)
+	6	
+Real (asserted)
+6
+
+gcp.gemini	
+gemini-3.1-flash-lite
+→ 
+response model:
+gemini-3.1-flash-lite
+	live-ticket-v2	6	0%	3.53 s (6)▲
+low sample
+	unknown
+(no priced attempt)
+	6	
+Real (asserted)
+6
+
+groq	
+openai/gpt-oss-20b
+→ 
+response model:
+openai/gpt-oss-20b
+	live-ticket-v1	6	0%	676.8 ms (6)▲
+low sample
+	unknown
+(no priced attempt)
+	6	
+Real (asserted)
+6
+
+groq	
+openai/gpt-oss-20b
+→ 
+response model:
+openai/gpt-oss-20b
+	live-ticket-v2	6	0%	466.4 ms (6)▲
+low sample
+	unknown
+(no priced attempt)
+	6	
+Real (asserted)
+6
+
+gcp.gemini	
+gemini-3.1-flash-lite
+→ 
+response model:
+—
+(not reported)
+	cmp-v1.ticket-triage	2	100%	19.67 s (2)▲
+low sample
+	unknown
+(no priced attempt)
+	2	
+Real (asserted)
+2
+
+gcp.gemini	
+gemini-3.1-flash-lite
+→ 
+response model:
+—
+(not reported)
+	cmp-v1.release-summary	1	100%	29.78 s (1)▲
+low sample
+	unknown
+(no priced attempt)
+	1	
+Real (asserted)
+1
+
+gcp.gemini	
+gemini-3.1-flash-lite
+→ 
+response model:
+gemini-3.1-flash-lite
+	cmp-v1.json-aggregate	1	0%	7.72 s (1)▲
+low sample
+	unknown
+(no priced attempt)
+	1	
+Real (asserted)
+1
+
+○
+Top 10 More groups exist than are shown.
+
+Open the model comparison for this window
+
+Cost and usage sources
+
+Why a cost is unknown, which price versions priced the known cost, and where token counts came from.
+
+Unknown-cost attempts by reason (M11)
+Reason	Attempts
+No verified price for the model, tier or time	81
+Provider usage not reported	3
+Reported usage inconsistent	0
+Price versions used for known cost (M13)
+Provider / model	Price version	Priced attempts
+No attempt in this window has a computed cost.
+Token usage source (M14)
+Source	Attempts
+Provider reported	81
+Estimated	0
+Unknown	3
+18:00

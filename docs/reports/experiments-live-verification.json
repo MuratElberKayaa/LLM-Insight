@@ -1,0 +1,12 @@
+{
+  "imported_models": {
+    "gemini-3.1-flash-lite": 1,
+    "openai/gpt-oss-20b": 2
+  },
+  "paired_trace_ids": 24,
+  "metadata_matches_original": true,
+  "real_trace_total_nov12_utc": 84,
+  "mock_58_preserved": true,
+  "new_provider_calls": 0,
+  "browser_pages_verified": 3
+}

@@ -43,9 +43,9 @@ export function ProvenanceNotice({ provenance }: { provenance: TraceProvenance }
 
 function Fact({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-line bg-surface px-4 py-3">
+    <div className="min-w-0 bg-surface px-4 py-3">
       <dt className="text-xs text-ink-3">{label}</dt>
-      <dd className="mt-1 break-words text-sm text-ink" data-testid={testId}>
+      <dd className="mt-1 break-words text-sm font-medium text-ink" data-testid={testId}>
         {children}
       </dd>
     </div>
@@ -54,7 +54,9 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
 
 export function TraceFacts({ trace, returnedSpans, spansTruncated }: { trace: TraceSummary; returnedSpans: number; spansTruncated: boolean }) {
   return (
-    <dl className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="trace-facts">
+    // One summary strip: 1px gaps over the line color draw hairlines between the ten facts.
+    // 1, 2 and 5 columns all divide ten, so no empty cell shows the line color.
+    <dl className="mb-6 grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2 xl:grid-cols-5" data-testid="trace-facts">
       <Fact label="Status (stored)" testId="fact-status">
         <TraceStatusLabel status={trace.status} />
       </Fact>

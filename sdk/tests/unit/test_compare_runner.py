@@ -220,7 +220,7 @@ def test_as_shipped_the_dry_run_reports_the_locks_and_sends_nothing(
     assert doc["execution_ready"] is True
     assert codes(doc) >= SHIPPED_REFUSALS
     assert doc["constraints"]["real_execution_enabled"] is False
-    assert doc["constraints"]["free_plan_models_released"] == 1  # evidence only (8G)
+    assert doc["constraints"]["free_plan_models_released"] == 2
     assert doc["session"] is None and doc["provider"] is None and doc["export"] is None
     assert stub.spans() == []  # the readiness probe is an empty request
 
@@ -239,7 +239,7 @@ def test_as_shipped_execute_is_refused_before_any_client_exists(stub, wire, monk
 
 def test_as_shipped_the_constants_are_still_locked():
     assert groq_adapter.REAL_EXECUTION_ENABLED is True  # released by 8G patch B
-    assert list(groq_live.FREE_PLAN_MODELS) == [MODEL]
+    assert list(groq_live.FREE_PLAN_MODELS) == [MODEL, "qwen/qwen3.8-27b"]
     assert groq_live.FREE_PLAN_EVIDENCE_VERIFIED_AT is not None
 
 

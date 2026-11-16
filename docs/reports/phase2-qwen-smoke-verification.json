@@ -1,0 +1,73 @@
+{
+  "verified_at_utc": "2026-11-12T16:42:22.061656+00:00",
+  "project_id": 1,
+  "trace_id": "d19e7e13d1e8a09411045bc87cfb8610",
+  "api_http": 200,
+  "checks": {
+    "trace_id": true,
+    "project": true,
+    "real_provenance": true,
+    "prompt_version": true,
+    "two_spans": true,
+    "root_to_client_parent": true,
+    "usage_link": true,
+    "provider_model": true,
+    "tokens": true,
+    "cost_unknown": true,
+    "no_dropped": true,
+    "no_errors": true,
+    "attempt_one": true,
+    "not_truncated": true
+  },
+  "duration_ms": 467.9807,
+  "client_duration_ms": 193.901,
+  "input_tokens": 171,
+  "output_tokens": 28,
+  "reasoning_tokens": null,
+  "cost_status": "unknown",
+  "cost_usd": null,
+  "span_links": [
+    {
+      "span_id": "ef8771ae252f6e5f",
+      "parent_span_id": null,
+      "kind": "INTERNAL",
+      "role": "root"
+    },
+    {
+      "span_id": "afbca0c83316923a",
+      "parent_span_id": "ef8771ae252f6e5f",
+      "kind": "CLIENT",
+      "role": "child"
+    }
+  ],
+  "dashboard": {
+    "overview": {
+      "http": 200,
+      "qwen_visible": true,
+      "trace_visible": null,
+      "tokens_visible": null,
+      "unknown_cost_visible": null
+    },
+    "traces": {
+      "http": 200,
+      "qwen_visible": true,
+      "trace_visible": true,
+      "tokens_visible": null,
+      "unknown_cost_visible": null
+    },
+    "detail": {
+      "http": 200,
+      "qwen_visible": true,
+      "trace_visible": true,
+      "tokens_visible": true,
+      "unknown_cost_visible": true
+    },
+    "models_compare": {
+      "http": 200,
+      "qwen_visible": true,
+      "trace_visible": null,
+      "tokens_visible": true,
+      "unknown_cost_visible": true
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "verified_at_utc": "2026-11-12T16:54:02.409593+00:00",
+  "project_id": 1,
+  "trace_id": "b7ee3ed3e2b75fa9cac3d0b792bd1185",
+  "api_http": 200,
+  "checks": {
+    "trace_id": true,
+    "real": true,
+    "prompt": true,
+    "span_count": true,
+    "root_client_parent": true,
+    "usage_link": true,
+    "model": true,
+    "tokens": true,
+    "unknown_cost": true,
+    "one_attempt": true,
+    "no_errors": true,
+    "no_drops": true,
+    "complete": true
+  },
+  "trace_latency_ms": 1067.7946,
+  "client_latency_ms": 808.4084,
+  "usage": {
+    "input": 222,
+    "output": 283,
+    "reasoning": 248,
+    "cost_status": "unknown",
+    "cost_usd": null
+  },
+  "span_links": [
+    {
+      "span_id": "96b77b487ecd174e",
+      "parent_span_id": null,
+      "kind": "INTERNAL",
+      "role": "root"
+    },
+    {
+      "span_id": "ed0b8d0f1d575cb2",
+      "parent_span_id": "96b77b487ecd174e",
+      "kind": "CLIENT",
+      "role": "child"
+    }
+  ],
+  "dashboard": {
+    "overview": {
+      "http": 200,
+      "model_visible": true,
+      "trace_visible": null,
+      "tokens_visible": null,
+      "reasoning_visible": null,
+      "unknown_cost_visible": null
+    },
+    "traces": {
+      "http": 200,
+      "model_visible": true,
+      "trace_visible": true,
+      "tokens_visible": null,
+      "reasoning_visible": null,
+      "unknown_cost_visible": null
+    },
+    "detail": {
+      "http": 200,
+      "model_visible": true,
+      "trace_visible": true,
+      "tokens_visible": true,
+      "reasoning_visible": true,
+      "unknown_cost_visible": true
+    },
+    "models_compare": {
+      "http": 200,
+      "model_visible": true,
+      "trace_visible": null,
+      "tokens_visible": false,
+      "reasoning_visible": false,
+      "unknown_cost_visible": true
+    }
+  }
+}

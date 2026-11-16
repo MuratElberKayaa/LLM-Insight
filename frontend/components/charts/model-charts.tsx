@@ -7,7 +7,7 @@ import type { GroupPoint } from "../../lib/model-groups";
 import { CHART } from "./trend-charts";
 
 // Horizontal bars, one row per group in backend order. Encoding as in the Phase 3A trend
-// (validated on #15171c): series-1 = not failed, critical = failed; failures also carry text.
+// (validated on #15171c dark and #fcfcfb light): series-1 = not failed, critical = failed; failures also carry text.
 const ROW = 30;
 const BAR_MAX = 16;
 const GAP = { stroke: CHART.surface, strokeWidth: 2 } as const;

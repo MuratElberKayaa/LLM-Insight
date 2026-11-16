@@ -1,0 +1,401 @@
+Trace · LLM Insight
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+Local only
+Served on loopback; no login, not for public deployment.
+○
+Checking backend…
+Loading trace…
+●
+Backend ready
+←
+Back to traces
+Trace
+6f7261b074977c1b8a4804d43b103add
+Fetched
+22:30:51 UTC
+· not live; refresh to update
+Metadata only: no prompt or completion content is stored
+↻
+Refresh
+Project
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+Showing project
+#
+1
+·
+phase3a-demo
+Real (asserted)
+Labeled real by the instrumentation
+The instrumentation labeled every inference span real. That label is asserted, not verified by the server.
+Labeled real by the instrumentation (asserted, not verified).
+Provenance is asserted by the instrumentation and not verified by the server.
+Status (stored)
+✕
+Error
+Service
+llm-insight-live-compare
+Duration
+29.794 s
+Spans
+2
+Started (UTC)
+2026-11-12 15:44:32.175856000 UTC
+Ended (UTC)
+2026-11-12 15:45:01.970316500 UTC
+Inference calls · tokens in / out
+1
+attempts
+unknown
+(
+not reported
+)
+/
+unknown
+(
+not reported
+)
+1
+call
+unknown
+Known cost
+unknown
+(
+no priced call
+)
+1
+of
+1
+unpriced
+Prompt version
+cmp-v1.release-summary
+Provenance
+Real (asserted)
+Human review:
+not reviewed yet.
+Go to the review
+Status breakdown
+Trace level:
+Error
+. The backend marks a trace as error when any of its spans has status ERROR.
+Span failures:
+1 span with status ERROR (1 inference attempt, 0 application spans).
+Logical calls:
+1 (1 physical attempt); 0 recovered after a failed attempt, 1 ended with a failed attempt.
+Recorded
+error.type
+values are shown as reported by the instrumentation. A failed span is a fact; its cause is not inferred here.
+Span tree and timeline
+Parent-child hierarchy in start order with a relative-time waterfall. Each inference row is one physical attempt; retries are separate rows.
+Application span
+Inference attempt (one physical provider call)
+✕
+Span with status ERROR
+↑ ↓ move · → ← expand / collapse · Enter toggles
+Span
+0
+7.448 s
+14.897 s
+22.345 s
+29.794 s
+▾
+INT
+INTERNAL
+demo.live-compare
+starts
++0 ns
+after the trace start, lasts
+29.794 s
+CLI
+CLIENT
+✕
+error
+generate_content gemini-3.1-flash-lite
+LLM
+· attempt 1
+starts
++15.035 ms
+after the trace start, lasts
+29.779 s
+, inference attempt
+Axis: trace start to trace end (
+29.794 s
+). Bars use exact nanosecond offsets; a bar of zero length is drawn 2 px wide.
+demo.live-compare
+○
+Status UNSET (no error recorded)
+Span ID
+52c89725a7deb511
+Parent span ID
+none (root)
+Position
+Root span
+Kind
+INTERNAL
+Offset from trace start
++0 ns
+Duration
+29.794 s
+Start (UTC)
+2026-11-12 15:44:32.175856000 UTC
+End (UTC)
+2026-11-12 15:45:01.970316500 UTC
+Not an inference span: no usage row. Provenance applies to inference spans only.
+Span attributes (allowlisted)
+None stored.
+Resource attributes (allowlisted)
+llminsight.sdk.version
+0.2.0
+service.name
+llm-insight-live-compare
+telemetry.sdk.language
+python
+telemetry.sdk.name
+opentelemetry
+telemetry.sdk.version
+1.45.1
+Scope
+llm_insight_sdk 0.2.0
+Dropped by server
+0
+Attribute map
+llminsight.attrmap.v1
+Prompt and completion content is not captured or stored, so it cannot be shown.
+Logical calls and retries
+Attempts sharing llminsight.call_id are one logical call; each attempt is a separate physical provider request with its own span.
+Logical calls with their physical attempts
+Logical call
+Physical attempts (in order)
+Outcome of the attempts
+7535c521-f6a4-4e83-954b-fe1035a41710
+#
+1
+✕
+Error
+error.type
+504
+29.779 s
+All attempts failed
+Inference attempts
+One usage-ledger row per physical attempt. Unknown values stay unknown; unknown cost is never shown as $0.
+Inference attempts of this trace (usage ledger)
+Span
+Attempt
+Status
+Provider
+Requested model
+→ response model
+Tokens in / out
+Cached / reasoning
+subsets, not added
+Cost (USD)
+Price version
+Provenance
+563e5f1c140e0a09
+1
+✕
+Error
+gcp.gemini
+gemini-3.1-flash-lite
+→
+response model:
+—
+Span table (text alternative to the waterfall)
+All spans in tree order with exact timing
+Span (tree order)
+Span ID
+Parent
+Position
+Kind
+Status
+error.type
+Offset
+Duration
+Start (UTC, ns)
+demo.live-compare
+52c89725a7deb511
+—
+(
+root
+)
+Root span
+INTERNAL
+○
+Unset
+—
+(
+none
+)
++0 ns
+Machine observations
+Automatic · Unverified · Not a human review
+Deterministic rules over stored metadata only: no prompt or completion content and no language model. Each possible explanation is unverified. These observations never fill in, approve or decide the human review.
+inference call failed
+(
+reliability
+, about the
+logical call
+)
+Unverified
+Rule fired because:
+Exactly one stored inference attempt of a logical call has span status ERROR and it is the call's only stored attempt, or an inference attempt without a usable llminsight.call_id has span status ERROR.
+attempts observed
+1
+attempt numbers
+[1]
+failed attempts
+1
+error types
+["504"]
+error types count
+1
+failed attempts without error type
+0
+error classes
+["http_5xx"]
+attempts duration ns
+"29779425500"
+trace status
+Human failure review
+Human decision
+Recorded by a person with the issue types of the Failure Review contract. A supported hypothesis means the evidence supports it, not that the root cause is proven.
+Not reviewed yet: no human review exists for this trace.
+Record a new review
+Do not paste prompts, completions, personal data or secrets. The server masks e-mail addresses, phone and long numbers and key-like values before storage, but redaction is best effort.
+Issue type
+Choose an issue type…
+Retrieval missing
+(
+retrieval_missing
+)
+Chunk boundary
+(
+chunk_boundary
+)
+Prompt instruction
+(
+prompt_instruction
+)
+Generation mismatch
+(
+generation_mismatch
+)
+Schema violation
+(
+schema_violation
+)
+Unknown
+(
+unknown
+)
+Related span
+Optional: the span the evidence is about.
+None (the whole trace)
+demo.live-compare · INTERNAL · UNSET · 52c89725a7deb511
+generate_content gemini-3.1-flash-lite · CLIENT · ERROR · 563e5f1c140e0a09
+Evidence
+What you observed in the stored metadata (at most 4000 characters).
+Hypothesis
+A possible cause to check, not a verified root cause (at most 2000 characters).
+Reviewer
+Self-declared: the MVP has no user accounts. Use a name or handle, not an e-mail address.
+Record review
+(
+not reported
+)
+unknown
+(
+not reported
+)
+/
+unknown
+(
+not reported
+)
+unknown
+(
+not reported
+)
+/
+unknown
+(
+not reported
+)
+unknown
+usage not reported
+—
+(
+no price applied
+)
+Real (asserted)
+29.794 s
+2026-11-12 15:44:32.175856000 UTC
+· generate_content gemini-3.1-flash-lite
+563e5f1c140e0a09
+52c89725a7deb511
+Child span
+CLIENT
+✕
+Error
+504
++15.035 ms
+29.779 s
+2026-11-12 15:44:32.190891000 UTC
+"error"
+Evidence spans (
+1
+)
+563e5f1c140e0a09
+CLIENT
+·
+ERROR
+·
+child
+error.type
+504
+29.779 s
+Possible explanation (not verified):
+Possible explanation (not verified): the call failed on its only stored attempt and was not retried, or its retries are not stored.
+The recorded error.type is an HTTP 5xx status or openai.InternalServerError: the server that answered reported an internal failure. The stored data does not show whether that was the provider or a proxy, or whether other requests were affected; it does not establish a provider outage.
+Not established by this data
+The cause of the failure(s).
+Whether the application retried the call: retries are recognisable only through llminsight.call_id and llminsight.attempt.
+Whether a later attempt succeeded but has not been exported or stored.
+Whether other requests or other projects were affected at the same time.
+Limitations
+error.type is a low-cardinality identifier chosen by the instrumentation; it is not verified against the provider.
+Only spans stored at the time of this request are analysed; spans exported later, dropped by an exporter or rejected by the ingest are not visible.
+The telemetry is reported real by the instrumentation; provenance is not cryptographically verified (provenance_verified is false).
+Things a reviewer could check
+Read the recorded error.type of the attempt in the evidence.
+Check whether other traces in the same time window show failed attempts for the same provider and model (Trace Explorer, status filter).
+Check whether the application retries this call; retries are not visible without llminsight.call_id.
+Check the provider's status page for the time of the evidence; this platform cannot confirm an incident.
+Not assessed by these rules
+elevated latency
+:
+No approved comparison basis exists: the contracts define no latency objective or threshold (threshold alerts, M21, are P1), and a percentile of peer attempts would flag a fixed share of attempts by construction. Durations are reported as facts only.
+semantic quality
+:
+Correctness, relevance and hallucination cannot be assessed from metadata: no prompt or completion is stored (ADR-19) and no evaluation result is linked to this trace.
+prompt quality
+:
+Prompt content is never stored (ADR-19) and is not reconstructed.
+provider outage
+:
+One trace cannot establish a provider-wide incident, and no provider status data is stored.
+root cause
+:
+Findings are hypotheses; a root-cause decision needs human review (Failure Review, ADR-10).
+llminsight.diagnostics.v1
+·
+llminsight.diagnostics.rules.v1

@@ -1,0 +1,1236 @@
+{
+  "overview": {
+    "url": "http://127.0.0.1:3001/?project=1&provenance=real&from=2026-11-12T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z",
+    "height": 3658,
+    "boxes": [
+      {
+        "tag": "H1",
+        "text": "Overview",
+        "x": 272,
+        "y": 73,
+        "w": 721.046875,
+        "h": 32
+      },
+      {
+        "tag": "SECTION",
+        "text": "Latest stored trace\n\nIn this window and with these filters. Read from the backend at 23:21:46 UTC; it changes only when the page r",
+        "x": 272,
+        "y": 725.5,
+        "w": 1136,
+        "h": 164
+      },
+      {
+        "tag": "H2",
+        "text": "Latest stored trace",
+        "x": 289,
+        "y": 738.5,
+        "w": 1102,
+        "h": 24
+      },
+      {
+        "tag": "SECTION",
+        "text": "Traces\nM01\n\n84\n\nReal (asserted)\n84\nSynthetic\n0\nMixed\n0\nUnknown\n0",
+        "x": 272,
+        "y": 921.5,
+        "w": 272,
+        "h": 175
+      },
+      {
+        "tag": "H3",
+        "text": "Traces",
+        "x": 289,
+        "y": 938.5,
+        "w": 39.140625,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Trace error rate\nM05\n\n3.57%\n\n3 of 84 traces with status error\n\nTrace-level; separate from the inference error rate.",
+        "x": 560,
+        "y": 921.5,
+        "w": 272,
+        "h": 175
+      },
+      {
+        "tag": "H3",
+        "text": "Trace error rate",
+        "x": 577,
+        "y": 938.5,
+        "w": 96.921875,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Inference attempts\nM02 · M03\n\n84\n\nLogical calls: 84\n\nReal (asserted)\n84\nSynthetic\n0\nUnknown\n0",
+        "x": 848,
+        "y": 921.5,
+        "w": 272,
+        "h": 175
+      },
+      {
+        "tag": "H3",
+        "text": "Inference attempts",
+        "x": 865,
+        "y": 938.5,
+        "w": 119.765625,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Inference error rate\nM04\n\n3.57%\n\n3 of 84 attempts failed (span status ERROR)\n\nEach physical attempt counts, retries included.",
+        "x": 1136,
+        "y": 921.5,
+        "w": 272,
+        "h": 175
+      },
+      {
+        "tag": "H3",
+        "text": "Inference error rate",
+        "x": 1153,
+        "y": 938.5,
+        "w": 123.03125,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Inference latency p95\nM06\n\n7.12 s\n\n○\nLow sample (p99)\n\np50 624.7 ms · p99 21.39 s · n = 84\n\nInference span durations. Time to firs",
+        "x": 272,
+        "y": 1112.5,
+        "w": 272,
+        "h": 236.5
+      },
+      {
+        "tag": "H3",
+        "text": "Inference latency p95",
+        "x": 289,
+        "y": 1129.5,
+        "w": 136.171875,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Trace latency p95\nM07\n\n7.14 s\n\n○\nLow sample (p99)\n\np50 825.2 ms · p99 21.40 s · n = 84\n\nRoot spans only.",
+        "x": 560,
+        "y": 1112.5,
+        "w": 272,
+        "h": 236.5
+      },
+      {
+        "tag": "H3",
+        "text": "Trace latency p95",
+        "x": 577,
+        "y": 1129.5,
+        "w": 110.0625,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Tokens (input / output)\nM08 · M09\n\n14,422/7,112\n\nNot reported: input by 3, output by 3 of 84 attempts\n\nCached input not reported ·",
+        "x": 848,
+        "y": 1112.5,
+        "w": 272,
+        "h": 236.5
+      },
+      {
+        "tag": "H3",
+        "text": "Tokens (input / output)",
+        "x": 865,
+        "y": 1129.5,
+        "w": 146.84375,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Known cost (estimate)\nM10 · M11 · M12\n\nUnknown: no call priced\n\n▲\nIncomplete: 84 of 84 unpriced\n\nPriced 0 of 84 attempts · unknown",
+        "x": 1136,
+        "y": 1112.5,
+        "w": 272,
+        "h": 236.5
+      },
+      {
+        "tag": "H3",
+        "text": "Known cost (estimate)",
+        "x": 1153,
+        "y": 1129.5,
+        "w": 141.1875,
+        "h": 20
+      },
+      {
+        "tag": "SECTION",
+        "text": "Trends\n\nBackend trend buckets per UTC hour; the last bucket (2026-11-12 23:00–00:00 UTC) may still be filling.\n\nInference attempts",
+        "x": 272,
+        "y": 1381,
+        "w": 1136,
+        "h": 414
+      },
+      {
+        "tag": "H2",
+        "text": "Trends",
+        "x": 272,
+        "y": 1381,
+        "w": 1136,
+        "h": 24
+      },
+      {
+        "tag": "SECTION",
+        "text": "Inference attempts\n\nPhysical attempts per UTC hour, split by span status\n\nNot failed\nFailed\n00:00\n04:00\n08:00\n12:00\n16:00\n23:00\n0\n",
+        "x": 272,
+        "y": 1439,
+        "w": 368,
+        "h": 356
+      },
+      {
+        "tag": "H3",
+        "text": "Inference attempts",
+        "x": 289,
+        "y": 1456,
+        "w": 272.671875,
+        "h": 20
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 290,
+        "y": 1787,
+        "w": 330.671875,
+        "h": 920
+      },
+      {
+        "tag": "SECTION",
+        "text": "Traces\n\nTraces by start time per UTC hour, split by trace status\n\nNot error\nError\n00:00\n04:00\n08:00\n12:00\n16:00\n23:00\n0\n6\n12\n18\n24",
+        "x": 651,
+        "y": 1439,
+        "w": 363,
+        "h": 356
+      },
+      {
+        "tag": "H3",
+        "text": "Traces",
+        "x": 668,
+        "y": 1456,
+        "w": 283.8125,
+        "h": 20
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 669,
+        "y": 1787,
+        "w": 344.375,
+        "h": 920
+      },
+      {
+        "tag": "SECTION",
+        "text": "Known cost (USD, estimate)\n\nComputed rows only. A bucket without a bar has no priced call; unknown-cost calls are in the table and",
+        "x": 1030,
+        "y": 1439,
+        "w": 363,
+        "h": 356
+      },
+      {
+        "tag": "H3",
+        "text": "Known cost (USD, estimate)",
+        "x": 1047,
+        "y": 1456,
+        "w": 329,
+        "h": 20
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 1048,
+        "y": 1779,
+        "w": 512.34375,
+        "h": 920
+      },
+      {
+        "tag": "SECTION",
+        "text": "Provenance breakdown\n\nTrace columns use trace provenance; attempt and cost columns use each attempt's own provenance. Totals come ",
+        "x": 272,
+        "y": 1827,
+        "w": 1121,
+        "h": 285
+      },
+      {
+        "tag": "H2",
+        "text": "Provenance breakdown",
+        "x": 272,
+        "y": 1827,
+        "w": 1121,
+        "h": 24
+      },
+      {
+        "tag": "TABLE",
+        "text": "Traces, inference attempts and cost by provenance\nProvenance\tTraces\tError traces\tInference attempts\tFailed\tKnown cost\tUnknown-cost",
+        "x": 273,
+        "y": 1886,
+        "w": 1119,
+        "h": 225
+      },
+      {
+        "tag": "SECTION",
+        "text": "Failed attempts by error type\n\nThe instrumentation's error.type identifier; a hypothesis about cause is not implied.\n\nFailed infer",
+        "x": 272,
+        "y": 2144,
+        "w": 1121,
+        "h": 129
+      },
+      {
+        "tag": "H2",
+        "text": "Failed attempts by error type",
+        "x": 272,
+        "y": 2144,
+        "w": 1121,
+        "h": 24
+      },
+      {
+        "tag": "TABLE",
+        "text": "Failed inference attempts by error type (M04)\nError type\tFailed attempts\n504\t3",
+        "x": 273,
+        "y": 2203,
+        "w": 1119,
+        "h": 69
+      },
+      {
+        "tag": "SECTION",
+        "text": "Model and provider activity\n\nLargest groups by attempts per provider, requested model, response model and prompt version (backend ",
+        "x": 272,
+        "y": 2305,
+        "w": 1121,
+        "h": 706.65625
+      },
+      {
+        "tag": "H2",
+        "text": "Model and provider activity",
+        "x": 272,
+        "y": 2305,
+        "w": 1121,
+        "h": 24
+      },
+      {
+        "tag": "TABLE",
+        "text": "Inference attempts by model group (M15)\nProvider\tRequested model\n→ response model\n\tPrompt version\tAttempts\tError rate\tp95 latency ",
+        "x": 273,
+        "y": 2364,
+        "w": 1119,
+        "h": 618
+      },
+      {
+        "tag": "SECTION",
+        "text": "Cost and usage sources\n\nWhy a cost is unknown, which price versions priced the known cost, and where token counts came from.\n\nUnkn",
+        "x": 272,
+        "y": 3071.65625,
+        "w": 1121,
+        "h": 562
+      },
+      {
+        "tag": "H2",
+        "text": "Cost and usage sources",
+        "x": 272,
+        "y": 3071.65625,
+        "w": 1121,
+        "h": 24
+      },
+      {
+        "tag": "TABLE",
+        "text": "Unknown-cost attempts by reason (M11)\nReason\tAttempts\nNo verified price for the model, tier or time\t81\nProvider usage not reported",
+        "x": 273,
+        "y": 3130.65625,
+        "w": 1119,
+        "h": 175
+      },
+      {
+        "tag": "TABLE",
+        "text": "Price versions used for known cost (M13)\nProvider / model\tPrice version\tPriced attempts\nNo attempt in this window has a computed c",
+        "x": 273,
+        "y": 3323.65625,
+        "w": 1119,
+        "h": 116
+      },
+      {
+        "tag": "TABLE",
+        "text": "Token usage source (M14)\nSource\tAttempts\nProvider reported\t81\nEstimated\t0\nUnknown\t3",
+        "x": 273,
+        "y": 3457.65625,
+        "w": 1119,
+        "h": 175
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      }
+    ]
+  },
+  "models": {
+    "url": "http://127.0.0.1:3001/models?project=1&provenance=real&from=2026-11-12T23%3A12%3A19.505872Z&to=2026-11-12T23%3A21%3A09.291303Z",
+    "height": 1459,
+    "boxes": [
+      {
+        "tag": "H1",
+        "text": "Model comparison",
+        "x": 272,
+        "y": 73,
+        "w": 768,
+        "h": 32
+      },
+      {
+        "tag": "SECTION",
+        "text": "Inference attempts per group\n\nPhysical attempts (M02) split by span status (M04), backend order.\n\nNot failed\nFailed ✕\n0\n2\n4\n6\n8\ngc",
+        "x": 272,
+        "y": 727.5,
+        "w": 556,
+        "h": 272
+      },
+      {
+        "tag": "H3",
+        "text": "Inference attempts per group",
+        "x": 289,
+        "y": 744.5,
+        "w": 350.296875,
+        "h": 20
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 290,
+        "y": 991.5,
+        "w": 547.390625,
+        "h": 328
+      },
+      {
+        "tag": "SECTION",
+        "text": "p95 attempt latency per group (ms)\n\nFrom span durations (M06). ▲ = fewer than 20 samples. Groups without a sample have no bar.\n\n0 ",
+        "x": 844.5,
+        "y": 727.5,
+        "w": 548.5,
+        "h": 272
+      },
+      {
+        "tag": "H3",
+        "text": "p95 attempt latency per group (ms)",
+        "x": 861.5,
+        "y": 744.5,
+        "w": 499.71875,
+        "h": 20
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 862.5,
+        "y": 991.5,
+        "w": 562.796875,
+        "h": 328
+      },
+      {
+        "tag": "SECTION",
+        "text": "Comparison table\n\nOne row per provider, requested model, response model and prompt version (M15). Exact backend values; unknown st",
+        "x": 272,
+        "y": 1031.5,
+        "w": 1121,
+        "h": 388
+      },
+      {
+        "tag": "H2",
+        "text": "Comparison table",
+        "x": 272,
+        "y": 1031.5,
+        "w": 1121,
+        "h": 24
+      },
+      {
+        "tag": "TABLE",
+        "text": "Model and provider groups (GET /api/v1/models/compare)\nProvider · requested → response model · prompt\tProvenance (attempts)\tAttemp",
+        "x": 273,
+        "y": 1090.5,
+        "w": 1196.59375,
+        "h": 328
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      }
+    ]
+  },
+  "traces": {
+    "url": "http://127.0.0.1:3001/traces?project=1&provenance=real&from=2026-11-12T23%3A12%3A19.505872Z&to=2026-11-12T23%3A21%3A09.291303Z",
+    "height": 2105,
+    "boxes": [
+      {
+        "tag": "H1",
+        "text": "Traces",
+        "x": 272,
+        "y": 73,
+        "w": 743.890625,
+        "h": 32
+      },
+      {
+        "tag": "SECTION",
+        "text": "Traces in the window, newest first (GET /api/v1/traces)\nService · trace ID\tStarted (UTC)\tDuration\tStatus\tSpans\tInference calls\tPro",
+        "x": 272,
+        "y": 613.5,
+        "w": 1136,
+        "h": 1452
+      },
+      {
+        "tag": "TABLE",
+        "text": "Traces in the window, newest first (GET /api/v1/traces)\nService · trace ID\tStarted (UTC)\tDuration\tStatus\tSpans\tInference calls\tPro",
+        "x": 273,
+        "y": 614.5,
+        "w": 1615.015625,
+        "h": 1400
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      {
+        "tag": "TABLE",
+        "text": "",
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      }
+    ]
+  }
+}

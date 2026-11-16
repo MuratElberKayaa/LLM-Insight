@@ -1,0 +1,21 @@
+{
+  "model": "gemini-3.1-flash-lite",
+  "checked_at": null,
+  "valid_until": null,
+  "daily_reset_at": null,
+  "exclusive_account": false,
+  "all_scopes_checked": false,
+  "free_account": false,
+  "model_access": false,
+  "project_1_ingest": false,
+  "limits": {
+    "rpm": 15,
+    "rpd": 500,
+    "tpm": 250000,
+    "tpd": null,
+    "itpm": null,
+    "otpm": null
+  },
+  "daily_used": {"requests": null, "tokens": null},
+  "usage_basis": "account_usage_snapshot"
+}

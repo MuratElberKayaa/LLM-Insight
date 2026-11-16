@@ -1,0 +1,5 @@
+{
+  "list": "http://127.0.0.1:3001/experiments?project=1",
+  "groq": "http://127.0.0.1:3001/experiments/live/2?project=1",
+  "gemini": "http://127.0.0.1:3001/experiments/live/1?project=1"
+}

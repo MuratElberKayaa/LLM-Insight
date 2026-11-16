@@ -2,8 +2,10 @@ import type { Latency, Overview, TraceProvenance } from "../../lib/api/types";
 import { formatUsd } from "../../lib/decimal";
 import { formatInt, formatMs, formatPercent } from "../../lib/format";
 import { PROVENANCE_LABEL } from "../../lib/provenance";
+import { toTrendPoints } from "../../lib/trend";
 import { Flag, MetricCard } from "../metric-card";
 import { PROVENANCE_SWATCH } from "../provenance-badge";
+import { ErrorTypeChips, RateSplit, Sparkline } from "./kpi-visuals";
 
 /** Per-provenance counts under a KPI (the backend's own buckets, never re-summed). */
 function ProvenanceSplit<P extends TraceProvenance>({ counts, keys }: { counts: Record<P, number>; keys: readonly P[] }) {
@@ -61,6 +63,11 @@ export function KpiGrid({ data }: { data: Overview }) {
   const logical = inf.logical_calls.total;
   const knownCost = cost.known_cost_usd === null ? null : formatUsd(cost.known_cost_usd);
   const perCall = cost.known_cost_per_call_usd === null ? null : formatUsd(cost.known_cost_per_call_usd);
+  // The backend's own trend buckets (same series as the trend charts below).
+  const trend = toTrendPoints(data.trend);
+  const traceSpark = trend.map((p) => ({ label: p.label, value: p.traces }));
+  const attemptSpark = trend.map((p) => ({ label: p.label, value: p.attempts }));
+  const traceRates = TRACE_KEYS.map((k) => ({ provenance: k, n: t.error_rate.by_provenance[k].n, rate: t.error_rate.by_provenance[k].rate }));
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="kpi-grid">
@@ -69,6 +76,7 @@ export function KpiGrid({ data }: { data: Overview }) {
         label="Traces"
         metricId="M01"
         value={formatInt(t.count.total)}
+        visual={t.count.total > 0 && <Sparkline points={traceSpark} noun="Traces" testId="kpi-traces-spark" />}
         footer={<ProvenanceSplit counts={t.count.by_provenance} keys={TRACE_KEYS} />}
       />
       <MetricCard
@@ -78,6 +86,7 @@ export function KpiGrid({ data }: { data: Overview }) {
         state={traceErr.n === 0 ? "no_data" : "known"}
         value={formatPercent(traceErr.rate)}
         detail={traceErr.n > 0 && <p className="tabular">{formatInt(traceErr.error_traces)} of {formatInt(traceErr.n)} traces with status error</p>}
+        visual={traceErr.n > 0 && <RateSplit rows={traceRates} unit="traces" testId="kpi-trace-error-split" />}
         footer={<span>Trace-level; separate from the inference error rate.</span>}
       />
       <MetricCard
@@ -85,6 +94,7 @@ export function KpiGrid({ data }: { data: Overview }) {
         label="Inference attempts"
         metricId="M02 · M03"
         value={formatInt(inf.attempts.total)}
+        visual={inf.attempts.total > 0 && <Sparkline points={attemptSpark} noun="Inference attempts" testId="kpi-attempts-spark" />}
         detail={
           inf.attempts.total > 0 && (
             <p className="tabular">
@@ -102,6 +112,7 @@ export function KpiGrid({ data }: { data: Overview }) {
         state={infErr.n === 0 ? "no_data" : "known"}
         value={formatPercent(infErr.rate)}
         detail={infErr.n > 0 && <p className="tabular">{formatInt(infErr.failed)} of {formatInt(infErr.n)} attempts failed (span status ERROR)</p>}
+        visual={infErr.failed > 0 && <ErrorTypeChips items={inf.errors.by_error_type} truncated={inf.errors.by_error_type_truncated} />}
         footer={<span>Each physical attempt counts, retries included.</span>}
       />
       <MetricCard

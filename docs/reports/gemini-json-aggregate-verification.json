@@ -1,0 +1,241 @@
+{
+  "verified_at_utc": "2026-11-12T15:40:43.045471+00:00",
+  "project_id": 1,
+  "trace_id": "c2072abb44af2a52c7aa1b31ddd64f78",
+  "checks": {
+    "trace_id": true,
+    "two_spans_one_usage": true,
+    "parent_link": true,
+    "usage_link": true,
+    "models": true,
+    "tokens_match": true,
+    "one_attempt": true,
+    "real_asserted": true,
+    "unknown_cost": true,
+    "no_errors": true,
+    "zero_dropped": true,
+    "metadata_keys_only": true,
+    "prompt_version": true,
+    "not_truncated": true,
+    "listed": true
+  },
+  "trace_latency_ms": 7731.6461,
+  "model_latency_ms": 7715.5063,
+  "usage": [
+    {
+      "provider": "gcp.gemini",
+      "requested_model": "gemini-3.1-flash-lite",
+      "response_model": "gemini-3.1-flash-lite",
+      "input_tokens": 189,
+      "output_tokens": 50,
+      "reasoning_output_tokens": null,
+      "cost_usd": null,
+      "cost_status": "unknown",
+      "cost_unknown_reason": "price_missing",
+      "provenance": "real",
+      "provenance_verified": false,
+      "attempt_id": 1
+    }
+  ],
+  "span_links": [
+    {
+      "span_id": "d4e473434157b1b6",
+      "parent_span_id": null,
+      "kind": "INTERNAL",
+      "role": "root",
+      "duration_ns": "7731646100"
+    },
+    {
+      "span_id": "d50c7380945eb3b3",
+      "parent_span_id": "d4e473434157b1b6",
+      "kind": "CLIENT",
+      "role": "child",
+      "duration_ns": "7715506300"
+    }
+  ],
+  "overview": {
+    "traces": {
+      "total": 4,
+      "by_provenance": {
+        "real": 4,
+        "synthetic": 0,
+        "mixed": 0,
+        "unknown": 0
+      }
+    },
+    "tokens": {
+      "n": 4,
+      "input_tokens": 813,
+      "calls_with_unknown_input_tokens": 0,
+      "output_tokens": 545,
+      "calls_with_unknown_output_tokens": 0,
+      "subsets": {
+        "cached_input_tokens": {
+          "sum": null,
+          "calls_reporting": 0
+        },
+        "cache_write_input_tokens": {
+          "sum": null,
+          "calls_reporting": 0
+        },
+        "reasoning_output_tokens": {
+          "sum": 367,
+          "calls_reporting": 2
+        }
+      }
+    },
+    "cost": {
+      "n": 4,
+      "currency": "USD",
+      "known_cost_usd": null,
+      "computed_cost_calls": 0,
+      "unknown_cost_calls": 4,
+      "unknown_cost_by_reason": {
+        "price_missing": 4,
+        "usage_missing": 0,
+        "usage_inconsistent": 0
+      },
+      "cost_complete": false,
+      "known_cost_per_call_usd": null
+    }
+  },
+  "json_aggregate_comparison": [
+    {
+      "provider": "gcp.gemini",
+      "requested_model": "gemini-3.1-flash-lite",
+      "response_model": "gemini-3.1-flash-lite",
+      "prompt_version": "cmp-v1.json-aggregate",
+      "attempts": 1,
+      "errors": {
+        "failed": 0,
+        "succeeded": 1,
+        "rate": 0.0
+      },
+      "latency": {
+        "n": 1,
+        "p50_ms": 7715.5063,
+        "p95_ms": 7715.5063,
+        "p99_ms": 7715.5063,
+        "low_sample": {
+          "p95": true,
+          "p99": true
+        }
+      },
+      "tokens": {
+        "n": 1,
+        "input_tokens": 189,
+        "calls_with_unknown_input_tokens": 0,
+        "output_tokens": 50,
+        "calls_with_unknown_output_tokens": 0,
+        "subsets": {
+          "cached_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "cache_write_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "reasoning_output_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          }
+        }
+      },
+      "usage_source": {
+        "provider_reported": 1,
+        "estimated": 0,
+        "unknown": 0
+      },
+      "cost": {
+        "currency": "USD",
+        "known_cost_usd": null,
+        "computed_cost_calls": 0,
+        "unknown_cost_calls": 1,
+        "unknown_cost_by_reason": {
+          "price_missing": 1,
+          "usage_missing": 0,
+          "usage_inconsistent": 0
+        },
+        "cost_complete": false
+      },
+      "by_provenance": {
+        "real": 1,
+        "synthetic": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "provider": "groq",
+      "requested_model": "openai/gpt-oss-20b",
+      "response_model": "openai/gpt-oss-20b",
+      "prompt_version": "cmp-v1.json-aggregate",
+      "attempts": 1,
+      "errors": {
+        "failed": 0,
+        "succeeded": 1,
+        "rate": 0.0
+      },
+      "latency": {
+        "n": 1,
+        "p50_ms": 627.1528,
+        "p95_ms": 627.1528,
+        "p99_ms": 627.1528,
+        "low_sample": {
+          "p95": true,
+          "p99": true
+        }
+      },
+      "tokens": {
+        "n": 1,
+        "input_tokens": 244,
+        "calls_with_unknown_input_tokens": 0,
+        "output_tokens": 363,
+        "calls_with_unknown_output_tokens": 0,
+        "subsets": {
+          "cached_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "cache_write_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "reasoning_output_tokens": {
+            "sum": 307,
+            "calls_reporting": 1
+          }
+        }
+      },
+      "usage_source": {
+        "provider_reported": 1,
+        "estimated": 0,
+        "unknown": 0
+      },
+      "cost": {
+        "currency": "USD",
+        "known_cost_usd": null,
+        "computed_cost_calls": 0,
+        "unknown_cost_calls": 1,
+        "unknown_cost_by_reason": {
+          "price_missing": 1,
+          "usage_missing": 0,
+          "usage_inconsistent": 0
+        },
+        "cost_complete": false
+      },
+      "by_provenance": {
+        "real": 1,
+        "synthetic": 0,
+        "unknown": 0
+      }
+    }
+  ],
+  "real_trace_ids_in_window": [
+    "c2072abb44af2a52c7aa1b31ddd64f78",
+    "1890d7a6199574d9e98b378255ecbd11",
+    "a3b64d4430992defa205c5b93a101fd4",
+    "60a48d470e21b8d36f288f2bfc9329fe"
+  ],
+  "next_page": false
+}

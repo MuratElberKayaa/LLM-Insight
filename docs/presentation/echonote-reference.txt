@@ -1,0 +1,497 @@
+PAGE 1
+S O F T İ T O Y A P A Y Z E K Â A K A D E M İ S İ
+EchoNote
+Yapay Zekâ Destekli Ders Kayıt ve Çalışma Asistanı
+“Dersi sen dinle, notları biz çıkaralım.”
+
+
+PAGE 2
+01 · PROBLEM
+Uzun ders kayıtlarında bilgiye ulaşmak neden zor?
+01
+Zaman kaybı
+Bir ders kaydı çoğu zaman 30 dakika ile bir saatten uzun sürüyor.
+Öğrenci tek bir konuyu tekrar etmek istediğinde bile kaydın büyük
+bir kısmını yeniden dinlemek zorunda kalıyor.
+02
+Bilgiye erişim güçlüğü
+Ses kaydında arama yapmak mümkün değil. Belirli bir kavramın
+hangi dakikada anlatıldığını bulmak için kayıt ileri geri sarılıyor ve
+bu süreç dikkati dağıtıyor.
+03
+Manuel çalışma yükü
+Not çıkarmak, özet hazırlamak ve sınav için soru oluşturmak
+saatler alabiliyor. Bu iş yükü, öğrencinin asıl öğrenmeye
+ayırabileceği zamanı azaltıyor.
+TEK BİR DERS KAYDI
+Aradığınız kavram bu dalganın neresinde?
+İhtiyaç duyulan birkaç dakikalık bölüm, uzun kaydın içinde
+kayboluyor. EchoNote bu bölüme doğrudan ulaşmayı
+hedefliyor.
+?
+00:00
+13:54
+27:48
+41:42
+55:36
+69:30
+EchoNote
+02 / 14
+
+
+PAGE 3
+02 · ÇÖZÜM
+Ders kaydından akıllı çalışma deneyimine
+Ses kaydını yükle
+Öğrenci ders kaydını Streamlit arayüzünden yükler. Kayıt,
+sonraki tüm adımlar için başlangıç noktasıdır.
+Otomatik transkript oluştur
+faster-whisper, konuşmayı her cümlenin başlangıç saniyesini
+içeren zaman damgalı bir metne dönüştürür.
+Yapay zekâ ile konulara ayır
+Gemini, transkripti konu bölümlerine ayırır; her bölüm için
+başlık, kısa özet ve anahtar kelimeler üretir.
+Quiz, bilgi kartları ve özetlerle çalış
+Üretilen materyaller kaynak saniyelerine bağlıdır; öğrenci
+istediği an kaydın ilgili yerine dönebilir.
+Ana sayfa
+Ana sayfada yeni ders kaydı yüklenir ve daha önce işlenen dersler kütüphane kartları olarak
+listelenir.
+DEĞER ÖNERİSİ
+“Tek bir ses kaydı, birden fazla çalışma materyaline dönüşür.”
+EchoNote
+03 / 14
+1
+2
+3
+4
+
+
+PAGE 4
+03 · SİSTEM MİMARİSİ
+Uçtan uca yapay zekâ mimarisi
+YEREL İŞLEME
+BULUT
+Kullanıcı
+öğrenci
+→
+Streamlit
+web arayüzü
+→
+Ses dosyası
+ders kaydı
+→faster-whisper
+konuşma tanıma
+→Zaman damgalı
+transkript
+→Gemini analizi
+LLM · bulut
+→
+Çalışma
+materyalleri
+Konu bölümleme
+Özetleme
+Quiz ve bilgi kartları
+Soru-cevap
+Anlamsal arama
+Ders kütüphanesi
+Dışa aktarma
+BİLEŞENLERİN GÖREVLERİ · HİBRİT YAKLAŞIM
+Streamlit ARAYÜZ
+Kayıt yükleme, ders kütüphanesi,
+bölümler, quiz ve arama gibi tüm
+ekranları sunar. Kullanıcı ile yapay zekâ
+bileşenleri arasındaki köprüdür.
+faster-whisper YEREL
+Ses kaydını kullanıcının bilgisayarında
+yazıya döker. Uzun ses dosyaları buluta
+gönderilmeden işlendiği için bu adımda
+API maliyeti oluşmaz.
+Gemini BULUT
+Zaman damgalı transkripti analiz ederek
+bölümler, özetler, quiz soruları ve
+cevaplar üretir. Çıktılar Pydantic
+şemalarıyla kontrol edilir.
+TEKNOLOJİLER
+Python
+Streamlit
+Whisper
+Gemini
+Pydantic
+NumPy
+EchoNote
+04 / 14
+
+
+PAGE 5
+04 · KONUŞMA TANIMA MODELİ
+Yerel ve hızlı konuşma tanıma
+SEÇİLEN MODEL
+faster-whisper · medium
+✓
+Türkçe konuşma tanıma
+Model, Türkçe konuşmayı doğrudan yazıya dökebiliyor. Bu sayede Türkçe
+anlatılan derslerde ek bir çeviri adımına gerek kalmıyor.
+✓
+Yerel ses işleme
+Ses dosyası buluta yüklenmeden kullanıcının bilgisayarında işleniyor. Uzun
+kayıtlar için hem gizlilik hem de API maliyeti açısından avantaj sağlıyor.
+✓
+GPU hızlandırması ve CPU yedeği
+Whisper modeli, NVIDIA GPU desteği sayesinde kayıtları daha kısa sürede
+işleyebiliyor. GPU kullanılamadığında uygulama otomatik olarak CPU üzerinde
+çalışmayı deniyor.
+✓
+Özel akademik terim desteği
+Derste geçen özel isimler ve terimler modele ipucu olarak verilebiliyor.
+Böylece bu kelimelerin transkriptte daha doğru yazılması hedefleniyor.
+GERÇEK PERFORMANS ÖRNEĞİ
+8,7×
+gerçek zamandan yaklaşık 8,7 kat hızlı
+Ses süresi
+33 dk 9 sn
+Transkripsiyon süresi
+228,1 sn
+33 dakika 9 saniyelik ders kaydı, yaklaşık 3 dakika 48 saniyede (228,1 sn)
+metne dönüştürüldü.
+Örnek çalıştırma kaydı · 1988,9 sn ÷ 228,1 sn ≈ 8,7
+EchoNote
+05 / 14
+
+
+PAGE 6
+05 · DİL MODELİ SEÇİMİ
+Yapay zekâ ile akıllı metin analizi
+Ana model
+gemini-3.5-flash
+Bölümleme, özet, quiz, bilgi kartı ve soru-cevap
+üretiminde kullanılır.
+— Uzun ders transkriptlerini bir bütün olarak
+değerlendirebildiği için konular arasındaki
+bağlantıyı koruyabiliyor.
+— Pydantic sayesinde yapay zekâdan gelen
+verilerin belirli bir yapıda olması sağlanıyor.
+Böylece başlık, özet ve zaman bilgileri
+uygulama içinde düzenli işlenebiliyor.
+Alternatif modeller
+gemini-2.5-flash
+gemini-3.5-flash-lite
+Ana model kullanılamadığında devreye giren
+yedek modeller.
+— Ana model hata verdiğinde veya yanıt
+alınamadığında uygulama alternatif
+modellerle yeniden deniyor.
+— Tüm modeller aynı şemayla çalıştığı için
+hangi model yanıt verirse versin çıktı aynı
+biçimde işleniyor.
+Anlamsal arama
+gemini-embedding-2
+Metinleri anlamlarını temsil eden sayısal
+vektörlere dönüştüren embedding modeli.
+— Anlamsal arama, kullanıcının yazdığı
+kelimenin transkriptte birebir geçmesine
+ihtiyaç duymaz.
+— Bunun yerine sorgu ve transkript blokları
+vektöre çevrilerek anlamca yakın metinler
+bulunmaya çalışılır.
+ORTAK ÇIKTI SÖZLEŞMESİ
+Transkript
+→
+Gemini
+→
+Yapılandırılmış JSON
+→
+Pydantic doğrulaması
+→
+Arayüz
+EchoNote
+06 / 14
+
+
+PAGE 7
+06 · PROMPT MÜHENDİSLİĞİ · BÖLÜMLEME
+Yapılandırılmış prompt tasarımı
+GİRDİ
+Zaman damgalı transkript
+Her konuşma parçası, başladığı
+saniyeyle birlikte modele gönderilir.
+Model bölüm sınırlarını bu saniyelere
+bakarak belirler.
+[sn]
+[sn]
+[sn]
+[sn]
+[sn]
+[sn]
+[sn]
+[sn]
+→
+SİSTEM TALİMATI
+Bölümleme kuralları
+01
+Bölümler kronolojik sırayla oluşturulur; dersin anlatım
+akışı korunur.
+02
+Her bölüm, aynı konuyu anlatan ardışık konuşmaları
+bir araya getirir.
+03
+Başlıklar en fazla 8 kelimeden oluşur; kısa ve kolay
+taranabilir kalır.
+04
+Özetler 2–4 Türkçe cümleden oluşur ve bölümün ana
+fikrini verir.
+05
+Transkriptte geçmeyen bilgilerin eklenmemesi
+açıkça istenir.
+06
+Başlangıç ve bitiş saniyeleri transkriptteki zaman
+damgalarından alınır.
+→
+JSON ÇIKTI · PYDANTIC ŞEMASI
+[
+{
+"baslik": string · ≤ 8 kelime,
+"baslangic_sn": sayı,
+"bitis_sn": sayı,
+"ozet": 2–4 cümle,
+"anahtar_kelimeler": [string]
+}, …
+]
+Model serbest metin yerine bu yapıda yanıt verir.
+Şemaya uymayan çıktı doğrulamadan geçmez;
+geçerli bölümlerin saniyeleri arayüzde “Oynat”
+düğmesine bağlanır.
+EchoNote
+07 / 14
+
+
+PAGE 8
+07 · PROMPT MÜHENDİSLİĞİ · ÇALIŞMA
+Quiz ve bilgi kartlarıyla aktif çalışma
+10
+SORU
+Çoktan seçmeli quiz
+Gemini, transkriptteki bilgilere dayanarak 10 soru hazırlar. Her
+soruda dört seçenek, doğru cevap, kısa bir açıklama ve sorunun
+dayandığı kaynak saniyesi bulunur.
+4 seçenek
+doğru cevap
+açıklama
+kaynak saniyesi
+15
+KART
+Bilgi kartları
+Dersin önemli kavramlarından 15 soru-cevap kartı oluşturulur.
+Kartlar, sınav öncesi kısa tekrarlar ve kavram ezberi için hızlı bir
+çalışma yöntemi sunar.
+Öğrenci geri bildirimi: Quiz sonunda doğru ve yanlış cevaplar listelenir. Yanlış
+yapılan sorunun yanındaki “Dinle” düğmesiyle kaydın ilgili bölümü yeniden
+açılabilir.
+Quiz sonuç ekranı
+İZLENEBİLİRLİK
+Her quiz sorusu
+→
+kaynak saniyesi
+→
+ilgili ses bölümü oynatılır
+EchoNote
+08 / 14
+
+
+PAGE 9
+08 · PROMPT MÜHENDİSLİĞİ · SORU-CEVAP
+Ders içeriğine dayalı akıllı soru-cevap sistemi
+01 Doğrudan soru sorma
+Kullanıcı, ders sırasında anlamadığı bir
+kavramı veya öğrenmek istediği bilgiyi
+doğal Türkçeyle sorabilir. Sistem, soruyu
+ilgili dersin transkripti üzerinden
+değerlendirerek cevap oluşturur.
+02 Transkript tabanlı yanıt
+üretimi
+Gemini modeli, soruyu dersin zaman
+damgalı transkriptiyle birlikte analiz eder.
+Böylece cevapların ders içeriğine
+dayanması hedeflenir.
+03 Bilgi bulunamadığında
+kontrollü yanıt
+Prompt içinde modele, transkriptte olmayan
+bilgileri genel bilgisiyle tamamlamaması
+talimatı verilir. Cevap bulunamazsa
+bulundu=false ile bu durum kullanıcıya
+belirtilir.
+04 Zaman damgalı kaynak
+gösterimi
+Sistem, cevabı en fazla üç kaynak
+saniyesiyle ilişkilendirir. Kullanıcı bu
+zamanlara tıklayarak ders kaydının ilgili
+bölümünü yeniden dinleyebilir.
+Gerçek “Soru sor” sekmesi: soru giriş alanı, “Sor” düğmesi ve üç önerilen soru.
+Arayüz, cevapların yalnızca bu dersin transkriptine dayandığını kullanıcıya açıkça
+belirtir.
+Kullanıcı sorusu
+→
+Ders transkripti
+→
+Gemini analizi
+→
+Kaynaklı cevap
+“EchoNote, yalnızca cevap vermeyi değil, öğrenciyi cevabın kaynağına yönlendirmeyi de amaçlar.”
+EchoNote
+09 / 14
+
+
+PAGE 10
+09 · ANLAMSAL ARAMA
+Kelimelerin ötesinde anlam tabanlı arama
+KELİME TABANLI
+Birebir eşleşme
+Aranan kelimenin transkriptte geçtiği
+yerleri bulur. Hızlı ve kesindir; ancak
+aynı fikir farklı kelimelerle
+anlatıldığında o bölümü kaçırabilir.
+ANLAMSAL
+Anlam benzerliği
+Yazılan kelimenin transkriptte birebir
+geçmesine ihtiyaç duymaz.
+Embedding vektörleri aracılığıyla
+anlamca yakın metin parçalarını
+bulmayı amaçlar.
+NumPy
+cos(θ) = (A · B) / (‖A‖ · ‖B‖)
+Embedding, bir metnin anlamını sayılardan oluşan bir vektörle temsil eder. Kosinüs
+benzerliği iki vektörün ne kadar aynı yönü gösterdiğini ölçer; skor yükseldikçe
+metinler anlamca birbirine yaklaşır.
+Arama ekranı · “tımar”
+Arayüzde arama “Bu derste”, “Tüm derslerde” ve “Anlama göre” seçenekleriyle yapılabiliyor.
+TEKNİK SÜREÇ
+Transkript
+→
+Metin blokları
+→
+Embedding
+→
+Vektör benzerliği
+→
+En ilgili sonuçlar
+EchoNote
+10 / 14
+
+
+PAGE 11
+10 · PERFORMANS VE GECİKME
+Gerçek ders kayıtlarında işlem performansı
+Whisper işlem süresi
+Ses süresi
+Transkripsiyon
+Karahanlılar ve Gazneliler
+8,7× gerçek zaman
+1.988,9 sn ses
+228,1 sn Whisper
+Türk-İslam Toprak ve Ordu Sistemi
+8,3× gerçek zaman
+1.194,6 sn ses
+143,7 sn Whisper
+XVIII. Yüzyıl Osmanlı Tarihi
+7,5× gerçek zaman
+4.170,4 sn ses
+554,9 sn Whisper
+Gerçek zaman katsayısı, ses süresinin işlem süresine oranıdır. Örneğin yaklaşık 69,5
+dakikalık Osmanlı Tarihi kaydı 554,9 saniyede, yani yaklaşık 9 dakika 15 saniyede metne
+dönüştürüldü.
+Gemini bölümleme gecikmesi
+Transkriptten konu bölümlerinin üretilme süresi
+Karahanlılar ve Gazneliler
+16,78 sn
+Türk-İslam Toprak ve Ordu Sistemi
+14,23 sn
+XVIII. Yüzyıl Osmanlı Tarihi
+30,64 sn
+Bölümleme süresi transkript uzadıkça artıyor; ancak en uzun
+kayıtta bile yaklaşık 31 saniyede tamamlandı. Bu süre,
+transkripsiyon süresinin yanında oldukça kısa kalıyor.
+Kaynak: EchoNote örnek çalıştırma kayıtları. Gerçek zaman katsayısı = ses süresi ÷ Whisper işlem süresi (hesaplanmıştır).
+EchoNote
+11 / 14
+
+
+PAGE 12
+11 · TOKEN KULLANIMI VE MALİYET
+Yapay zekâ kullanımında maliyet yönetimi
+Gemini bölümleme · token kullanımı
+Girdi
+Çıktı
+Karahanlılar
+toplam 11.005
+9.669 girdi
+1.336 çıktı
+Toprak ve Ordu
+toplam 7.697
+6.903 girdi
+794 çıktı
+Osmanlı Tarihi
+toplam 25.681
+24.072 girdi
+1.609 çıktı
+Girdi token sayısı transkriptin uzunluğuyla birlikte artıyor. En uzun kayıt olan Osmanlı Tarihi,
+Karahanlılar kaydına göre yaklaşık 2,5 kat daha fazla girdi tokenı kullandı.
+MALİYET FORMÜLÜ
+( Girdi token / 1.000.000
+× Girdi birim fiyatı )
++
+( Çıktı token / 1.000.000
+× Çıktı birim fiyatı )
+Token nedir? Token, yapay zekâ modelinin metni işlerken
+kullandığı küçük metin parçalarıdır. Girdi tokenları modele
+gönderilen transkripti ve talimatları, çıktı tokenları ise modelin
+ürettiği yanıtı ifade eder.
+Yerel Whisper işlemi Gemini API maliyetinden ayrıdır; ses
+dosyası için token harcanmaz.
+API maliyeti, girdi ve çıktı token sayısının güncel birim fiyatlarla
+çarpılmasıyla hesaplanır. Bu sunumda doğrulanmamış fiyat veya
+dolar tutarı verilmemiştir.
+EchoNote
+12 / 14
+
+
+PAGE 13
+12 · UYGULAMA ARAYÜZÜ VE DEMO
+Öğrenci odaklı etkileşimli deneyim
+Ana sayfa
+Konu özetleri
+Quiz
+Soru-cevap
+Arama
+Transkript
+01 Dersi aç
+Kütüphaneden ders seçilir;
+kayıt, bölümler ve transkript
+tek sayfada açılır.
+→
+02 Konuyu incele
+Bölüm özetleri ve anahtar
+kelimelerle dersin akışı hızlıca
+gözden geçirilir.
+→
+03 Kendini sına
+Quiz ve bilgi kartlarıyla
+öğrenilenler test edilir;
+sonuçlar hemen görülür.
+→
+04 Kaynağı dinle
+“Oynat” veya “Dinle” ile
+kaydın ilgili saniyesinden
+dinlemeye başlanır.
+CANLI DEMO
+Uygulamanın demo videosu
+sunum sırasında ayrıca
+gösterilebilir.
+EchoNote
+13 / 14
+
+
+PAGE 14
+EchoNote
+Dinlediğiniz için teşekkürler.
+Sena Yetim
+YAPAY ZEKA YAZILIMCILIĞI-2

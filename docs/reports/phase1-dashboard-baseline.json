@@ -1,0 +1,10 @@
+{
+  "checked_at": "2026-11-12T16:28:25.192874+00:00",
+  "project_id": 1,
+  "provider_requests": 0,
+  "dashboard_http": {
+    "overview": 200,
+    "traces": 200,
+    "models_compare": 200
+  }
+}

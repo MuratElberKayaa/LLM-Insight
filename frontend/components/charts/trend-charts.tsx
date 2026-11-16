@@ -5,16 +5,18 @@ import type { NameType, ValueType } from "recharts/types/component/DefaultToolti
 import { formatCompact, formatInt } from "../../lib/format";
 import type { TrendPoint } from "../../lib/trend";
 
-// Hex mirrors of the CSS tokens in app/globals.css (SVG attributes cannot read CSS variables
-// in every browser). Validated on the chart surface #15171c.
+// The CSS tokens of app/globals.css, by reference, so charts follow the light/dark theme with
+// no JavaScript. Recharts writes these as SVG presentation attributes (fill="var(...)"), which
+// resolve custom properties. Each theme's steps are validated on its own chart surface.
 export const CHART = {
-  surface: "#15171c",
-  grid: "#24272f",
-  axis: "#3a3e48",
-  tick: "#8f8d86",
-  series1: "#3987e5",
-  critical: "#d03b3b",
-  cursor: "rgba(255,255,255,0.05)",
+  surface: "var(--color-surface)",
+  grid: "var(--color-grid)",
+  axis: "var(--color-axis)",
+  tick: "var(--color-ink-3)",
+  series1: "var(--color-series-1)",
+  critical: "var(--color-critical)",
+  unknown: "var(--color-unknown)",
+  cursor: "var(--color-cursor)",
 } as const;
 
 const HEIGHT = 220;

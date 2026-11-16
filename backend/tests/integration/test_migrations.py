@@ -28,8 +28,8 @@ PHASE2_TABLES = [*PHASE1_TABLES, "model_prices"]
 PHASE4B_TABLES = ["test_datasets", "failure_reviews", "test_cases"]
 PHASE4C_TABLES = ["experiments", "experiment_results"]
 PRE_EXPERIMENT_TABLES = [*PHASE2_TABLES, *PHASE4B_TABLES]
-TABLES = [*PRE_EXPERIMENT_TABLES, *PHASE4C_TABLES]
-HEAD = "0005"
+TABLES = [*PRE_EXPERIMENT_TABLES, *PHASE4C_TABLES, "imported_experiments"]
+HEAD = "0006"
 GATE_A_TRIGGERS = {
     "failure_reviews": {"failure_reviews_integrity"},
     "test_cases": {"test_cases_review_eligibility"},
@@ -190,6 +190,8 @@ def _constraint_defs(conn, contype: str) -> dict[str, str]:
 def test_foreign_keys(conn):
     fks = _constraint_defs(conn, "f")
     assert fks == {
+        "fk_imported_experiments_projects": "FOREIGN KEY (project_id)"
+        " REFERENCES projects(id) ON DELETE CASCADE",
         "fk_project_api_keys_projects": "FOREIGN KEY (project_id)"
         " REFERENCES projects(id) ON DELETE CASCADE",
         "fk_traces_projects": "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE",
@@ -220,6 +222,7 @@ def test_foreign_keys(conn):
 
 def test_unique_constraints(conn):
     assert _constraint_defs(conn, "u") == {
+        "uq_imported_experiments_project_id_run_id_model": "UNIQUE (project_id, run_id, model)",
         "uq_projects_name": "UNIQUE (name)",
         "uq_project_api_keys_prefix": "UNIQUE (prefix)",
         "uq_traces_project_id_trace_id": "UNIQUE (project_id, trace_id)",
@@ -246,6 +249,7 @@ def test_indexes(conn):
     )
     defs = {name: d.split(" USING btree ", 1)[1] for name, d in rows.all()}
     assert defs == {
+        "ix_imported_experiments_project_id": "(project_id)",
         "ix_project_api_keys_project_id": "(project_id)",
         "ix_traces_project_id_started_at": "(project_id, started_at DESC)",
         "ix_spans_project_id_trace_id_start_ns": "(project_id, trace_id, start_ns)",
@@ -285,7 +289,8 @@ def test_check_constraints_match_models(conn):
     assert db_checks == model_checks
     # 1 + 3 + 7 + 18 + 24 + 11 (model_prices) + 1 (test_datasets) + 9 (failure_reviews)
     # + 4 (test_cases) + 8 (experiments) + 11 (experiment_results)
-    assert len(db_checks) == 97
+    # 0006 adds run-id, model-length and payload-hash-length checks.
+    assert len(db_checks) == 100
 
 
 def test_model_prices_append_only_triggers_installed(conn):

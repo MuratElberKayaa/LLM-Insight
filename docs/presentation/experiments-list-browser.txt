@@ -1,0 +1,42 @@
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+
+LOCAL ONLYServed on loopback; no login, not for public deployment.
+
+●
+Backend ready
+Experiments
+
+Compare prompt versions using fixed rules. Review completed live comparisons and scripted mock experiments. Opening a report runs nothing.
+
+Fetched 06:18:35 UTC
+New mock experiment
+↻
+Refresh
+PROJECT
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+
+Showing project #1 · phase3a-demo
+
+Completed live comparisons
+
+Actual model calls on synthetic inputs. Imported rule results with verified trace links; six cases per prompt, no general winner.
+
+Completed live A/B comparisons
+Model	Prompt versions	V1 passed	V2 passed	Source	Calls
+Groq · GPT-OSS 20B	live-ticket-v1 vs live-ticket-v2	3 / 6	5 / 6	Live calls · imported results	12 · 6 paired cases
+Gemini · Flash Lite	live-ticket-v1 vs live-ticket-v2	3 / 6	5 / 6	Live calls · imported results	12 · 6 paired cases
+Mock experiments
+Experiments of this project, newest first
+Experiment	Dataset	A vs B	Model	Mode	State	Results	Started (UTC)
+#58	golden-synthetic-v1	golden-prompt-v2 vs golden-prompt-v1	gpt-4.1-mini	MOCK · SYNTHETIC	Finished	24	2026-11-12 12:03:44 UTC
+#57	golden-synthetic-v1	golden-prompt-v2 vs golden-prompt-v1	gpt-5-mini-2025-08-07	MOCK · SYNTHETIC	Finished	24	2026-11-09 08:29:45 UTC

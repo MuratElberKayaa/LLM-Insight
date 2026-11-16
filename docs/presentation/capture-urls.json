@@ -1,0 +1,8 @@
+{
+  "overview": "http://127.0.0.1:3001/?project=1&from=2026-11-12T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z&provenance=real",
+  "models": "http://127.0.0.1:3001/models?project=1&from=2026-11-12T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z&provenance=real",
+  "traces": "http://127.0.0.1:3001/traces?project=1&from=2026-11-12T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z&provenance=real",
+  "trace": "http://127.0.0.1:3001/traces/6f7261b074977c1b8a4804d43b103add?project=1",
+  "experiments": "http://127.0.0.1:3001/experiments?project=1",
+  "datasets": "http://127.0.0.1:3001/datasets?project=1"
+}

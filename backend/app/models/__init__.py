@@ -3,6 +3,7 @@
 from app.models.base import Base
 from app.models.dataset import TestCase, TestDataset
 from app.models.experiment import Experiment, ExperimentResult
+from app.models.imported_experiment import ImportedExperiment
 from app.models.pricing import ModelPrice
 from app.models.project import Project, ProjectApiKey
 from app.models.review import FailureReview
@@ -14,6 +15,7 @@ __all__ = [
     "Experiment",
     "ExperimentResult",
     "FailureReview",
+    "ImportedExperiment",
     "ModelPrice",
     "Project",
     "ProjectApiKey",

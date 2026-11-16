@@ -89,11 +89,11 @@ class FreePlanModel:
     sources: tuple[str, ...]
 
 
-# Released 2026-11-12 in an evidence-only change; execution stays disabled
-# (groq_adapter.REAL_EXECUTION_ENABLED is false). The official pages list openai/gpt-oss-20b as a
-# production model, not deprecated; its Free Plan limits come only from the operator's account
-# Limits page, recorded in docs/reports/phase-8g.md (the public tables are for the Developer plan).
-FREE_PLAN_EVIDENCE_VERIFIED_AT: datetime | None = datetime(2026, 11, 12, 6, 0, tzinfo=UTC)
+# Local development evidence: GPT-OSS retained; Qwen added after the operator confirmed
+# Billing Free and Qwen Limits 30 RPM / 1K RPD / 8K TPM / 200K TPD in this session.
+# Public tables do not establish account limits. Evidence and the confirmation receipt time:
+# docs/reports/two-phase-integration.md. Execution still requires fresh per-call consent/policy.
+FREE_PLAN_EVIDENCE_VERIFIED_AT: datetime | None = datetime(2026, 11, 12, 16, 19, 56, tzinfo=UTC)
 FREE_PLAN_MODELS: Mapping[str, FreePlanModel] = {
     "openai/gpt-oss-20b": FreePlanModel(
         "openai/gpt-oss-20b",
@@ -101,6 +101,14 @@ FREE_PLAN_MODELS: Mapping[str, FreePlanModel] = {
             "https://console.groq.com/docs/models",
             "https://console.groq.com/docs/deprecations",
             "operator: account Limits page (docs/reports/phase-8g.md)",
+        ),
+    ),
+    "qwen/qwen3.8-27b": FreePlanModel(
+        "qwen/qwen3.8-27b",
+        (
+            "https://console.groq.com/docs/model/qwen/qwen3.8-27b",
+            "https://console.groq.com/docs/deprecations",
+            "operator: Billing Free and account Limits (docs/reports/two-phase-integration.md)",
         ),
     ),
 }
@@ -377,12 +385,18 @@ def _read_body(request: httpx.Request) -> _Body | None:
         body: Any = json.loads(request.content)
     except (ValueError, RecursionError, httpx.RequestNotRead):
         return None
-    if not isinstance(body, dict) or set(body) != _BODY_KEYS:
+    if not isinstance(body, dict):
+        return None
+    qwen = body.get("model") == "qwen/qwen3.8-27b"
+    keys = (_BODY_KEYS - {"include_reasoning"}) | {"reasoning_format"} if qwen else _BODY_KEYS
+    if set(body) != keys:
+        return None
+    if qwen and body["reasoning_format"] != "hidden":
         return None
     messages = body["messages"]
     if (
         body["stream"] is not False
-        or body["include_reasoning"] is not False
+        or (not qwen and body["include_reasoning"] is not False)
         or not isinstance(messages, list)
         or len(messages) != 1
         or not isinstance(messages[0], dict)
