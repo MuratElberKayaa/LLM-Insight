@@ -7,14 +7,19 @@
 - six Phase 8 Bandit findings reviewed and added as BL-46…BL-51 (F8 ×5, F6 ×1);
 - Gemini execution switch re-locked (`gemini_live.REAL_EXECUTION_ENABLED = False`, user decision); evidence date, timeout and the Groq/OpenRouter switches unchanged.
 
+- follow-up: `next` / `eslint-config-next` 16.4.3 → 16.4.5 for GHSA-mfr8-8qww-v76h, without an exception, after 16.4.5 reached 14 days (R143).
+
 Results:
 - SDK suite: 2724/2724;
 - backend suite: 1953 passed, plus one intermittent resilience test that then passed 4/4;
 - pip-audit and Bandit gates: PASS;
-- `verify_phase0`: 865 PASS.
+- `verify_phase0`: 865 PASS;
+- CI after `6a099ac`: every job except `frontend` passed;
+- `next` 16.4.5 follow-up: production npm audit 0, typecheck, lint, unit 393/393, build and bundle scan pass.
 
-The npm R102 chain matches again with the committed policy. Still open:
-- **waiting for the two-week rule:** `next` 16.4.5 for GHSA-mfr8-8qww-v76h, published after the push. The user chose no exception; it becomes eligible 2026-11-17T18:01Z, and the `frontend` job fails until then.
+- R144: `picomatch` GHSA-fc5q-39xc-vjpf (dev-only, no patched version) accepted by the user as a temporary dev-only exception until 2026-11-30. The audit-policy checker now evaluates advisories that share packages. Results: audit-policy tests 107/107, full npm audit policy CONDITIONAL PASS (R102 + R144), production audit 0.
+
+Still open: R102 and R144 both need re-review by 2026-11-30.
 
 [Report](reports/phase-8h-ci.md).
 
