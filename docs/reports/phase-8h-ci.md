@@ -110,6 +110,8 @@ With the committed policy, the R102 chain matches again (21:00Z run). **The poli
 
 **Correction (2026-11-17, §9):** the 21:00Z run most likely read npm's local cache. On 2026-11-17 a cached run again showed `eslint-config-next` without its `typescript-eslint` edge, while two runs with `--prefer-online` (as in CI, which has no cache) both listed it. The local cache, not the registry, was the moving part. The R102 chain is correct as committed.
 
+**Second correction (2026-11-18, §10): the correction above was wrong.** CI run 44195058127 on `b27190b` failed with the same `gone: eslint-config-next`, and a clean `npm ci` plus `npm audit` with an empty npm cache reproduces it. The report without the edge is the current one. The local cache held `typescript-eslint` metadata from before 8.73.0 and kept serving it even with `--prefer-online`.
+
 **New, after the push:** GHSA-mfr8-8qww-v76h, published 2026-11-16T18:51Z, moderate. It is in `next` `>=16.3.0 <=16.4.4`: "use cache" combined with `unstable_cache()` can disclose cached data across root params. The fix is in 16.4.5.
 - **Exposure:** `next` is a production dependency, so the gate rejects it with no exception possible, which is correct.
 - **Our use:** the code base has no `'use cache'`, `unstable_cache` or `cacheComponents` (grep of `app`, `components`, `lib`, `next.config.*`), so the vulnerable path is not used.
@@ -137,7 +139,7 @@ With the committed policy, the R102 chain matches again (21:00Z run). **The poli
 
 1. **`next` 16.4.5:** resolved after the commit `6a099ac`, in a follow-up change (§8, R143).
 2. **Gemini execution switch:** resolved, re-locked (§7).
-3. **R102 deadline 2026-11-30.** `typescript-eslint` 8.73.0 (`minimatch ^11.0.1`) becomes eligible on 2026-11-30T17:06Z. Raising the eight `@typescript-eslint` overrides then would remove R102.
+3. **R102 deadline 2026-11-30.** Its chain was narrowed on 2026-11-18 (§10). `typescript-eslint` 8.73.0 (`minimatch ^11.0.1`) becomes eligible on 2026-11-30T17:06Z. Raising the eight `@typescript-eslint` overrides then would remove R102.
 4. **`picomatch` GHSA-fc5q-39xc-vjpf (R144):** accepted as a temporary dev-only exception until 2026-11-30, the same deadline as R102. User decision of 2026-11-17 (§9).
 
 ## 7. Gemini execution switch re-locked (user decision, 2026-11-17)
@@ -208,7 +210,7 @@ A later Gemini run therefore needs a new reviewed release of the switch, as ADR-
 
 The user chose a temporary dev-only exception over leaving the `frontend` job red. It runs to **2026-11-30**, the same review deadline as R102.
 
-**Captured reports:** two full audits with `npm audit --json --prefer-online`, matching what CI sees with no cache. They are identical except for npm's `effects` and `fixAvailable`. They are saved as `frontend/tests/fixtures/npm-audit/full-r102-r144-2026-11-17.json` and `…-run2.json`:
+**Captured reports** (superseded on 2026-11-18, §10: they were built from stale cached metadata and do not match CI): two full audits with `npm audit --json --prefer-online`. They are identical except for npm's `effects` and `fixAvailable`. They are saved as `frontend/tests/fixtures/npm-audit/full-r102-r144-2026-11-17.json` and `…-run2.json`:
 - 15 findings: 9 high, 6 moderate;
 - `picomatch` carries GHSA-fc5q-39xc-vjpf (npm source 1247710, `<=4.0.7`, CWE-1333, high). npm writes the entry range as `*`, because no published version is outside the advisory;
 - every R102 dependent is also reached by the new advisory. R102's own chain (7 packages) and copy (minimatch 10.2.6) are unchanged.
@@ -261,5 +263,53 @@ Every other rule is unchanged: exact chains, copies, versions, dev-only nodes, G
 | `check:bundle` | 0 findings |
 
 **Residual risk:**
-- **A local cached audit can fail the gate.** It may omit the `eslint-config-next` → `typescript-eslint` edge. CI has no npm cache, but if it ever sees that variant, the job fails closed, and the R102 chain needs a review rather than a silent update.
+- **A local cached audit can fail the gate** (corrected in §10: the cached variant is the one *with* the `eslint-config-next` → `typescript-eslint` edge).
 - **Both exceptions end on 2026-11-30.** On that date `typescript-eslint` 8.73.0 also becomes eligible for R102. R144 needs a patched `picomatch` first.
+
+## 10. R102 chain re-reviewed: `eslint-config-next` removed (user decision, 2026-11-18)
+
+**CI:** run 44195058127 on `b27190b` (2026-11-17T22:57Z). Six jobs passed. `frontend` failed in "Full dependency audit": `R102 (GHSA-g3hv-75wg-m249): dependency chain changed (new: none; gone: eslint-config-next)`. The later frontend steps did not run there.
+
+**Reproduced as CI runs it:** a copy of `package.json`, `package-lock.json`, `scripts/` and `security/`, then `npm ci --no-audit --no-fund --ignore-scripts` and `npm audit --json`, both with an empty `--cache`. Same single error.
+
+**Cause:** registry metadata, not the lockfile.
+- `eslint-config-next` 16.4.5 depends on `typescript-eslint ^8.56.0`.
+- `typescript-eslint` 8.73.0 (npm time 2026-11-16T17:07:26Z) is outside the advisory (`<=8.72.2`) and inside that range.
+- npm counts a dependent as vulnerable through a dependency only when no version in the declared range is fixed, so with current metadata `eslint-config-next` is reached only through `@next/eslint-plugin-next` (R144).
+- The 2026-11-08 reports predate 8.73.0, so the edge was right when R102 was approved.
+- On this machine the user npm cache kept the pre-8.73.0 metadata and listed the edge even with `--prefer-online`. An empty cache did not, with or without `--prefer-online`. §4's 2026-11-17 correction and §9's capture note had this backwards.
+
+**Policy** (`frontend/security/npm-audit-policy.json`):
+- **R102:** `eslint-config-next` removed from the chain, which drops from 7 to 6 packages and has no direct package any more. The justification records the re-review. Advisory, ranges, severity, CWE, source, copy (`minimatch` 10.2.6), approval date and deadline are unchanged. This narrows the exception and accepts nothing new.
+- **R144:** unchanged except one justification sentence naming the overlap. `eslint-config-next` stays one of its 13 dependents.
+- **Checker:** unchanged.
+
+**Fixtures:**
+- **New:** `full-r102-r144-2026-11-18.json` and `…-run2.json`, two runs on the clean tree, each with its own empty cache (09:24Z). They agree in content; only key order differs.
+- **Kept:** the 2026-11-17 pair, now as the stale-metadata reports.
+
+**Tests:** 107 → **110**, all passing.
+- **Section 18** now uses the 2026-11-18 reports. New or changed tests:
+  - R102's only change is the removed `eslint-config-next`;
+  - both 2026-11-17 reports fail with exactly one error, `new: eslint-config-next`;
+  - the edge added back fails;
+  - the 2026-11-08 chain fails on the CI report;
+  - the 2026-11-18 reports show `eslint-config-next` via `@next/eslint-plugin-next` only, `typescript-eslint` `<=8.72.2` and the lockfile's `^8.56.0`.
+- **Section 16 CLI test:** the CLI always reads the current policy, so the 2026-11-08 report now exits 1 with `new: eslint-config-next`. Its acceptance under the 2026-11-08 policy is still tested through `evaluate()`.
+- **Control run:** the same tests against the committed policy (`b27190b`) fail 8.
+
+**Frontend checks** (CI `frontend` steps, Node 22.23.4, every audit with an empty `--cache`):
+
+| Step | Result |
+|---|---|
+| `npm audit --omit=dev --audit-level=info` | 0 vulnerabilities |
+| `npm run test:audit-policy` | 110 passed |
+| Full `npm audit --json` + `audit-policy.mjs` | **CONDITIONAL PASS**: 15 findings, R102 and R144 |
+| typecheck, lint | PASS |
+| `npm test` | 393/393 |
+| build | PASS |
+| `check:bundle` | 0 findings |
+
+**Residual risk:**
+- **Local audits must use an empty cache** (`npm audit --json --cache <empty folder>`) to match CI. A stale user cache gives the old edge and fails the gate closed.
+- **Both exceptions end on 2026-11-30.** R102 then needs `typescript-eslint` 8.73.0 (`minimatch ^11.0.1`), eligible under the two-week rule from 2026-11-30T17:07Z. R144 needs a patched `picomatch` first.

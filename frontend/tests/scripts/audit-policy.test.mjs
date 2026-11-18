@@ -1,10 +1,11 @@
 // Fail-closed tests for scripts/audit-policy.mjs (R102 and R144 npm audit exception gate). No network:
 // the reports are fixtures captured from real `npm audit --json` runs (tests/fixtures/npm-audit/):
-// 2026-11-17 (minimatch R102 + picomatch R144, captured with --prefer-online), 2026-11-08 for the
+// 2026-11-18 (minimatch R102 + picomatch R144, captured as CI does: clean npm ci, empty npm cache),
+// 2026-11-17 (same tree, built from stale cached registry metadata; must fail), 2026-11-08 for the
 // revised R102 advisory, 2026-11-01 kept unchanged as historical evidence, and synthetic mutations.
 // Sections 1-17 and the mutation sweep test the gate with the R102-only policy as committed on
 // 2026-11-08 (policy-r102-2026-11-08.json, a byte-for-byte copy), which matches their reports;
-// section 18 tests the current security/npm-audit-policy.json against the 2026-11-17 reports.
+// section 18 tests the current security/npm-audit-policy.json against the 2026-11-18 reports.
 // Run: npm run test:audit-policy
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -498,10 +499,13 @@ describe("16. real npm audit report of 2026-11-08 (R102 only)", () => {
     assert.equal(CLEAN_REPORT.metadata.vulnerabilities.total, 0);
     assert.deepEqual(CLEAN_REPORT.vulnerabilities, {});
   });
-  test("CLI on the real report: exit 0 before the deadline, 1 after it", () => {
+  test("CLI on the real 2026-11-08 report with the current policy: exit 1 (R102 chain re-reviewed on 2026-11-18)", () => {
+    // That report predates typescript-eslint 8.73.0, so it still lists eslint-config-next; the CLI always reads
+    // security/npm-audit-policy.json. The policy of 2026-11-08 accepted it (evaluate() tests above).
     const report = path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-08.json");
     const cli = spawnSync(process.execPath, ["scripts/audit-policy.mjs", "--report", report, "--npm-exit-code", "1"], { cwd: root, encoding: "utf8" });
-    assert.equal(cli.status, Date.now() < END_OF_DEADLINE ? 0 : 1, cli.stdout + cli.stderr);
+    assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+    assert.match(cli.stdout + cli.stderr, /R102 .*dependency chain changed \(new: eslint-config-next; gone: none\)/);
   });
 });
 
@@ -718,9 +722,12 @@ describe("17. revised advisory of 2026-11-04: two independent, exact range field
   });
 });
 
-describe("18. 2026-11-17: picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102, current policy", () => {
-  const REPORT = read("tests/fixtures/npm-audit/full-r102-r144-2026-11-17.json");
-  const REPORT_RUN2 = read("tests/fixtures/npm-audit/full-r102-r144-2026-11-17-run2.json");
+describe("18. picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102, current policy", () => {
+  // Captured 2026-11-18 as CI audits: clean npm ci, empty npm cache, current registry metadata.
+  const REPORT = read("tests/fixtures/npm-audit/full-r102-r144-2026-11-18.json");
+  const REPORT_RUN2 = read("tests/fixtures/npm-audit/full-r102-r144-2026-11-18-run2.json");
+  // Captured 2026-11-17 with a local npm cache whose typescript-eslint metadata predates 8.73.0.
+  const STALE_REPORTS = ["full-r102-r144-2026-11-17.json", "full-r102-r144-2026-11-17-run2.json"].map((f) => read(`tests/fixtures/npm-audit/${f}`));
   const NOW_1117 = Date.parse("2026-11-17T19:00:00Z");
   const R144 = CURRENT_POLICY.exceptions.find((e) => e.riskId === "R144");
   const CURRENT_R102 = CURRENT_POLICY.exceptions.find((e) => e.riskId === "R102");
@@ -740,7 +747,7 @@ describe("18. 2026-11-17: picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102,
     "tinyglobby",
     "typescript-eslint",
   ];
-  const SHARED = R144_CHAIN.filter((n) => n in R102.chain);
+  const SHARED = R144_CHAIN.filter((n) => n in CURRENT_R102.chain);
   const current = (over = {}) => ({ report: clone(REPORT), npmExitCode: 1, lockfile: clone(LOCKFILE), policy: clone(CURRENT_POLICY), now: NOW_1117, ...over });
   const changed = (fn, over = {}) => {
     const i = current(over);
@@ -761,7 +768,8 @@ describe("18. 2026-11-17: picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102,
       }
     }
   });
-  test("npm's run-to-run variation (effects, fixAvailable) is the only difference between the two runs", () => {
+  test("the two CI-equivalent runs agree on everything except npm's run-to-run fields (effects, fixAvailable)", () => {
+    // The 2026-11-18 runs happen to be equal in content (only their key order differs); the 2026-11-17 pair shows the variation.
     const strip = (r) => {
       const vulnerabilities = clone(r.vulnerabilities);
       for (const v of Object.values(vulnerabilities)) {
@@ -770,8 +778,9 @@ describe("18. 2026-11-17: picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102,
       }
       return vulnerabilities;
     };
-    assert.notDeepEqual(REPORT_RUN2.vulnerabilities, REPORT.vulnerabilities);
     assert.deepEqual(strip(REPORT_RUN2), strip(REPORT));
+    assert.notDeepEqual(STALE_REPORTS[1].vulnerabilities, STALE_REPORTS[0].vulnerabilities);
+    assert.deepEqual(strip(STALE_REPORTS[1]), strip(STALE_REPORTS[0]));
   });
   test("R144 records exactly the verified advisory (literal values)", () => {
     assert.equal(CURRENT_POLICY.schemaVersion, 2);
@@ -796,15 +805,28 @@ describe("18. 2026-11-17: picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102,
     assert.deepEqual(Object.keys(R144.chain).sort(), R144_CHAIN);
     assert.deepEqual(Object.entries(R144.chain).filter(([, l]) => l.isDirect).map(([n]) => n), ["eslint-config-next"]);
     for (const name of R144_CHAIN) assert.deepEqual(R144.chain[name].nodes, REPORT.vulnerabilities[name].nodes, name);
-    assert.deepEqual(SHARED, Object.keys(R102.chain).sort(), "every R102 dependent is also an R144 dependent");
+    assert.deepEqual(SHARED, Object.keys(CURRENT_R102.chain).sort(), "every R102 dependent is also an R144 dependent");
   });
-  test("R102 is unchanged in every checked field; only its explanatory text names R144", () => {
+  test("R102 re-review of 2026-11-18: only eslint-config-next left the chain; every other checked field is unchanged", () => {
     for (const key of Object.keys(R102)) {
-      if (key === "justification" || key === "blockingConditions") continue;
+      if (key === "justification" || key === "blockingConditions" || key === "chain") continue;
       assert.deepEqual(CURRENT_R102[key], R102[key], key);
     }
+    const { "eslint-config-next": removed, ...rest } = R102.chain;
+    assert.deepEqual(removed, { isDirect: true, nodes: ["node_modules/eslint-config-next"] });
+    assert.deepEqual(CURRENT_R102.chain, rest);
+    assert.equal(Object.keys(CURRENT_R102.chain).length, 6);
+    assert.ok(Object.values(CURRENT_R102.chain).every((l) => !l.isDirect), "R102 now has no direct dependent");
     assert.match(CURRENT_R102.justification, /R144/);
+    assert.match(CURRENT_R102.justification, /Re-reviewed 2026-11-18/);
     assert.match(CURRENT_R102.blockingConditions[0], /GHSA-fc5q-39xc-vjpf only under R144/);
+  });
+  test("current registry metadata: eslint-config-next reaches only picomatch, typescript-eslint is fixed in its range", () => {
+    for (const report of [REPORT, REPORT_RUN2]) {
+      assert.deepEqual(report.vulnerabilities["eslint-config-next"].via, ["@next/eslint-plugin-next"]);
+      assert.equal(report.vulnerabilities["typescript-eslint"].range, "<=8.72.2");
+    }
+    assert.equal(LOCKFILE.packages["node_modules/eslint-config-next"].dependencies["typescript-eslint"], "^8.56.0");
   });
   test("R102 does not cover picomatch: without R144 the gate fails", () => {
     const i = changed((x) => (x.policy.exceptions = x.policy.exceptions.filter((e) => e.riskId !== "R144")));
@@ -877,11 +899,20 @@ describe("18. 2026-11-17: picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102,
     const i = changed((x) => x.report.vulnerabilities["typescript-eslint"].via.push(advisory({ name: "typescript-eslint", dependency: "typescript-eslint", severity: "moderate" })));
     assertFails(i, /"typescript-eslint": GHSA-2222-3333-4444 is not approved/);
   });
-  test("the npm report read from a stale local cache (eslint-config-next not via typescript-eslint) fails R102", () => {
-    // Observed locally on 2026-11-17 before --prefer-online: CI always audits without a cache.
-    const i = changed((x) => {
-      x.report.vulnerabilities["eslint-config-next"].via = ["@next/eslint-plugin-next"];
-    });
+  test("the real reports built from stale cached metadata (eslint-config-next via typescript-eslint) fail R102 only", () => {
+    // Captured locally on 2026-11-17, even with --prefer-online; CI audits with an empty cache (2026-11-18 reports).
+    for (const report of STALE_REPORTS) {
+      assert.deepEqual(report.vulnerabilities["eslint-config-next"].via, ["@next/eslint-plugin-next", "typescript-eslint"]);
+      const result = assertFails(current({ report: clone(report) }), /R102 .*dependency chain changed \(new: eslint-config-next; gone: none\)/);
+      assert.equal(result.errors.length, 1, result.errors.join("\n"));
+    }
+  });
+  test("the CI report with the eslint-config-next -> typescript-eslint edge added back fails R102", () => {
+    const i = changed((x) => x.report.vulnerabilities["eslint-config-next"].via.push("typescript-eslint"));
+    assertFails(i, /R102 .*dependency chain changed \(new: eslint-config-next; gone: none\)/);
+  });
+  test("the R102 chain of 2026-11-08 (with eslint-config-next) fails on the CI report", () => {
+    const i = changed((x) => (x.policy.exceptions[0].chain = clone(R102.chain)));
     assertFails(i, /R102 .*dependency chain changed \(new: none; gone: eslint-config-next\)/);
   });
   test("both exceptions expire at 2026-12-01T00:00:00Z", () => {
@@ -892,8 +923,8 @@ describe("18. 2026-11-17: picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102,
   test("the current policy accepts no report from before its approval date", () => {
     assertFails(current({ now: Date.parse("2026-11-16T23:59:59Z") }), /R144\): approvedOn is in the future/);
   });
-  test("CLI on the real 2026-11-17 report with the real policy: exit 0 before the deadline, 1 after it", () => {
-    const report = path.join(root, "tests/fixtures/npm-audit/full-r102-r144-2026-11-17.json");
+  test("CLI on the real 2026-11-18 CI-equivalent report with the real policy: exit 0 before the deadline, 1 after it", () => {
+    const report = path.join(root, "tests/fixtures/npm-audit/full-r102-r144-2026-11-18.json");
     const cli = spawnSync(process.execPath, ["scripts/audit-policy.mjs", "--report", report, "--npm-exit-code", "1"], { cwd: root, encoding: "utf8" });
     assert.equal(cli.status, Date.now() < END_OF_DEADLINE ? 0 : 1, cli.stdout + cli.stderr);
     if (cli.status === 0) assert.match(cli.stdout, /CONDITIONAL PASS: .*R102 GHSA-g3hv-75wg-m249 .*R144 GHSA-fc5q-39xc-vjpf \(review by 2026-11-30 UTC\)/);

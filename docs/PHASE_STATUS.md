@@ -1,6 +1,6 @@
 # LLM Insight — Phase Status
 
-**Phase 8H-CI, CI repair after `3472800` (2026-11-17):** in progress; not committed. CI run
+**Phase 8H-CI, CI repair after `3472800` (2026-11-17):** in progress. CI run
 43933570995 failed in three jobs. Each failure was reproduced locally and fixed at its cause:
 - SDK format and 42 `demo_app` mypy errors fixed with real type narrowing;
 - OpenTelemetry 1.45.1 → 1.45.2 for CVE-2026-126360, within the two-week rule (R142);
@@ -18,6 +18,8 @@ Results:
 - `next` 16.4.5 follow-up: production npm audit 0, typecheck, lint, unit 393/393, build and bundle scan pass.
 
 - R144: `picomatch` GHSA-fc5q-39xc-vjpf (dev-only, no patched version) accepted by the user as a temporary dev-only exception until 2026-11-30. The audit-policy checker now evaluates advisories that share packages. Results: audit-policy tests 107/107, full npm audit policy CONDITIONAL PASS (R102 + R144), production audit 0.
+
+- R102 chain re-review (2026-11-18, user decision): CI run 44195058127 on `b27190b` failed only in the full npm audit policy, because with current registry metadata `eslint-config-next` is no longer an R102 dependent (`typescript-eslint` 8.73.0 is fixed and inside its range). It was removed from the R102 chain. Results with empty npm caches, as in CI: audit-policy tests 110/110, full npm audit policy CONDITIONAL PASS, production audit 0, typecheck, lint, unit 393/393, build and bundle scan pass.
 
 Still open: R102 and R144 both need re-review by 2026-11-30.
 
