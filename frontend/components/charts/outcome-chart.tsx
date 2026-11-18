@@ -11,10 +11,11 @@ import { CHART } from "./trend-charts";
  * segments compare like with like. Counts, not rates: per-version pass rates have different
  * denominators and are never set side by side as bars.
  *
- * Encoding (validated with the dataviz palette script on #15171c): series-1 = passed,
- * critical = failed (the Phase 3 pair, deutan ΔE 25.7), neutral gray = not evaluated (ΔE 8.5
- * to red; gray on purpose: an absent result, like the "unknown" provenance). Every segment is
- * also named in the legend, the tooltip and the table.
+ * Encoding (validated with the dataviz palette script on #15171c, and on #fcfcfb for the
+ * light theme): series-1 = passed, critical = failed (the Phase 3 pair, deutan ΔE 25.7),
+ * neutral gray = not evaluated (ΔE 8.5 dark / 9.3 light to red; gray on purpose: an absent
+ * result, like the "unknown" provenance). Every segment is also named in the legend, the
+ * tooltip and the table.
  */
 export interface OutcomePoint {
   key: string;
@@ -25,7 +26,7 @@ export interface OutcomePoint {
 }
 
 const GAP = { stroke: CHART.surface, strokeWidth: 2 } as const;
-const UNKNOWN = "#7d7b75";
+const UNKNOWN = CHART.unknown;
 
 function Body({ active, payload }: { active?: boolean | undefined; payload?: readonly { payload?: unknown }[] | undefined }) {
   const p = payload?.[0]?.payload as OutcomePoint | undefined;

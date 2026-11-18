@@ -18,6 +18,8 @@ TABLES = {
     # Phase 4C (§4.11–4.12)
     "experiments",
     "experiment_results",
+    # ADR-51 (§4.13)
+    "imported_experiments",
 }
 
 

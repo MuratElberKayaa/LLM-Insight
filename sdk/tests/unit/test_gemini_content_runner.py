@@ -12,6 +12,7 @@ import json
 import re
 import sys
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -231,7 +232,8 @@ def test_dry_run_without_configuration_lists_every_refusal():
 
 def test_dry_run_reports_stale_evidence_without_bypassing_it(stub):
     later = gemini_live.FREE_TIER_VERIFIED_AT + gemini_live.FREE_TIER_MAX_AGE
-    later = later.replace(minute=1)
+    # One minute past the age limit, whatever the minute/second of FREE_TIER_VERIFIED_AT.
+    later = later + timedelta(minutes=1)
     env = runner_env(stub.endpoint, LLMI_GEMINI_TIER_CHECKED_ON=later.date().isoformat())
     code, doc, _ = run(["--scenario", SUMMARY_ID], env, now=later, client_factory=NeverCalled())
     assert code == 0 and doc["execution_allowed"] is False

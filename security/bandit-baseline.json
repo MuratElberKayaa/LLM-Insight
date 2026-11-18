@@ -18,7 +18,7 @@
     "date": "2026-11-04",
     "environment": "python:3.12.6-slim-bookworm (linux/amd64), bandit 1.9.4 from security/tools/requirements-audit.lock",
     "method": "bandit_baseline_check.py candidates on the raw report, classified by hand; never regenerated in CI",
-    "reconciled": "2026-11-04, R104-2A: BL-38 (B106, R104-1 test fixture) removed at source, ids kept stable; origin = earliest release tag (phase-1 ... phase-6) whose Bandit scan contains the identical fingerprint and occurrence"
+    "reconciled": "2026-11-04, R104-2A: BL-38 (B106, R104-1 test fixture) removed at source, ids kept stable; origin = earliest release tag (phase-1 ... phase-6) whose Bandit scan contains the identical fingerprint and occurrence; 2026-11-16: BL-46..BL-51 added for the Phase 8 live-comparison scripts (F6 loopback import POST, F8 fixed-argv runners without a shell), origin phase-8"
   },
   "review": {
     "register": "docs/SECURITY.md section 8 (one row per entry)",
@@ -27,9 +27,9 @@
   },
   "totals": {
     "HIGH": 1,
-    "MEDIUM": 5,
-    "LOW": 38,
-    "total": 44
+    "MEDIUM": 6,
+    "LOW": 43,
+    "total": 50
   },
   "findings": [
     {
@@ -735,6 +735,102 @@
       "occurrence": 1,
       "classification": "F8",
       "origin": "phase-3"
+    },
+    {
+      "id": "BL-46",
+      "path": "demo_app/live_batch.py",
+      "line": 19,
+      "test_id": "B404",
+      "test_name": "blacklist",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "cwe": 78,
+      "fingerprint": "045e93142f2dabfa96f1fe18010327fae20a0df918ddebbeffd9b35606795474",
+      "statement_sha256": "7d8752c4c7ea34c2c6d04a15aa31a1f25f62848f8c3c82528fd62439c01a225b",
+      "text_sha256": "ec2bddb99bc03092c525f77f3ebf8eeb496dffd0427a932a9a4b4c36cbdb8ff6",
+      "occurrence": 1,
+      "classification": "F8",
+      "origin": "phase-8"
+    },
+    {
+      "id": "BL-47",
+      "path": "demo_app/live_batch.py",
+      "line": 352,
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "cwe": 78,
+      "fingerprint": "c5971a02cca671167436996ef6e66e2be5f325ac7ffbcd7ae8eda97279457055",
+      "statement_sha256": "4547ddeeed31cd9f01aa9defa323584cc395180ca518eb9d72ddf2fff70b7028",
+      "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
+      "occurrence": 1,
+      "classification": "F8",
+      "origin": "phase-8"
+    },
+    {
+      "id": "BL-48",
+      "path": "demo_app/live_batch.py",
+      "line": 833,
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "cwe": 78,
+      "fingerprint": "9ba897a9b6e5797a345ec869f6b5bd2deb2f922d09b872fd55cd69a2e7419c33",
+      "statement_sha256": "d9d2a8a1fb6f341b3daa6898c1d9e9d9f5f1f96d7557f2d4eae7d05245f78cc7",
+      "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
+      "occurrence": 1,
+      "classification": "F8",
+      "origin": "phase-8"
+    },
+    {
+      "id": "BL-49",
+      "path": "demo_app/live_prompt_ab.py",
+      "line": 16,
+      "test_id": "B404",
+      "test_name": "blacklist",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "cwe": 78,
+      "fingerprint": "ca18ac3feb3ffb5e261354d223adea78f7300157adb681367162bb2aebcd2f6e",
+      "statement_sha256": "7d8752c4c7ea34c2c6d04a15aa31a1f25f62848f8c3c82528fd62439c01a225b",
+      "text_sha256": "ec2bddb99bc03092c525f77f3ebf8eeb496dffd0427a932a9a4b4c36cbdb8ff6",
+      "occurrence": 1,
+      "classification": "F8",
+      "origin": "phase-8"
+    },
+    {
+      "id": "BL-50",
+      "path": "demo_app/live_prompt_ab.py",
+      "line": 144,
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "cwe": 78,
+      "fingerprint": "20aa39f25485e92c65e1b97c78fe60350ad8c07eb0a3508a6a8e8d63e8161f61",
+      "statement_sha256": "da0dce8f852a409d45f4d40efb78c9dff7a7a7efa3b24c04a82aaf1d87880ddd",
+      "text_sha256": "1a415198c8cfff74441d0956de90c592b144f91f7aa8f0fc69c6de818439c7d0",
+      "occurrence": 1,
+      "classification": "F8",
+      "origin": "phase-8"
+    },
+    {
+      "id": "BL-51",
+      "path": "scripts/import_completed_ab.py",
+      "line": 40,
+      "test_id": "B310",
+      "test_name": "blacklist",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "cwe": 22,
+      "fingerprint": "b114d5738277d00b953b4733aa9effe964dab4863c5bbc63dfbfd282c03570c9",
+      "statement_sha256": "27b4102802dca8fcfb21e5185b86d6f04d38f45847d3f26d93408b2ad8ab4df3",
+      "text_sha256": "96abd31d11a743e7bb150a840fefa7f44ef903da582b4fdba5d14e120405d369",
+      "occurrence": 1,
+      "classification": "F6",
+      "origin": "phase-8"
     }
   ]
 }

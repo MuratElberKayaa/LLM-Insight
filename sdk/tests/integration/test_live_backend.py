@@ -144,7 +144,7 @@ def test_a_success_persists_trace_spans_and_usage(live_backend, telemetry, clien
         "deployment.environment.name": "test",
         "telemetry.sdk.name": "opentelemetry",
         "telemetry.sdk.language": "python",
-        "telemetry.sdk.version": "1.45.1",
+        "telemetry.sdk.version": "1.45.2",
         "llminsight.sdk.version": lli.__version__,
     }
     a = child["attributes"]

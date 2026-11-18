@@ -1,0 +1,242 @@
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+
+LOCAL ONLYServed on loopback; no login, not for public deployment.
+
+●
+Backend ready
+←
+All experiments
+Experiment #58
+
+Stored results of a prompt A/B experiment. Numbers are the backend's; nothing is recomputed, and unknown stays unknown.
+
+Fetched 22:32:35 UTC
+↻
+Refresh
+PROJECT
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+
+Showing project #1 · phase3a-demo
+
+SYNTHETIC · mock provider · not a real model
+
+Outputs, token counts and durations come from a deterministic, scripted mock. Nothing was sent to OpenAI or any provider and nothing was spent; costs are estimates for synthetic token counts. Results say nothing about how a real model would behave.
+Experiment
+#58
+Project
+#1
+Dataset
+golden-synthetic-v1 (#58)
+Model (identity and price only)
+gpt-4.1-mini
+Version A
+golden-prompt-v2
+Version B
+golden-prompt-v1
+Execution mode
+MOCK
+simulated provider
+Result provenance
+SYNTHETIC
+24
+24 synthetic, 0 real
+Started (UTC)
+2026-11-12 12:03:44.728000 UTC
+Finished (UTC)
+2026-11-12 12:03:44.779279 UTC
+Budget
+None given (optional for mock runs)
+Evaluation
+Deterministic rules (llminsight.rule.v1); no language model judges anything.
+
+Incomplete or limited evidence
+
+Quality not compared: some cases were evaluated under only one prompt version (timeout, provider error, no scripted output, a limit or the budget), so the versions are not compared.
+Cost not compared: at least one prompt version has results with unknown cost; a partially priced total is not compared with another total.
+Version A (golden-prompt-v2): 2 of 12 results not evaluated (1 expected_output_missing, 1 provider_timeout); they are excluded from its pass rate.
+Version A: only 11 recorded durations; its p95 is unreliable (fewer than 20).
+Version B (golden-prompt-v1): 1 of 12 results not evaluated (1 expected_output_missing); they are excluded from its pass rate.
+Version B: only 12 recorded durations; its p95 is unreliable (fewer than 20).
+What can be compared
+
+As decided by the backend from the stored results; the dashboard adds no judgement.
+
+Quality (deterministic rules)
+No better version is named. Some cases were evaluated under only one prompt version (timeout, provider error, no scripted output, a limit or the budget), so the versions are not compared.
+10 paired · 1 excluded by design (not evaluable under either version) · 1 evaluated under one version only
+Cost (synthetic estimate)
+Not compared. At least one prompt version has results with unknown cost; a partially priced total is not compared with another total.
+Latency
+Reported per version only; no difference is claimed. Durations are scripted synthetic values, not measurements.
+Comparison table
+
+Pass rates exclude not-evaluated results and have their own denominators; compare them only together with the counts.
+
+Per-version results as stored; unknown values are shown as unknown, never as 0.
+Measure	Version A golden-prompt-v2	Version B golden-prompt-v1
+Results stored	12	12
+Passed	4	7
+Failed	6	4
+Not evaluated (NULL)	2
+1 expected_output_missing, 1 provider_timeout
+	1
+1 expected_output_missing
+
+Pass rate = passed / (passed + failed)	40% (4 / 10)	63.64% (7 / 11)
+Duration p50 (synthetic)	352.0 ms	322.5 ms
+Duration p95 (synthetic)	423.5 ms
+n = 11 · fewer than 20: unreliable
+	459.5 ms
+n = 12 · fewer than 20: unreliable
+
+Input tokens (synthetic)	573 n = 11	537 n = 12
+Output tokens (synthetic)	161 n = 11	167 n = 12
+Estimated cost	
+Total unknown. Known part $0.0004868 for 11 of 12 results.
+1 unknown (1 no usage reported).
+	$0.000482 (all 12 results priced)
+Outcomes per prompt version
+
+Counts on the same 12 test cases. Not evaluated results are excluded from the pass rate.
+
+Passed
+Failed ✕
+Not evaluated ○
+0
+3
+6
+9
+12
+A ·golden-prompt-v2
+B ·golden-prompt-v1
+Show data table
+Results per test case
+12 test case ids evaluated; identical under both versions. Open a case for its stored metadata and evaluation details.
+Test case	Version A · golden-prompt-v2	Version B · golden-prompt-v1
+#186	
+●
+Passed
+	
+●
+Passed
+
+#187	
+●
+Passed
+	
+✕
+Failed
+schema_violation
+Output violates the JSON Schema
+
+#188	
+●
+Passed
+	
+✕
+Failed
+output_not_json
+Output is not valid JSON
+
+#189	
+✕
+Failed
+schema_violation
+Output violates the JSON Schema
+	
+●
+Passed
+
+#190	
+●
+Passed
+	
+●
+Passed
+
+#191	
+✕
+Failed
+field_mismatch
+A listed field differs from the expected output
+	
+✕
+Failed
+field_mismatch
+A listed field differs from the expected output
+
+#192	
+✕
+Failed
+exact_mismatch
+Output differs from the expected output
+	
+●
+Passed
+
+#193	
+✕
+Failed
+exact_mismatch
+Output differs from the expected output
+	
+●
+Passed
+
+#194	
+✕
+Failed
+regex_no_match
+Pattern did not match
+	
+●
+Passed
+
+#195	
+✕
+Failed
+regex_no_match
+Pattern did not match
+	
+●
+Passed
+
+#196	
+○
+Not evaluated
+expected_output_missing
+No approved expected output
+	
+○
+Not evaluated
+expected_output_missing
+No approved expected output
+
+#197	
+○
+Not evaluated
+provider_timeout
+Simulated call timed out
+	
+✕
+Failed
+output_not_json
+Output is not valid JSON
+Limitations (from the backend)
+Outputs come from a deterministic mock provider with scripted SYNTHETIC answers; they say nothing about how a real model would behave.
+Durations are scripted synthetic values, not measured latency.
+Costs are estimates for synthetic token counts at the stored price of (openai, model) at the experiment's start; nothing was spent. Unknown cost stays unknown.
+Quality means passing each case's deterministic rule (llminsight.rule.v1); there is no semantic, similarity or language-model judgement.
+Pass rates come from small samples; no statistical significance is computed.
+One simulated attempt per case and prompt version; the mock does not retry.
+0

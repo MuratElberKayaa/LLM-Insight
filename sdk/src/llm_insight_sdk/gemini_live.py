@@ -89,6 +89,7 @@ _UTC_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 # ADR-50: the independent execution switch. Enabling it is a reviewed code change; it is read only
 # here and in `FreeTierSession.reserve`, never from the environment.
+# Re-locked after the Phase 8F local validation (phase-8h-ci.md); enabled only in `3472800`.
 REAL_EXECUTION_ENABLED: bool = False
 
 
@@ -101,7 +102,10 @@ class FreeTierModel:
     sources: tuple[str, ...]
 
 
-FREE_TIER_VERIFIED_AT = datetime(2026, 10, 28, 13, 0, tzinfo=UTC)
+# Public pricing, model and deprecation pages checked at this UTC time (phase-8f.md).
+# This is not an account-tier or quota attestation. Those remain operator prerequisites;
+# the public evidence refresh alone does not authorize execution.
+FREE_TIER_VERIFIED_AT = datetime(2026, 11, 12, 13, 6, 58, tzinfo=UTC)
 FREE_TIER_MAX_AGE = timedelta(days=14)
 ATTESTATION_MAX_AGE_DAYS = 1
 FREE_TIER_MODELS: Mapping[str, FreeTierModel] = {
@@ -121,7 +125,7 @@ MAX_INPUT_TOKENS_CAP = 1024
 MIN_OUTPUT_TOKENS = 16
 MAX_OUTPUT_TOKENS_CAP = 1024
 TIMEOUT_RANGE = (1.0, 30.0)
-DEFAULT_TIMEOUT_SECONDS = 20.0
+DEFAULT_TIMEOUT_SECONDS = 30.0
 RETRIES_RANGE = (0, 0)
 CONCURRENCY_RANGE = (1, 1)
 

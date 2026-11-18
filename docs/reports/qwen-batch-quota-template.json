@@ -1,0 +1,20 @@
+{
+  "model": "qwen/qwen3.8-27b",
+  "checked_at": null,
+  "valid_until": null,
+  "daily_reset_at": null,
+  "exclusive_account": true,
+  "all_scopes_checked": false,
+  "free_account": true,
+  "model_access": true,
+  "project_1_ingest": false,
+  "limits": {
+    "rpm": 30,
+    "rpd": 1000,
+    "tpm": 8000,
+    "tpd": 200000,
+    "itpm": null,
+    "otpm": null
+  },
+  "daily_used": {"requests": null, "tokens": null}
+}

@@ -1,0 +1,626 @@
+{
+  "project": 1,
+  "window": {
+    "from": "2026-11-12T00:00:00.000000Z",
+    "to": "2026-11-13T00:00:00.000000Z"
+  },
+  "filters": {
+    "model": null,
+    "status": null,
+    "prompt_version": null,
+    "provenance": "real",
+    "provider": null
+  },
+  "provenance_label": "real only",
+  "provenance_verified": false,
+  "traces": {
+    "count": {
+      "total": 84,
+      "by_provenance": {
+        "real": 84,
+        "synthetic": 0,
+        "mixed": 0,
+        "unknown": 0
+      }
+    },
+    "error_rate": {
+      "total": {
+        "n": 84,
+        "error_traces": 3,
+        "rate": 0.035714
+      },
+      "by_provenance": {
+        "real": {
+          "n": 84,
+          "error_traces": 3,
+          "rate": 0.035714
+        },
+        "synthetic": {
+          "n": 0,
+          "error_traces": 0,
+          "rate": null
+        },
+        "mixed": {
+          "n": 0,
+          "error_traces": 0,
+          "rate": null
+        },
+        "unknown": {
+          "n": 0,
+          "error_traces": 0,
+          "rate": null
+        }
+      }
+    },
+    "latency": {
+      "total": {
+        "n": 84,
+        "p50_ms": 825.2169,
+        "p95_ms": 7136.456165,
+        "p99_ms": 21400.854594,
+        "low_sample": {
+          "p95": false,
+          "p99": true
+        }
+      },
+      "by_provenance": {
+        "real": {
+          "n": 84,
+          "p50_ms": 825.2169,
+          "p95_ms": 7136.456165,
+          "p99_ms": 21400.854594,
+          "low_sample": {
+            "p95": false,
+            "p99": true
+          }
+        },
+        "synthetic": {
+          "n": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "low_sample": {
+            "p95": true,
+            "p99": true
+          }
+        },
+        "mixed": {
+          "n": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "low_sample": {
+            "p95": true,
+            "p99": true
+          }
+        },
+        "unknown": {
+          "n": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "low_sample": {
+            "p95": true,
+            "p99": true
+          }
+        }
+      },
+      "traces_without_root": 0
+    }
+  },
+  "inference": {
+    "attempts": {
+      "total": 84,
+      "by_provenance": {
+        "real": 84,
+        "synthetic": 0,
+        "unknown": 0
+      }
+    },
+    "logical_calls": {
+      "total": {
+        "value": 84,
+        "attempts_without_call_id": 0,
+        "n": 84
+      },
+      "by_provenance": {
+        "real": {
+          "value": 84,
+          "attempts_without_call_id": 0,
+          "n": 84
+        },
+        "synthetic": {
+          "value": null,
+          "attempts_without_call_id": 0,
+          "n": 0
+        },
+        "unknown": {
+          "value": null,
+          "attempts_without_call_id": 0,
+          "n": 0
+        }
+      }
+    },
+    "errors": {
+      "total": {
+        "n": 84,
+        "failed": 3,
+        "succeeded": 81,
+        "rate": 0.035714
+      },
+      "by_provenance": {
+        "real": {
+          "n": 84,
+          "failed": 3,
+          "succeeded": 81,
+          "rate": 0.035714
+        },
+        "synthetic": {
+          "n": 0,
+          "failed": 0,
+          "succeeded": 0,
+          "rate": null
+        },
+        "unknown": {
+          "n": 0,
+          "failed": 0,
+          "succeeded": 0,
+          "rate": null
+        }
+      },
+      "by_error_type": [
+        {
+          "error_type": "504",
+          "count": 3
+        }
+      ],
+      "by_error_type_truncated": false
+    },
+    "latency": {
+      "total": {
+        "n": 84,
+        "p50_ms": 624.71425,
+        "p95_ms": 7120.804735,
+        "p99_ms": 21387.297575,
+        "low_sample": {
+          "p95": false,
+          "p99": true
+        }
+      },
+      "by_provenance": {
+        "real": {
+          "n": 84,
+          "p50_ms": 624.71425,
+          "p95_ms": 7120.804735,
+          "p99_ms": 21387.297575,
+          "low_sample": {
+            "p95": false,
+            "p99": true
+          }
+        },
+        "synthetic": {
+          "n": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "low_sample": {
+            "p95": true,
+            "p99": true
+          }
+        },
+        "unknown": {
+          "n": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "low_sample": {
+            "p95": true,
+            "p99": true
+          }
+        }
+      }
+    },
+    "time_to_first_chunk": {
+      "available": false,
+      "reason": "not_recorded",
+      "detail": "streaming time-to-first-chunk is not captured by the MVP (M20, P1)"
+    },
+    "tokens": {
+      "total": {
+        "n": 84,
+        "input_tokens": 14422,
+        "calls_with_unknown_input_tokens": 3,
+        "output_tokens": 7112,
+        "calls_with_unknown_output_tokens": 3,
+        "subsets": {
+          "cached_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "cache_write_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "reasoning_output_tokens": {
+            "sum": 4646,
+            "calls_reporting": 35
+          }
+        }
+      },
+      "by_provenance": {
+        "real": {
+          "n": 84,
+          "input_tokens": 14422,
+          "calls_with_unknown_input_tokens": 3,
+          "output_tokens": 7112,
+          "calls_with_unknown_output_tokens": 3,
+          "subsets": {
+            "cached_input_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            },
+            "cache_write_input_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            },
+            "reasoning_output_tokens": {
+              "sum": 4646,
+              "calls_reporting": 35
+            }
+          }
+        },
+        "synthetic": {
+          "n": 0,
+          "input_tokens": null,
+          "calls_with_unknown_input_tokens": 0,
+          "output_tokens": null,
+          "calls_with_unknown_output_tokens": 0,
+          "subsets": {
+            "cached_input_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            },
+            "cache_write_input_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            },
+            "reasoning_output_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            }
+          }
+        },
+        "unknown": {
+          "n": 0,
+          "input_tokens": null,
+          "calls_with_unknown_input_tokens": 0,
+          "output_tokens": null,
+          "calls_with_unknown_output_tokens": 0,
+          "subsets": {
+            "cached_input_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            },
+            "cache_write_input_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            },
+            "reasoning_output_tokens": {
+              "sum": null,
+              "calls_reporting": 0
+            }
+          }
+        }
+      }
+    },
+    "cost": {
+      "total": {
+        "n": 84,
+        "currency": "USD",
+        "known_cost_usd": null,
+        "computed_cost_calls": 0,
+        "unknown_cost_calls": 84,
+        "unknown_cost_by_reason": {
+          "price_missing": 81,
+          "usage_missing": 3,
+          "usage_inconsistent": 0
+        },
+        "cost_complete": false,
+        "known_cost_per_call_usd": null
+      },
+      "by_provenance": {
+        "real": {
+          "n": 84,
+          "currency": "USD",
+          "known_cost_usd": null,
+          "computed_cost_calls": 0,
+          "unknown_cost_calls": 84,
+          "unknown_cost_by_reason": {
+            "price_missing": 81,
+            "usage_missing": 3,
+            "usage_inconsistent": 0
+          },
+          "cost_complete": false,
+          "known_cost_per_call_usd": null
+        },
+        "synthetic": {
+          "n": 0,
+          "currency": "USD",
+          "known_cost_usd": null,
+          "computed_cost_calls": 0,
+          "unknown_cost_calls": 0,
+          "unknown_cost_by_reason": {
+            "price_missing": 0,
+            "usage_missing": 0,
+            "usage_inconsistent": 0
+          },
+          "cost_complete": null,
+          "known_cost_per_call_usd": null
+        },
+        "unknown": {
+          "n": 0,
+          "currency": "USD",
+          "known_cost_usd": null,
+          "computed_cost_calls": 0,
+          "unknown_cost_calls": 0,
+          "unknown_cost_by_reason": {
+            "price_missing": 0,
+            "usage_missing": 0,
+            "usage_inconsistent": 0
+          },
+          "cost_complete": null,
+          "known_cost_per_call_usd": null
+        }
+      }
+    },
+    "price_versions": {
+      "items": [],
+      "truncated": false
+    },
+    "usage_source": {
+      "total": {
+        "provider_reported": 81,
+        "estimated": 0,
+        "unknown": 3
+      },
+      "by_provenance": {
+        "real": {
+          "provider_reported": 81,
+          "estimated": 0,
+          "unknown": 3
+        },
+        "synthetic": {
+          "provider_reported": 0,
+          "estimated": 0,
+          "unknown": 0
+        },
+        "unknown": {
+          "provider_reported": 0,
+          "estimated": 0,
+          "unknown": 0
+        }
+      }
+    }
+  },
+  "trend": {
+    "bucket": "hour",
+    "items": [
+      {
+        "start": "2026-11-12T00:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T01:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T02:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T03:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T04:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T05:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T06:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T07:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T08:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T09:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T10:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T11:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T12:00:00.000000Z",
+        "traces": 2,
+        "error_traces": 0,
+        "inference_attempts": 2,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 2
+      },
+      {
+        "start": "2026-11-12T13:00:00.000000Z",
+        "traces": 1,
+        "error_traces": 0,
+        "inference_attempts": 1,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1
+      },
+      {
+        "start": "2026-11-12T14:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T15:00:00.000000Z",
+        "traces": 2,
+        "error_traces": 1,
+        "inference_attempts": 2,
+        "failed_attempts": 1,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 2
+      },
+      {
+        "start": "2026-11-12T16:00:00.000000Z",
+        "traces": 2,
+        "error_traces": 0,
+        "inference_attempts": 2,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 2
+      },
+      {
+        "start": "2026-11-12T17:00:00.000000Z",
+        "traces": 1,
+        "error_traces": 0,
+        "inference_attempts": 1,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 1
+      },
+      {
+        "start": "2026-11-12T18:00:00.000000Z",
+        "traces": 21,
+        "error_traces": 0,
+        "inference_attempts": 21,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 21
+      },
+      {
+        "start": "2026-11-12T19:00:00.000000Z",
+        "traces": 23,
+        "error_traces": 1,
+        "inference_attempts": 23,
+        "failed_attempts": 1,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 23
+      },
+      {
+        "start": "2026-11-12T20:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T21:00:00.000000Z",
+        "traces": 8,
+        "error_traces": 1,
+        "inference_attempts": 8,
+        "failed_attempts": 1,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 8
+      },
+      {
+        "start": "2026-11-12T22:00:00.000000Z",
+        "traces": 0,
+        "error_traces": 0,
+        "inference_attempts": 0,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 0
+      },
+      {
+        "start": "2026-11-12T23:00:00.000000Z",
+        "traces": 24,
+        "error_traces": 0,
+        "inference_attempts": 24,
+        "failed_attempts": 0,
+        "known_cost_usd": null,
+        "unknown_cost_calls": 24
+      }
+    ]
+  }
+}

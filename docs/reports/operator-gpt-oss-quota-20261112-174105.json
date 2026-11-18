@@ -1,0 +1,21 @@
+﻿{
+    "model":  "openai/gpt-oss-20b",
+    "checked_at":  "2026-11-12T17:41:05.8797236Z",
+    "valid_until":  "2026-11-12T18:31:05.8797236Z",
+    "daily_reset_at":  null,
+    "exclusive_account":  true,
+    "all_scopes_checked":  true,
+    "free_account":  true,
+    "model_access":  true,
+    "project_1_ingest":  true,
+    "limits":  {
+                   "rpm":  30,
+                   "rpd":  1000,
+                   "tpm":  8000,
+                   "tpd":  200000,
+                   "itpm":  null,
+                   "otpm":  null
+               },
+    "daily_used":  null,
+    "usage_basis":  "operator_attested_sufficient_headroom"
+}

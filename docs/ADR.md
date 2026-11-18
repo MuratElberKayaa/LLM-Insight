@@ -687,3 +687,28 @@ The architectural review of `reports/phase-8a-0.md` authorized checkpoint 8A-1 (
   - Groq and OpenRouter are unchanged.
 - **Affected files:** `sdk/src/llm_insight_sdk/gemini_live.py`, `demo_app/live_compare.py`, `sdk/tests/conftest.py`, the Gemini test modules.
 - **Tests:** `sdk/tests/unit/test_gemini_execution_gate.py` (as shipped, no release fixture), plus the existing Gemini unit and integration modules under the test-only release.
+
+### ADR-51 — Display completed live A/B evidence in Experiments without executing providers
+
+- **Status:** accepted for this local implementation by the user's request to integrate the
+  existing 24 verified calls into Experiments (13 November 2026, Europe/Istanbul).
+- **Decision:** add immutable `imported_experiments` snapshots scoped by project/run/model,
+  an authenticated bounded import API, and read-only list/detail pages within Experiments.
+  Retain the original mock executor, dataset and result contracts unchanged. Do not invent a
+  positive budget to fit completed free-plan observations into the old real-run schema.
+- **Evidence:** require six complete pairs and eight strict rule booleans; verify all trace
+  IDs, model/provider/prompt identity, CLIENT spans and usage in the same project. Derive
+  displayed tokens, latency and scores rather than accepting supplied aggregate totals.
+  Rules remain operator-imported evidence: raw outputs are absent, so the backend cannot
+  recompute semantic judgments. The UI distinguishes this from verified telemetry.
+- **Idempotency:** unique project/run/model; canonical payload hash; identical re-imports
+  return the same ID, conflicting evidence is refused. No update endpoint and a DB UPDATE
+  trigger protects stored snapshots. Downgrade refuses while imported evidence exists.
+- **Limits:** only the closed ticket-ab-v1 suite and the two requested models are supported.
+  No live-run button, scheduler, provider credentials, retries, new inference, new dashboard
+  write action, arbitrary file paths or raw prompt/response fields. Unknown costs stay unknown.
+  Six cases and one sample do not support a general winner. Trace retention may eventually
+  remove linked telemetry; the historical import remains available.
+- **Validation:** disposable PostgreSQL tests cover auth/scope, incomplete and mismatched
+  evidence, immutability, idempotency and non-destructive downgrade; frontend tests cover
+  source labels, trace links, strict decoders and no additional write surface.

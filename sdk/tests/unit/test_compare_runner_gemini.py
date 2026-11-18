@@ -155,8 +155,8 @@ def test_as_shipped_the_expired_free_tier_evidence_refuses_every_execution(stub,
     assert doc["provider_request_state"] == "not_sent"
 
 
-def test_the_shipped_evidence_is_the_one_read_on_2026_10_28():
-    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-10-28T13:00:00+00:00"
+def test_the_shipped_evidence_is_the_reviewed_one():
+    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-11-12T13:06:58+00:00"
     assert gemini_live.FREE_TIER_MAX_AGE.days == 14
     assert list(gemini_live.FREE_TIER_MODELS) == [MODEL]
 

@@ -22,7 +22,7 @@ sdk/.venv/Scripts/python -m pip install --no-deps ./sdk                # the SDK
 
 For use inside another application, install the wheel (`pip wheel --no-deps ./sdk`). Its
 runtime dependencies are pinned exactly: `opentelemetry-api`, `opentelemetry-sdk` and
-`opentelemetry-exporter-otlp-proto-http` 1.45.1. The OpenAI adapter needs the optional
+`opentelemetry-exporter-otlp-proto-http` 1.45.2. The OpenAI adapter needs the optional
 extra `llm-insight-sdk[openai]` (`openai==3.28.0`); the core package never imports
 `openai`. The Gemini adapter (Phase 6C-A) needs `llm-insight-sdk[gemini]`
 (`google-genai==2.30.1`); the core package never imports `google.genai` either.
@@ -114,10 +114,10 @@ Also checked by `from_env()`: `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` must be `http
 if set, and `OTEL_TRACES_SAMPLER` must be `always_on` if set (ADR-06).
 
 **Timeout units.** The OTLP specification defines `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` in
-milliseconds, but the Python exporter 1.45.1 reads it as seconds. The SDK therefore ignores
+milliseconds, but the Python exporter 1.45.2 reads it as seconds. The SDK therefore ignores
 it (with a warning) and always passes `export_timeout_seconds` to the exporter explicitly.
 The BatchSpanProcessor's own `export_timeout_millis` is set to the same value, but version
-1.45.1 does not enforce it; the exporter timeout is what bounds an export.
+1.45.2 does not enforce it; the exporter timeout is what bounds an export.
 `OTEL_BSP_*` variables have no effect either, because every processor setting is passed
 explicitly.
 

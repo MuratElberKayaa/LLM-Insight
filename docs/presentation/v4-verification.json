@@ -1,0 +1,12 @@
+{
+  "pdf_pages": 10,
+  "pptx_slides": 10,
+  "logos_each_slide": 2,
+  "speaker_notes_each_slide": true,
+  "layout_warnings": 0,
+  "off_canvas_objects": 0,
+  "requested_removals_verified": true,
+  "live_scores_verified": true,
+  "pdf_visual_review": "all ten rendered pages inspected",
+  "pptx_native_render": "not performed; structure and shared layout checked"
+}

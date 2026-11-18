@@ -1,0 +1,38 @@
+Skip to content
+LLM Insight
+Overview
+Models
+Traces
+Datasets
+Experiments
+
+LOCAL ONLYServed on loopback; no login, not for public deployment.
+
+●
+Backend ready
+Datasets
+
+Named sets of human-approved regression test cases. Cases are created from reviewed traces on the trace page; nothing is added automatically. Cases are evaluated only by experiments, which you start explicitly.
+
+Fetched 22:32:33 UTC
+↻
+Refresh
+PROJECT
+phase3a-demo (#1)
+phase3b-isolation (#2)
+phase6b-preflight (#141)
+gemini-live (#148)
+Switch
+
+Showing project #1 · phase3a-demo
+
+Datasets of this project
+Name	Test cases	Created (UTC)
+selam	0	2026-10-27 15:18:24 UTC
+golden-synthetic-v1	12	2026-10-27 16:22:40 UTC
+Create a dataset
+New dataset name
+
+1–100 characters, unique in this project.
+
+Create dataset

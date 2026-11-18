@@ -10,7 +10,7 @@
 | GenAI client inference — https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/client-inference.md | **Development**. The repo has no releases; pinned at commit `9ffc7e00c639` (2026-10-21). Core attributes `error.type` and `server.*` are Stable (semconv v1.44.0 links). |
 | GenAI OpenAI conventions — `.../docs/gen-ai/openai.md` | **Development**. `gen_ai.provider.name` MUST be `openai`. |
 | `google.rpc.BadRequest` — https://github.com/googleapis/googleapis/blob/master/google/rpc/error_details.proto | `field_violations[]{field, description, reason, localized_message}` |
-| Python `opentelemetry-proto` / `-sdk` / `-exporter-otlp-proto-http` | 1.45.1 (PyPI, 2026-10-06). The exporter depends on `googleapis-common-protos ~=1.52`. |
+| Python `opentelemetry-proto` / `-sdk` / `-exporter-otlp-proto-http` | 1.45.2 (PyPI, 2026-10-29; 1.45.1 until 2026-11-16, replaced for CVE-2026-126360). The exporter depends on `googleapis-common-protos ~=1.52`. |
 
 GenAI conventions are still Development, so every stored span records `attributes_schema_version`, and all mapping lives in one adapter (ADR-14/15).
 

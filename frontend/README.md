@@ -15,12 +15,12 @@ and the unverified machine-observation panel on Trace Detail, **Trace-to-Testset
 |---|---|---|
 | Node.js | 22.23.4 (project-scoped, `.nvmrc`, `engines`, `engine-strict`) | Installed into `../.tools/` by `python -I ../scripts/dev/install_node.py` (SHA-256 checked); the global Node is not changed |
 | npm | 10.9.9 (bundled with Node 22.23.4) | |
-| Next.js | 16.4.3 | App Router, Turbopack build |
+| Next.js | 16.4.5 | App Router, Turbopack build |
 | React / React DOM / react-is | 19.3.1 | |
 | TypeScript | 6.0.3 | strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` |
 | Tailwind CSS (+ `@tailwindcss/postcss`) | 4.3.3 | |
 | Recharts | 3.10.1 | |
-| ESLint / eslint-config-next | 9.39.5 / 16.4.3 | includes jsx-a11y, react, react-hooks, typescript-eslint |
+| ESLint / eslint-config-next | 9.39.5 / 16.4.5 | includes jsx-a11y, react, react-hooks, typescript-eslint |
 | @playwright/test | 1.64.0 | drives the installed Microsoft Edge (`channel: "msedge"`); no browser download. CI (`LLMI_E2E_CI=1`, R104-5) uses the Chromium bundled with this Playwright version instead |
 | server-only | 0.0.1 | |
 

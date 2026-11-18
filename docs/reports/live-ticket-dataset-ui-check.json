@@ -1,0 +1,12 @@
+{
+  "list": {
+    "http_status": 200,
+    "url": "http://127.0.0.1:3001/datasets?project=1",
+    "expected_content_verified": true
+  },
+  "detail": {
+    "http_status": 200,
+    "url": "http://127.0.0.1:3001/datasets/98?project=1",
+    "expected_content_verified": true
+  }
+}

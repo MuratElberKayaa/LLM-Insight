@@ -6,7 +6,9 @@
 // Fails closed. PASS only when the report is a complete npm audit v2 report and either has no
 // findings, or every finding resolves (through npm's transitive `via` references) to an advisory
 // that security/npm-audit-policy.json accepts, in exactly the recorded dev-only chain, before its
-// review deadline. Anything else exits 1: another advisory, an unresolvable finding, a non-dev
+// review deadline. Several exceptions may share dependent packages (R102 and R144 since 2026-11-17):
+// each is checked against its own exact chain, and a shared package's severity must be one of the
+// approved severities of the advisories it resolves to. Anything else exits 1: another advisory, an unresolvable finding, a non-dev
 // node in package-lock.json, a changed severity/range/chain, an expired or invalid policy, a
 // malformed report, or an npm execution failure (registry/network errors also exit 1, so the exit
 // status alone never decides). Every finding is printed, accepted or not. The policy and the
@@ -21,6 +23,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // An approved range is literal: digits, dots, comparators, spaces and hyphens. Wildcards (*, x) and
 // alternatives (||) are refused. Comparison with npm's values is exact string equality, never semantic.
 const EXACT_RANGE = /^(?=.*\d)[0-9.<>= -]+$/;
+// The one literal that is not a bounded range: npm writes a finding entry's range as "*" when no
+// published version is outside the advisory (no patched release yet; R144, 2026-11-17). Allowed for
+// npmReportedRange only, never for vulnerableRange, and still compared exactly, so the exception
+// fails as soon as a patched release exists and npm reports a bounded range instead.
+const NO_PATCHED_RELEASE = "*";
 // 2: the required npmReportedRange field was added (R102 advisory revision of 2026-11-04).
 const SCHEMA_VERSION = 2;
 const DAY_MS = 86_400_000;
@@ -86,7 +93,10 @@ export function validatePolicy(policy, now) {
       if (!isText(exc[key])) errors.push(`${label}: "${key}" must be a non-empty string`);
     }
     for (const key of ["vulnerableRange", "npmReportedRange"]) {
-      if (isText(exc[key]) && !EXACT_RANGE.test(exc[key])) errors.push(`${label}: "${key}" must be an exact version range (no wildcards or alternatives)`);
+      const noPatchedRelease = key === "npmReportedRange" && exc[key] === NO_PATCHED_RELEASE;
+      if (isText(exc[key]) && !noPatchedRelease && !EXACT_RANGE.test(exc[key])) {
+        errors.push(`${label}: "${key}" must be an exact version range (no wildcards or alternatives)`);
+      }
     }
     const urlMatch = typeof exc.advisoryUrl === "string" ? GHSA_URL.exec(exc.advisoryUrl) : null;
     if (!urlMatch || urlMatch[1] !== exc.advisory) errors.push(`${label}: advisory must be a GHSA ID matching advisoryUrl`);
@@ -208,7 +218,16 @@ function checkLockfile(lockfile, errors) {
   return lockfile.packages;
 }
 
-function checkException(exc, keys, report, graph, packages, errors) {
+// The severities npm may report for a finding: the approved severity of each approved advisory it
+// resolves to. With one advisory that is exactly its severity. A package reached by several approved
+// advisories gets one severity from npm, which is not always the highest (2026-11-17:
+// @typescript-eslint/typescript-estree high but @typescript-eslint/parser moderate, both reached by
+// R102 moderate and R144 high), so it must be one of theirs; any other severity fails.
+function allowedSeverities(roots, exceptions) {
+  return SEVERITIES.filter((s) => exceptions.some((e) => roots.has(e.advisory) && e.severity === s));
+}
+
+function checkException(exc, keys, report, graph, packages, rootsByKey, exceptions, errors) {
   const label = `${exc.riskId} (${exc.advisory})`;
   const expected = [exc.package, ...Object.keys(exc.chain)];
   if (!sameSet(keys, expected)) {
@@ -219,7 +238,8 @@ function checkException(exc, keys, report, graph, packages, errors) {
   for (const key of keys) {
     const v = report.vulnerabilities[key];
     const nodes = isTextList(v.nodes) ? v.nodes : [];
-    if (v.severity !== exc.severity) errors.push(`${label}: "${key}" severity ${v.severity}, approved ${exc.severity}`);
+    const allowed = allowedSeverities(rootsByKey.get(key), exceptions);
+    if (!allowed.includes(v.severity)) errors.push(`${label}: "${key}" severity ${v.severity}, approved ${allowed.join(" or ")}`);
     if (key === exc.package) {
       const advisories = graph.get(key).own;
       const adv = advisories.find((a) => a.id === exc.advisory);
@@ -263,8 +283,10 @@ export function evaluate({ report, npmExitCode, lockfile, policy, now }) {
   const graph = new Map();
   for (const [key, v] of Object.entries(report.vulnerabilities)) graph.set(key, readEntry(key, v, report.vulnerabilities, errors));
   const byAdvisory = new Map();
+  const rootsByKey = new Map();
   for (const [key, v] of Object.entries(report.vulnerabilities)) {
     const roots = [...rootAdvisories(key, graph)].sort();
+    rootsByKey.set(key, new Set(roots));
     const problems = [];
     if (roots.length === 0) problems.push("underlying advisory unknown");
     for (const id of roots) {
@@ -281,7 +303,7 @@ export function evaluate({ report, npmExitCode, lockfile, policy, now }) {
   }
   for (const exc of exceptions) {
     const keys = byAdvisory.get(exc.advisory);
-    if (keys) checkException(exc, keys, report, graph, packages, errors);
+    if (keys) checkException(exc, keys, report, graph, packages, rootsByKey, exceptions, errors);
     else notices.push(`${exc.riskId} (${exc.advisory}) no longer appears in the audit: remove the exception`);
   }
   if (errors.length > 0) return { verdict: "fail", errors, notices, findings };

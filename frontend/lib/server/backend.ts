@@ -28,6 +28,8 @@ export type BackendPath =
   | "/api/v1/datasets"
   | `/api/v1/datasets/${string}/cases`
   | "/api/v1/experiments"
+  | "/api/v1/imported-experiments"
+  | `/api/v1/imported-experiments/${string}`
   | `/api/v1/experiments/${string}`
   | "/api/v1/experiment-options";
 
@@ -37,7 +39,7 @@ export type BackendPath =
  * dataset reads; Phase 4D the experiment list, report and run options.
  */
 const PATH_RE =
-  /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|traces\/[0-9a-f]{32}\/diagnostics|projects|datasets|datasets\/[1-9][0-9]{0,18}\/cases|experiments|experiments\/[1-9][0-9]{0,18}|experiment-options)$/;
+  /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|traces\/[0-9a-f]{32}\/diagnostics|projects|datasets|datasets\/[1-9][0-9]{0,18}\/cases|experiments|experiments\/[1-9][0-9]{0,18}|imported-experiments|imported-experiments\/[1-9][0-9]{0,18}|experiment-options)$/;
 /** Endpoints without a `project` parameter. */
 const GLOBAL_PATHS: ReadonlySet<string> = new Set(["/api/v1/projects"]);
 

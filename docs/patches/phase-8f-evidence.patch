@@ -1,0 +1,113 @@
+diff --git a/sdk/src/llm_insight_sdk/gemini_live.py b/sdk/src/llm_insight_sdk/gemini_live.py
+index 9fc5743..1edd923 100644
+--- a/sdk/src/llm_insight_sdk/gemini_live.py
++++ b/sdk/src/llm_insight_sdk/gemini_live.py
+@@ -101,7 +101,10 @@ class FreeTierModel:
+     sources: tuple[str, ...]
+ 
+ 
+-FREE_TIER_VERIFIED_AT = datetime(2026, 10, 28, 13, 0, tzinfo=UTC)
++# Public pricing, model and deprecation pages checked at this UTC time (phase-8f.md).
++# This is not an account-tier or quota attestation. Those remain operator prerequisites;
++# REAL_EXECUTION_ENABLED stays False and the execution release is a separate review.
++FREE_TIER_VERIFIED_AT = datetime(2026, 11, 12, 13, 6, 58, tzinfo=UTC)
+ FREE_TIER_MAX_AGE = timedelta(days=14)
+ ATTESTATION_MAX_AGE_DAYS = 1
+ FREE_TIER_MODELS: Mapping[str, FreeTierModel] = {
+diff --git a/sdk/tests/integration/test_live_compare_three_providers.py b/sdk/tests/integration/test_live_compare_three_providers.py
+index d996022..5b31140 100644
+--- a/sdk/tests/integration/test_live_compare_three_providers.py
++++ b/sdk/tests/integration/test_live_compare_three_providers.py
+@@ -53,7 +53,6 @@ from tests.openrouter_fixtures import ok as openrouter_ok
+ from tests.unit.test_gemini_live_guard import gemini_env
+ from tests.unit.test_groq_live_guard import ENV as GROQ_ENV
+ from tests.unit.test_openrouter_live_guard import ENV as OPENROUTER_ENV
+-from tests.unit.test_openrouter_live_guard import NOW
+ 
+ REPO = Path(__file__).resolve().parents[3]
+ sys.path.insert(0, str(REPO))  # demo_app lives at the repository root, outside the SDK
+@@ -65,6 +64,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("gemini_released"
+ 
+ SCENARIO = "cmp-ticket-triage"
+ PROMPT_VERSION = "cmp-v1.ticket-triage"
++# All provider evidence fixtures are aligned to this clock; no real provider is contacted.
++NOW = gemini_live.FREE_TIER_VERIFIED_AT + timedelta(hours=2)
+ TODAY = NOW.astimezone(UTC).date().isoformat()
+ ANSWER = json.dumps({"category": "login", "priority": "high", "reason": "Sign-in fails."})
+ MODELS = {"groq": GROQ_MODEL, "gcp.gemini": GEMINI_MODEL, "openrouter": OPENROUTER_MODEL}
+diff --git a/sdk/tests/unit/test_compare_runner_gemini.py b/sdk/tests/unit/test_compare_runner_gemini.py
+index 076ab5e..2ba8e78 100644
+--- a/sdk/tests/unit/test_compare_runner_gemini.py
++++ b/sdk/tests/unit/test_compare_runner_gemini.py
+@@ -155,8 +155,8 @@ def test_as_shipped_the_expired_free_tier_evidence_refuses_every_execution(stub,
+     assert doc["provider_request_state"] == "not_sent"
+ 
+ 
+-def test_the_shipped_evidence_is_the_one_read_on_2026_10_28():
+-    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-10-28T13:00:00+00:00"
++def test_the_shipped_evidence_is_the_reviewed_one():
++    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-11-12T13:06:58+00:00"
+     assert gemini_live.FREE_TIER_MAX_AGE.days == 14
+     assert list(gemini_live.FREE_TIER_MODELS) == [MODEL]
+ 
+diff --git a/sdk/tests/unit/test_gemini_execution_gate.py b/sdk/tests/unit/test_gemini_execution_gate.py
+index aff72ce..d6d0315 100644
+--- a/sdk/tests/unit/test_gemini_execution_gate.py
++++ b/sdk/tests/unit/test_gemini_execution_gate.py
+@@ -317,7 +317,7 @@ def test_switched_on_expired_evidence_still_refuses(stub, monkeypatch):
+ 
+ 
+ def test_the_shipped_evidence_and_allowlist_are_unchanged():
+-    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-10-28T13:00:00+00:00"
++    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-11-12T13:06:58+00:00"
+     assert list(gemini_live.FREE_TIER_MODELS) == [MODEL]
+     assert gemini_live.MAX_REQUESTS_CAP == 1 and gemini_live.RETRIES_RANGE == (0, 0)
+     assert gemini_live.MAX_OUTPUT_TOKENS_CAP == 1024
+diff --git a/sdk/tests/unit/test_gemini_live_guard.py b/sdk/tests/unit/test_gemini_live_guard.py
+index 36e3ef5..4cf8276 100644
+--- a/sdk/tests/unit/test_gemini_live_guard.py
++++ b/sdk/tests/unit/test_gemini_live_guard.py
+@@ -18,6 +18,8 @@ pytestmark = pytest.mark.usefixtures("gemini_released")  # ADR-50, test-only rel
+ 
+ NOW = gemini_live.FREE_TIER_VERIFIED_AT + timedelta(hours=2)
+ TODAY = NOW.date().isoformat()
++# Keep the format regression tied to the actual evidence date, including after refreshes.
++WEEK_DATE = "{}-W{:02d}-{}".format(*NOW.date().isocalendar())
+ 
+ 
+ def gemini_env(**overrides: str | None) -> dict[str, str]:
+@@ -100,8 +102,14 @@ def test_an_api_key_alone_never_enables_execution():
+         ({"LLMI_GEMINI_TIER_CHECKED_ON": None}, "free_tier_unverified"),
+         ({"LLMI_GEMINI_TIER_CHECKED_ON": "yesterday"}, "free_tier_unverified"),
+         ({"LLMI_GEMINI_TIER_CHECKED_ON": "2026-10-28T10:00"}, "free_tier_unverified"),
+-        ({"LLMI_GEMINI_TIER_CHECKED_ON": "2026-10-29"}, "free_tier_attestation_invalid"),
+-        ({"LLMI_GEMINI_TIER_CHECKED_ON": "2026-10-26"}, "free_tier_attestation_stale"),
++        (
++            {"LLMI_GEMINI_TIER_CHECKED_ON": (NOW + timedelta(days=1)).date().isoformat()},
++            "free_tier_attestation_invalid",
++        ),
++        (
++            {"LLMI_GEMINI_TIER_CHECKED_ON": (NOW - timedelta(days=2)).date().isoformat()},
++            "free_tier_attestation_stale",
++        ),
+         ({"LLMI_LIVE_PROVIDERS": "openai"}, "provider_not_allowed"),
+         ({"LLMI_LIVE_PROVIDERS": "gcp.gemini,gcp.vertex_ai"}, "provider_not_allowed"),
+         ({"LLMI_LIVE_PROVIDERS": None}, "setting_missing"),
+@@ -139,7 +147,7 @@ def test_every_client_environment_override_is_refused(var):
+ @pytest.mark.parametrize(
+     "value",
+     [
+-        "2026-W44-3",  # the ISO week date of TODAY: same length, accepted before the fix
++        WEEK_DATE,  # the ISO week date of TODAY: same length, accepted before the fix
+         "2026-W44",
+         "2026-301",  # ordinal date
+         "20261028",  # basic format
+@@ -160,7 +168,7 @@ def test_r123_the_week_date_really_names_today():
+     """The rejected week date is not a stale or invalid date: only its format is refused."""
+     from datetime import date
+ 
+-    assert date.fromisoformat("2026-W44-3").isoformat() == TODAY
++    assert date.fromisoformat(WEEK_DATE).isoformat() == TODAY
+ 
+ 
+ def test_r123_tls_key_logging_is_refused_by_the_policy():

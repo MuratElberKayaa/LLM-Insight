@@ -14,6 +14,7 @@ from app.api import (
     diagnostics,
     experiments,
     health,
+    imported_experiments,
     otel,
     overview,
     projects,
@@ -79,4 +80,5 @@ def create_app(settings: Settings | None = None, clock: Clock = time.monotonic) 
     app.include_router(reviews.router)
     app.include_router(datasets.router)
     app.include_router(experiments.router)
+    app.include_router(imported_experiments.router)
     return app

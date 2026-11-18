@@ -1,0 +1,20 @@
+{
+  "checked_at_utc": "2026-11-12T17:03:10.642930+00:00",
+  "method": "live Next.js rendered DOM table row, scoped via data-testid=group-tokens (local HTTP); Edge headless failed startup",
+  "provider_calls": 0,
+  "target": {
+    "provider": "groq",
+    "model": "openai/gpt-oss-20b",
+    "prompt_version": "cmp-v1.ticket-triage"
+  },
+  "row_text": "groq openai/gpt-oss-20b \u2192 response model: openai/gpt-oss-20b Prompt version cmp-v1.ticket-triage Real (asserted) 2 2 0% 0 failed p50 547.7 ms \u00b7 p95 782.3 ms \u25b2 low sample for p95 p99 803.2 ms (low sample) \u00b7 n 2 444 / 379 subsets: cached n/r \u00b7 reasoning 308 unknown (no priced attempt) 0 priced \u00b7 2 unknown (2 no price)",
+  "checks": {
+    "http_200": true,
+    "one_group_row": true,
+    "input_output_444_379": true,
+    "reasoning_308": true,
+    "unknown_cost": true
+  },
+  "ui_dom_pass": true,
+  "browser_automation": "Edge startup blocked in managed process; Playwright package is not installed"
+}

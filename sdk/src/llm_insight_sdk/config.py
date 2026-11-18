@@ -166,7 +166,7 @@ class LLMInsightConfig:
         if sampler and sampler.strip() != "always_on":
             raise ConfigError("OTEL_TRACES_SAMPLER: only always_on is supported (ADR-06)")
         if env.get("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT") or env.get("OTEL_EXPORTER_OTLP_TIMEOUT"):
-            # The spec defines these in milliseconds; the Python exporter 1.45.1 reads them as
+            # The spec defines these in milliseconds; the Python exporter 1.45.2 reads them as
             # seconds. The SDK always passes an explicit timeout, so they have no effect.
             logger.warning(
                 "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT is ignored (ambiguous unit); "

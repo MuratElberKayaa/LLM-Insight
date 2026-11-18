@@ -152,7 +152,7 @@ def _resource(config: LLMInsightConfig) -> Resource:
 def build_span_exporter(config: LLMInsightConfig) -> OTLPSpanExporter:
     """The official OTLP/HTTP protobuf exporter, every setting passed explicitly. The
     timeout is in seconds and is passed explicitly, so OTEL_EXPORTER_OTLP_TRACES_TIMEOUT
-    (milliseconds in the spec, seconds in exporter 1.45.1) has no effect."""
+    (milliseconds in the spec, seconds in exporter 1.45.2) has no effect."""
     return OTLPSpanExporter(
         endpoint=config.endpoint,
         headers={PROJECT_KEY_HEADER: config.project_key},
@@ -184,7 +184,7 @@ class Telemetry:
                 max_queue_size=config.max_queue_size,
                 schedule_delay_millis=config.schedule_delay_millis,
                 max_export_batch_size=config.max_export_batch_size,
-                # Milliseconds. BatchSpanProcessor 1.45.1 accepts but does not enforce it;
+                # Milliseconds. BatchSpanProcessor 1.45.2 accepts but does not enforce it;
                 # each export is bounded by the exporter's timeout (seconds) instead.
                 export_timeout_millis=config.export_timeout_seconds * 1000,
             )

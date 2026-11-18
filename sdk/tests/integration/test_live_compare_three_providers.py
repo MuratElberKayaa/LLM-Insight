@@ -53,7 +53,6 @@ from tests.openrouter_fixtures import ok as openrouter_ok
 from tests.unit.test_gemini_live_guard import gemini_env
 from tests.unit.test_groq_live_guard import ENV as GROQ_ENV
 from tests.unit.test_openrouter_live_guard import ENV as OPENROUTER_ENV
-from tests.unit.test_openrouter_live_guard import NOW
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))  # demo_app lives at the repository root, outside the SDK
@@ -65,6 +64,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("gemini_released"
 
 SCENARIO = "cmp-ticket-triage"
 PROMPT_VERSION = "cmp-v1.ticket-triage"
+# All provider evidence fixtures are aligned to this clock; no real provider is contacted.
+NOW = gemini_live.FREE_TIER_VERIFIED_AT + timedelta(hours=2)
 TODAY = NOW.astimezone(UTC).date().isoformat()
 ANSWER = json.dumps({"category": "login", "priority": "high", "reason": "Sign-in fails."})
 MODELS = {"groq": GROQ_MODEL, "gcp.gemini": GEMINI_MODEL, "openrouter": OPENROUTER_MODEL}

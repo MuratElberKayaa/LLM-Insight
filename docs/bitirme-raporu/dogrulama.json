@@ -1,0 +1,84 @@
+{
+  "pdf_pages": 30,
+  "headings": {
+    "İÇİNDEKİLER": 2,
+    "1. GİRİŞ": 3,
+    "1.1. Projenin Amacı": 3,
+    "1.2. Proje Kısıtları": 4,
+    "2. MATERYAL VE YÖNTEM": 5,
+    "2.1. Veri Seti, Model ve Çağrı Kaynakları": 5,
+    "2.2. Gözlem, Teşhis ve Değerlendirme Mimarisi": 6,
+    "2.3. Telemetri Yaşam Döngüsü, Tekilleştirme ve Güvenilir Kayıt": 7,
+    "2.4. Teknolojik Altyapı": 9,
+    "3. UYGULAMA VE KURULUM ADIMLARI": 10,
+    "3.1. Geliştirme Ortamının Hazırlanması ve Kurulum": 10,
+    "3.2. Veritabanı Şeması, Migration’lar ve Yetki Sınırları": 11,
+    "3.3. SDK’nın Çalıştırılması ve Çağrı Kaynakları": 12,
+    "3.4. API Katmanı, Proje Kapsamlı Erişim ve Güvenlik": 13,
+    "3.5. LLM İzleme ve Değerlendirme Paneli": 14,
+    "3.6. İnsan İncelemesi ve Hata Doğrulama": 20,
+    "3.7. Test ve Doğrulama": 21,
+    "4. BULGULAR": 22,
+    "4.1. Görev Düzeyi Model ve Prompt Performansı": 22,
+    "4.2. Çalışma Zamanı Performansı ve Veri Alma Kapasitesi": 23,
+    "4.3. Güvenilir Kayıt ve Arıza Senaryoları": 24,
+    "4.4. Uzun Süreli Çalışma ve Bellek Analizi": 25,
+    "4.5. Referans Değerlendirmesi ve Hata Analizi": 26,
+    "4.6. Test Sonuçları": 27,
+    "5. SONUÇ": 28,
+    "6. KAYNAKÇA": 29
+  },
+  "code_blocks": 11,
+  "figures": 9,
+  "out_of_page_text": [],
+  "source_date": "2026-11-13",
+  "author": "Murat Elber Kaya",
+  "application_tests_rerun": false,
+  "assets": [
+    {
+      "file": "docs\\presentation\\assets\\live-overview-kpis.png",
+      "sha256": "d61d609e2e236bb5d2c30153cf259d7f6f85ae21723132a167c1b10803b409da",
+      "caption": "Şekil 2. Overview KPI alanı; 13 Kasım 2026 tarihli mevcut ekran kaydı, seçilen pencere 12 Kasım UTC."
+    },
+    {
+      "file": "docs\\presentation\\assets\\live-models-full.png",
+      "sha256": "0b7a0da188c13ce56b81de36aca9c9445b6dbb9b0b57eee7dbf65e8c3ce56e83",
+      "caption": "Şekil 3. Models ekranı; gerçek olarak beyan edilmiş kayıtlar için model karşılaştırması."
+    },
+    {
+      "file": "docs\\presentation\\assets\\trace-waterfall.png",
+      "sha256": "1022811ab59b3def4cb1a5044d3920ddee7f027eca2256c2c853927dd6b7de8f",
+      "caption": "Şekil 4. Trace waterfall; sunumda kullanılan tarihsel sentetik örnekten, span zaman ilişkileri."
+    },
+    {
+      "file": "docs\\presentation\\assets\\trace-diagnostics.png",
+      "sha256": "516dcd01c0b1f163f26f31289df285faa33c35077bfa3b0834bdca7c64fdf79c",
+      "caption": "Şekil 5. Trace teşhis alanı; mevcut tarihsel ekran kaydı."
+    },
+    {
+      "file": "docs\\presentation\\assets\\experiments-list-full.png",
+      "sha256": "aeb8da366396e6e0f3b9fc9a30562e33dcc46ca448fbc903d84e6fb7462bb2c4",
+      "caption": "Şekil 6. Experiments listesi; tamamlanmış canlı karşılaştırmalar ve mock akışının birlikte gösterimi."
+    },
+    {
+      "file": "docs\\presentation\\assets\\experiments-groq-full.png",
+      "sha256": "33b62a2db72bfaf3654382de655f595dc4b7c80e544f52e1846cec61d3cfcb8f",
+      "caption": "Şekil 7. Groq GPT-OSS canlı deney ayrıntısı; gerçek çağrı, sentetik girdi ve küçük örneklem açıklamaları."
+    },
+    {
+      "file": "docs\\presentation\\assets\\experiments-gemini-full.png",
+      "sha256": "bf7bc7cbfb570c54080b96fcc0d48fad9ada582acdfe19e366a35358ace08358",
+      "caption": "Şekil 8. Gemini canlı deney ayrıntısı; kural bazında sonuçlar ve trace bağlantıları."
+    },
+    {
+      "file": "docs\\reports\\phase-5b-screenshots\\5b-04-review-decided.png",
+      "sha256": "0e6c2434545f267bc3129088fbd4e58f9ef5a79970585ad67ab305ce4b833889",
+      "caption": "Şekil 9. İnsan incelemesi ve karar kaydı; Phase 5B sentetik uçtan uca gösteriminden."
+    }
+  ],
+  "cover_logo": {
+    "file": "docs\\presentation\\assets\\softito.png",
+    "sha256": "665ab3224713d24f86e10740f66cb2b382d77bef38be6088607d3790f6b6f7d2",
+    "placement": "centered above academy title"
+  }
+}

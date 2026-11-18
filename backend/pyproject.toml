@@ -18,7 +18,7 @@ dependencies = [
     "alembic==1.20.0",
     "psycopg[binary]==3.3.6",
     # OTLP/HTTP ingest (Phase 1B): protobuf types and google.rpc.Status / BadRequest.
-    "opentelemetry-proto==1.45.1",
+    "opentelemetry-proto==1.45.2",
     "protobuf==7.36.2",
     "googleapis-common-protos==1.75.5",
     # Deterministic evaluation (Phase 4C, ADR-23): JSON Schema draft 2020-12 (no format checker,
@@ -33,8 +33,8 @@ dev = [
     "httpx==0.28.1",
     "ruff==0.17.0",
     # Standard-exporter round trip (T01-S3) only; the backend itself never imports these.
-    "opentelemetry-sdk==1.45.1",
-    "opentelemetry-exporter-otlp-proto-http==1.45.1",
+    "opentelemetry-sdk==1.45.2",
+    "opentelemetry-exporter-otlp-proto-http==1.45.2",
 ]
 
 [tool.setuptools.packages.find]

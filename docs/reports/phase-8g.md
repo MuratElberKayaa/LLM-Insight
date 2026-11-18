@@ -63,3 +63,30 @@ No database-backed test was run against the developer PostgreSQL instance.
 4. a current attestation and the consent phrase in your shell.
 
 Evidence expires 2026-11-26 06:00 UTC.
+
+## 6. Phase 8G-B — execution release (release branch, for review)
+
+**Branch:** `release/groq-first-observed-request`, from `main` `9545936`. **Change:** `groq_adapter.REAL_EXECUTION_ENABLED = True`, the reviewed patch B. Every other guard is unchanged:
+- the Free Plan policy, attestation and consent phrase;
+- the single allowlisted model, the evidence window and the hard caps (1 request, 0 retries, 1024 output tokens);
+- the endpoint boundary, credential binding, metadata-only telemetry and post-call halts.
+
+The locked path stays covered by tests that set the lock to `False` explicitly, including the as-shipped integration test in `test_live_compare.py`. Gemini and OpenRouter stay locked.
+
+**Offline checks:**
+
+| Check | Result |
+|---|---|
+| SDK unit suite | **2461 passed** |
+| SDK integration suite, in an export with no database | 41 passed, 112 skipped (database-backed, NOT RUN) |
+| Ruff | clean |
+| Dry-run probe (never `--execute`) | Groq: no refusal. Gemini and OpenRouter locked. 0 network attempts |
+
+**Before the first observed request:**
+1. the release PR's CI green;
+2. merge;
+3. your consent phrase and current attestation in your shell;
+4. a clean dry run;
+5. one `--execute`.
+
+After the request is reviewed, revert the lock to `False` in a reviewed commit.

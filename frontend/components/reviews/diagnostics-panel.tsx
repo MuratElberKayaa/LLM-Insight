@@ -133,7 +133,7 @@ export function DiagnosticsPanel({ result, spanHref }: { result: ApiResult<Diagn
       ) : (
         <>
           {!result.data.coverage.complete && (
-            <p className="mb-2 text-xs text-warning" data-testid="diagnostics-incomplete">
+            <p className="mb-2 text-xs text-warning-ink" data-testid="diagnostics-incomplete">
               Analysis incomplete: {result.data.coverage.spans_analyzed} of {result.data.coverage.spans_stored} stored spans analysed.
             </p>
           )}

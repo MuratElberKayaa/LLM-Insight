@@ -49,7 +49,7 @@ const COLUMNS: Column<ModelGroup>[] = [
       <span>
         {formatMs(g.latency.p95_ms) ?? <NullValue />} <span className="text-ink-3">({formatInt(g.latency.n)})</span>
         {g.latency.low_sample.p95 && (
-          <span className="ml-1 text-warning" title="Fewer than 20 samples">
+          <span className="ml-1 text-warning-ink" title="Fewer than 20 samples">
             ▲<span className="sr-only"> low sample</span>
           </span>
         )}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { CaseResultsTable, ComparisonTable, ComparisonVerdict, Limitations, OutcomeSection, ReportSummary, ReportWarnings } from "../../../components/experiments/experiment-report";
+import { VersionCards } from "../../../components/experiments/experiment-diff";
 import { SyntheticBanner } from "../../../components/experiments/values";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../../../components/navigation-transition";
 import { PageHeader, SectionHeading } from "../../../components/page-header";
@@ -60,6 +61,7 @@ export default async function ExperimentPage({ params, searchParams }: PageProps
                   <SyntheticBanner mode={ctx.report.data.experiment.mode} />
                   <ReportSummary report={ctx.report.data} project={ctx.projectId} />
                   <ReportWarnings report={ctx.report.data} />
+                  <VersionCards report={ctx.report.data} />
                   <ComparisonVerdict report={ctx.report.data} />
                   <section aria-labelledby="comparison-heading">
                     <SectionHeading id="comparison-heading" title="Comparison table" description="Pass rates exclude not-evaluated results and have their own denominators; compare them only together with the counts." />
@@ -67,7 +69,7 @@ export default async function ExperimentPage({ params, searchParams }: PageProps
                   </section>
                   <OutcomeSection report={ctx.report.data} />
                   <section aria-labelledby="cases-heading">
-                    <SectionHeading id="cases-heading" title="Results per test case" />
+                    <SectionHeading id="cases-heading" title="Results per test case" description="Outcome change of each case from baseline A to B; filter to the cases that changed." />
                     <CaseResultsTable report={ctx.report.data} project={ctx.projectId} />
                   </section>
                   <Limitations report={ctx.report.data} />

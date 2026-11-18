@@ -1,0 +1,91 @@
+{
+  "checked_at": "2026-11-12T16:25:56.372994+00:00",
+  "backend_health_http": 200,
+  "credential_source": "operator PowerShell only; absent from tool process",
+  "checks": [
+    {
+      "model": "openai/gpt-oss-20b",
+      "provider": "groq",
+      "runner_exit": 0,
+      "execution_allowed": false,
+      "environment": {
+        "backend": {
+          "ready": false,
+          "reason": "telemetry_config_invalid"
+        },
+        "sdk_checkout_match": true
+      },
+      "refusals": [
+        "api_key_missing",
+        "backend_not_ready"
+      ],
+      "request_state": "not_sent",
+      "real_execution_enabled": true
+    },
+    {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "gcp.gemini",
+      "runner_exit": 0,
+      "execution_allowed": false,
+      "environment": {
+        "backend": {
+          "ready": false,
+          "reason": "telemetry_config_invalid"
+        },
+        "sdk_checkout_match": true
+      },
+      "refusals": [
+        "api_key_missing",
+        "backend_not_ready"
+      ],
+      "request_state": "not_sent",
+      "real_execution_enabled": true
+    },
+    {
+      "model": "qwen/qwen3.8-27b",
+      "provider": "groq",
+      "runner_exit": 0,
+      "execution_allowed": false,
+      "environment": {
+        "backend": {
+          "ready": false,
+          "reason": "telemetry_config_invalid"
+        },
+        "sdk_checkout_match": true
+      },
+      "refusals": [
+        "api_key_missing",
+        "backend_not_ready"
+      ],
+      "request_state": "not_sent",
+      "real_execution_enabled": true
+    },
+    {
+      "model": "deepseek/deepseek-v4-flash-0731:free",
+      "provider": "openrouter",
+      "runner_exit": 0,
+      "execution_allowed": false,
+      "environment": {
+        "backend": {
+          "ready": false,
+          "reason": "telemetry_config_invalid"
+        },
+        "sdk_checkout_match": true
+      },
+      "refusals": [
+        "real_execution_disabled",
+        "openrouter_mode_not_free",
+        "api_key_missing",
+        "account_state_unverified",
+        "account_state_unverified",
+        "free_model_evidence_missing",
+        "free_routing_evidence_missing",
+        "model_not_free_verified",
+        "backend_not_ready"
+      ],
+      "request_state": "not_sent",
+      "real_execution_enabled": false
+    }
+  ],
+  "inference_requests": 0
+}

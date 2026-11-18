@@ -216,10 +216,16 @@ def test_the_credential_goes_only_to_the_generate_content_endpoint(stub, recorde
         "contents": [{"parts": [{"text": live_gemini.INPUT_TEXT}], "role": "user"}],
         "generationConfig": {"maxOutputTokens": 256},
     }
-    assert req.extensions["timeout"] == {"connect": 20.0, "read": 20.0, "write": 20.0, "pool": 20.0}
+    assert req.extensions["timeout"] == {"connect": 30.0, "read": 30.0, "write": 30.0, "pool": 30.0}
     (span,) = [s for s in stub.spans() if s["kind"] == "CLIENT"]
     assert span["attributes"]["llminsight.provenance"] == "real"
     assert span["attributes"]["server.address"] == "generativelanguage.googleapis.com"
+
+
+def test_runner_sync_and_async_http_clients_use_the_guarded_timeout():
+    api = runner_client()._api_client
+    assert api._httpx_client.timeout.read == 30.0
+    assert api._async_httpx_client.timeout.read == 30.0
 
 
 def test_the_environment_cannot_move_the_runner_client(monkeypatch, recorder):

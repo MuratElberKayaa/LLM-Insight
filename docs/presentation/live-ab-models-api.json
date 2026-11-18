@@ -1,0 +1,280 @@
+{
+  "project": 1,
+  "window": {
+    "from": "2026-11-12T23:12:19.505872Z",
+    "to": "2026-11-12T23:21:09.291303Z"
+  },
+  "filters": {
+    "model": null,
+    "status": null,
+    "prompt_version": null,
+    "provenance": "real",
+    "provider": null
+  },
+  "provenance_label": "real only",
+  "provenance_verified": false,
+  "groups": [
+    {
+      "provider": "gcp.gemini",
+      "requested_model": "gemini-3.1-flash-lite",
+      "response_model": "gemini-3.1-flash-lite",
+      "prompt_version": "live-ticket-v1",
+      "attempts": 6,
+      "errors": {
+        "failed": 0,
+        "succeeded": 6,
+        "rate": 0.0
+      },
+      "latency": {
+        "n": 6,
+        "p50_ms": 2744.44895,
+        "p95_ms": 3553.68175,
+        "p99_ms": 3711.39971,
+        "low_sample": {
+          "p95": true,
+          "p99": true
+        }
+      },
+      "tokens": {
+        "n": 6,
+        "input_tokens": 516,
+        "calls_with_unknown_input_tokens": 0,
+        "output_tokens": 131,
+        "calls_with_unknown_output_tokens": 0,
+        "subsets": {
+          "cached_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "cache_write_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "reasoning_output_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          }
+        }
+      },
+      "usage_source": {
+        "provider_reported": 6,
+        "estimated": 0,
+        "unknown": 0
+      },
+      "cost": {
+        "currency": "USD",
+        "known_cost_usd": null,
+        "computed_cost_calls": 0,
+        "unknown_cost_calls": 6,
+        "unknown_cost_by_reason": {
+          "price_missing": 6,
+          "usage_missing": 0,
+          "usage_inconsistent": 0
+        },
+        "cost_complete": false
+      },
+      "by_provenance": {
+        "real": 6,
+        "synthetic": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "provider": "gcp.gemini",
+      "requested_model": "gemini-3.1-flash-lite",
+      "response_model": "gemini-3.1-flash-lite",
+      "prompt_version": "live-ticket-v2",
+      "attempts": 6,
+      "errors": {
+        "failed": 0,
+        "succeeded": 6,
+        "rate": 0.0
+      },
+      "latency": {
+        "n": 6,
+        "p50_ms": 2835.2514,
+        "p95_ms": 3526.852925,
+        "p99_ms": 3535.774585,
+        "low_sample": {
+          "p95": true,
+          "p99": true
+        }
+      },
+      "tokens": {
+        "n": 6,
+        "input_tokens": 888,
+        "calls_with_unknown_input_tokens": 0,
+        "output_tokens": 86,
+        "calls_with_unknown_output_tokens": 0,
+        "subsets": {
+          "cached_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "cache_write_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "reasoning_output_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          }
+        }
+      },
+      "usage_source": {
+        "provider_reported": 6,
+        "estimated": 0,
+        "unknown": 0
+      },
+      "cost": {
+        "currency": "USD",
+        "known_cost_usd": null,
+        "computed_cost_calls": 0,
+        "unknown_cost_calls": 6,
+        "unknown_cost_by_reason": {
+          "price_missing": 6,
+          "usage_missing": 0,
+          "usage_inconsistent": 0
+        },
+        "cost_complete": false
+      },
+      "by_provenance": {
+        "real": 6,
+        "synthetic": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "provider": "groq",
+      "requested_model": "openai/gpt-oss-20b",
+      "response_model": "openai/gpt-oss-20b",
+      "prompt_version": "live-ticket-v1",
+      "attempts": 6,
+      "errors": {
+        "failed": 0,
+        "succeeded": 6,
+        "rate": 0.0
+      },
+      "latency": {
+        "n": 6,
+        "p50_ms": 444.2372,
+        "p95_ms": 676.8197,
+        "p99_ms": 722.24298,
+        "low_sample": {
+          "p95": true,
+          "p99": true
+        }
+      },
+      "tokens": {
+        "n": 6,
+        "input_tokens": 921,
+        "calls_with_unknown_input_tokens": 0,
+        "output_tokens": 919,
+        "calls_with_unknown_output_tokens": 0,
+        "subsets": {
+          "cached_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "cache_write_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "reasoning_output_tokens": {
+            "sum": 810,
+            "calls_reporting": 6
+          }
+        }
+      },
+      "usage_source": {
+        "provider_reported": 6,
+        "estimated": 0,
+        "unknown": 0
+      },
+      "cost": {
+        "currency": "USD",
+        "known_cost_usd": null,
+        "computed_cost_calls": 0,
+        "unknown_cost_calls": 6,
+        "unknown_cost_by_reason": {
+          "price_missing": 6,
+          "usage_missing": 0,
+          "usage_inconsistent": 0
+        },
+        "cost_complete": false
+      },
+      "by_provenance": {
+        "real": 6,
+        "synthetic": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "provider": "groq",
+      "requested_model": "openai/gpt-oss-20b",
+      "response_model": "openai/gpt-oss-20b",
+      "prompt_version": "live-ticket-v2",
+      "attempts": 6,
+      "errors": {
+        "failed": 0,
+        "succeeded": 6,
+        "rate": 0.0
+      },
+      "latency": {
+        "n": 6,
+        "p50_ms": 452.9146,
+        "p95_ms": 466.44135,
+        "p99_ms": 467.48115,
+        "low_sample": {
+          "p95": true,
+          "p99": true
+        }
+      },
+      "tokens": {
+        "n": 6,
+        "input_tokens": 1293,
+        "calls_with_unknown_input_tokens": 0,
+        "output_tokens": 599,
+        "calls_with_unknown_output_tokens": 0,
+        "subsets": {
+          "cached_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "cache_write_input_tokens": {
+            "sum": null,
+            "calls_reporting": 0
+          },
+          "reasoning_output_tokens": {
+            "sum": 490,
+            "calls_reporting": 6
+          }
+        }
+      },
+      "usage_source": {
+        "provider_reported": 6,
+        "estimated": 0,
+        "unknown": 0
+      },
+      "cost": {
+        "currency": "USD",
+        "known_cost_usd": null,
+        "computed_cost_calls": 0,
+        "unknown_cost_calls": 6,
+        "unknown_cost_by_reason": {
+          "price_missing": 6,
+          "usage_missing": 0,
+          "usage_inconsistent": 0
+        },
+        "cost_complete": false
+      },
+      "by_provenance": {
+        "real": 6,
+        "synthetic": 0,
+        "unknown": 0
+      }
+    }
+  ],
+  "groups_truncated": false,
+  "limit": 200
+}

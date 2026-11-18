@@ -48,6 +48,7 @@ import importlib
 import os
 import re
 import sys
+import types
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -553,6 +554,7 @@ def _build_parser() -> _Parser:
     parser = _Parser(prog="python -m demo_app.live_compare", allow_abbrev=False)
     parser.add_argument("--provider", required=True, action=_Once, help="one registered provider")
     parser.add_argument("--scenario", required=True, action=_Once, help="one registered scenario")
+    parser.add_argument("--suite", action=_Once, help="optional closed suite: ticket-ab-v1")
     parser.add_argument("--execute", action="store_true", help="send one request if allowed")
     parser.add_argument("--dashboard-url", action=_Once, help="a loopback HTTP origin")
     return parser
@@ -770,6 +772,7 @@ def build_plan(
         "timeout_seconds": policy.timeout_seconds,
         **executable.plan_extra(policy),
         "paid_fallback": False,
+        "reasoning_format": "hidden" if policy.model == "qwen/qwen3.8-27b" else None,
     }
 
 
@@ -790,6 +793,7 @@ def _provider_doc(
         "service_tier": outcome.service_tier if outcome is not None else None,
         "attempts": len(outcome.attempts) if outcome is not None else None,
         "duration_ms": outcome.duration_ms if outcome is not None else None,
+        "rate_limit_signals": outcome.rate_limit_signals if outcome is not None else None,
         "provenance": "real",
     }
 
@@ -1112,11 +1116,19 @@ def _run(
     executable = entry.executable
     state.provider = executable.provider
 
-    scenario = comparison_scenarios.SCENARIOS.get(args.scenario)
+    registry: types.ModuleType = comparison_scenarios
+    if args.suite is not None:
+        from demo_app import prompt_ab_scenarios
+
+        if args.suite != prompt_ab_scenarios.SUITE:
+            return _refuse(out, doc, [{"code": "suite_unknown", "message": "unknown suite"}], state)
+        registry = prompt_ab_scenarios
+        doc["suite"] = prompt_ab_scenarios.SUITE
+    scenario = registry.SCENARIOS.get(args.scenario)
     if scenario is None:
         message = "--scenario is not a registered scenario (the value is not echoed)"
         return _refuse(out, doc, [{"code": "scenario_unknown", "message": message}], state)
-    registry_problems = comparison_scenarios.check_scenario(args.scenario, scenario)
+    registry_problems = registry.check_scenario(args.scenario, scenario)
     if registry_problems:  # before any policy read, client or provider contact
         return _refuse(out, doc, refusal_docs(registry_problems), state)
     text = comparison_scenarios.compose_input(scenario)
@@ -1184,6 +1196,15 @@ def _run(
             "correlation": _correlation_doc(None, project_id, base),
         }
     )
+    if policy is not None and policy.model == "qwen/qwen3.8-27b":
+        doc["constraints"]["request_fields"] = [
+            "model",
+            "messages",
+            "max_completion_tokens",
+            "stream",
+            "reasoning_format",
+        ]
+        doc["constraints"]["reasoning_format"] = "hidden"
     if not args.execute:
         doc["note"] = "dry run: no provider request was sent; pass --execute to send one"
         return _finish(out, doc, 0, state)

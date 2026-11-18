@@ -1,0 +1,18 @@
+{
+  "source": "assets/live-overview-full.png",
+  "pixel_scale": 1.5,
+  "css_rectangles": {
+    "live-overview-kpis.png": [
+      262,
+      912,
+      1418,
+      1359
+    ],
+    "live-overview-demo.png": [
+      262,
+      912,
+      1418,
+      1805
+    ]
+  }
+}

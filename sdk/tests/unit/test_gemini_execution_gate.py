@@ -317,7 +317,7 @@ def test_switched_on_expired_evidence_still_refuses(stub, monkeypatch):
 
 
 def test_the_shipped_evidence_and_allowlist_are_unchanged():
-    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-10-28T13:00:00+00:00"
+    assert gemini_live.FREE_TIER_VERIFIED_AT.isoformat() == "2026-11-12T13:06:58+00:00"
     assert list(gemini_live.FREE_TIER_MODELS) == [MODEL]
     assert gemini_live.MAX_REQUESTS_CAP == 1 and gemini_live.RETRIES_RANGE == (0, 0)
     assert gemini_live.MAX_OUTPUT_TOKENS_CAP == 1024
@@ -325,10 +325,11 @@ def test_the_shipped_evidence_and_allowlist_are_unchanged():
 
 # ---------------------------------------------------------------- Groq and OpenRouter unchanged
 def test_the_gemini_switch_releases_neither_groq_nor_openrouter(monkeypatch):
+    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", False)  # Groq locked (8G)
     monkeypatch.setattr(gemini_live, "REAL_EXECUTION_ENABLED", True)
     assert groq_adapter.REAL_EXECUTION_ENABLED is False
     assert openrouter_adapter.REAL_EXECUTION_ENABLED is False
-    assert list(groq_live.FREE_PLAN_MODELS) == ["openai/gpt-oss-20b"]  # evidence only (8G)
+    assert list(groq_live.FREE_PLAN_MODELS) == ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
     assert openrouter_live.FREE_MODELS == {}
     assert openrouter_live.ZERO_PRICE_ROUTING_VERIFIED_AT is None
     groq = groq_live.evaluate_free_plan_policy({}, now=NOW)

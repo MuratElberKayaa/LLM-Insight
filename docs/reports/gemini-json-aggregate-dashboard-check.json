@@ -1,0 +1,54 @@
+{
+  "checked_at_utc": "2026-11-12T15:40:43.310135+00:00",
+  "method": "HTTP GET and parsed server-rendered text; not visual/browser interaction verification",
+  "pages": {
+    "overview": {
+      "http_status": 200,
+      "gemini_model": true,
+      "real_asserted": true,
+      "unknown_cost": true,
+      "json_prompt_version": true,
+      "low_sample": true,
+      "input_189": false,
+      "output_50": false,
+      "no_ranking_notice": false,
+      "model_latency_display": null
+    },
+    "traces": {
+      "http_status": 200,
+      "gemini_model": true,
+      "real_asserted": true,
+      "unknown_cost": true,
+      "json_prompt_version": true,
+      "low_sample": false,
+      "input_189": true,
+      "output_50": true,
+      "no_ranking_notice": false,
+      "model_latency_display": null
+    },
+    "trace_detail": {
+      "http_status": 200,
+      "gemini_model": true,
+      "real_asserted": true,
+      "unknown_cost": true,
+      "json_prompt_version": true,
+      "low_sample": false,
+      "input_189": true,
+      "output_50": true,
+      "no_ranking_notice": false,
+      "model_latency_display": null
+    },
+    "models": {
+      "http_status": 200,
+      "gemini_model": true,
+      "real_asserted": true,
+      "unknown_cost": true,
+      "json_prompt_version": true,
+      "low_sample": true,
+      "input_189": true,
+      "output_50": true,
+      "no_ranking_notice": true,
+      "model_latency_display": true
+    }
+  }
+}

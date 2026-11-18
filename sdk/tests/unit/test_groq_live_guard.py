@@ -214,17 +214,18 @@ def test_the_real_environment_is_read_when_none_is_given(monkeypatch):
 # ---------------------------------------------------------------- as shipped: disabled
 @pytest.fixture
 def as_shipped(monkeypatch) -> None:
-    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", SHIPPED_LOCK)
+    # Phase 8G patch B ships the lock released; the locked path stays covered here.
+    monkeypatch.setattr(groq_adapter, "REAL_EXECUTION_ENABLED", False)
     monkeypatch.setattr(groq_live, "FREE_PLAN_EVIDENCE_VERIFIED_AT", SHIPPED_VERIFIED_AT)
     monkeypatch.setattr(groq_live, "FREE_PLAN_MODELS", SHIPPED_MODELS)
 
 
-def test_as_shipped_only_the_evidence_is_released():
-    """Phase 8G evidence-only change: one model and its evidence date; execution stays locked."""
-    assert SHIPPED_LOCK is False
+def test_as_shipped_the_evidence_and_the_lock_are_released():
+    """Phase 8G: the evidence (patch A) and the execution lock (patch B, one authorized request)."""
+    assert SHIPPED_LOCK is True
     assert SHIPPED_VERIFIED_AT is not None
-    assert SHIPPED_VERIFIED_AT.isoformat() == "2026-11-12T06:00:00+00:00"
-    assert list(SHIPPED_MODELS) == [MODEL]
+    assert SHIPPED_VERIFIED_AT.isoformat() == "2026-11-12T16:19:56+00:00"
+    assert list(SHIPPED_MODELS) == [MODEL, "qwen/qwen3.8-27b"]
 
 
 @pytest.mark.usefixtures("as_shipped")

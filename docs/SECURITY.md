@@ -166,14 +166,14 @@ CI job `security-python` runs Bandit 1.9.4 (hash-checked tool lock) as `bandit -
 - **New, changed or vanished findings fail at every severity.** A finding that disappears also fails until its entry and its row below are removed in a reviewed change; a stale entry is never kept as harmless metadata.
 - **Changing the baseline is a security review.** The baseline is never regenerated in CI. A change needs the baseline, this register (the checker requires both to agree row for row) and the classification evidence in the same reviewed commit. No entry may use a class outside the list below, and each class is limited to its test ids, severity and path.
 - `backend/alembic` is outside the approved scope; scanned separately on 2026-11-04 it has 0 findings (not gated).
-- The baseline holds the 44 findings of the released Phase 6 tree (High 1, Medium 5, Low 38), each with the earliest release tag that contains it (`reports/r104.md`, R104-2A). A B106 false positive introduced by an R104-1 self-test (`secret="x"` as a synthetic report key) was **not accepted** as an exception: the test now uses a neutral key and the entry BL-38 and its class were removed (R104-2A). Entry ids are not renumbered.
+- The baseline holds the 44 findings of the released Phase 6 tree (High 1, Medium 5, Low 38), each with the earliest release tag that contains it (`reports/r104.md`, R104-2A). A B106 false positive introduced by an R104-1 self-test (`secret="x"` as a synthetic report key) was **not accepted** as an exception: the test now uses a neutral key and the entry BL-38 and its class were removed (R104-2A). Entry ids are not renumbered. **2026-11-16:** six findings of the Phase 8 live-comparison scripts were reviewed and added as BL-46–BL-51 (F8 ×5, F6 ×1; origin `phase-8`, the untagged work first committed in `3472800`), so the baseline holds 50 (High 1, Medium 6, Low 43; `reports/phase-8h-ci.md` §3).
 
 | Class | Tests (severity) | Classification | Evidence |
 |---|---|---|---|
 | F5 | B202 (High) | False positive: the dev-only Node installer extracts an archive whose SHA-256 was checked against `SHASUMS256.txt` from the fixed `https://nodejs.org/dist/v22.23.4/`, after checking that every member stays inside the target; `zipfile` creates no links, the tar branch uses `filter="data"` | `reports/phase-5b.md` §4.2; `reports/phase-6-final-qa.md` §9 #1 |
-| F6 | B310 (Medium) | False positive: `urlopen` only on fixed `https://nodejs.org` URLs, the demo's own `http://127.0.0.1:<bound port>`, `http://127.0.0.1:<int port>`, or the validated live-runner endpoint (`http`/`https` only, plain `http` loopback-only); no `file:` or custom scheme reachable | `reports/phase-5b.md` §4.2; `reports/phase-6a.md`; `reports/phase-6-final-qa.md` §9 #2–4, #6 |
+| F6 | B310 (Medium) | False positive: `urlopen` only on fixed `https://nodejs.org` URLs, the demo's own `http://127.0.0.1:<bound port>`, `http://127.0.0.1:<int port>`, or the validated live-runner endpoint (`http`/`https` only, plain `http` loopback-only); no `file:` or custom scheme reachable. Phase 8 (BL-51): the completed-A/B import posts to `http://127.0.0.1:<int port>` (`argparse type=int`) | `reports/phase-5b.md` §4.2; `reports/phase-6a.md`; `reports/phase-6-final-qa.md` §9 #2–4, #6; `reports/phase-8h-ci.md` §3 |
 | F7 | B608 (Medium) | False positive: the QA benchmark's table name comes from a literal tuple, never from input | `reports/phase-5b.md` §4.2; `reports/phase-6-final-qa.md` §9 #5 |
-| F8 | B101, B105, B404, B603, B607 (Low) | Accepted Low: asserts in the QA benchmark, fixed-argv `git`/`docker`/seeder calls without a shell, a diagnostics hypothesis text and a `CHANGE_ME` placeholder check mistaken for passwords | `reports/phase-5b.md` §4.2 (F8) |
+| F8 | B101, B105, B404, B603, B607 (Low) | Accepted Low: asserts in the QA benchmark, fixed-argv `git`/`docker`/seeder calls without a shell, a diagnostics hypothesis text and a `CHANGE_ME` placeholder check mistaken for passwords. Phase 8 (BL-46–BL-50): the live batch and prompt-A/B managers start `sys.executable -m demo_app.live_compare` with registered model/scenario arguments from a digest-checked plan, and a fixed-text PowerShell process check found by `shutil.which`; argv lists, no shell | `reports/phase-5b.md` §4.2 (F8); `reports/phase-8h-ci.md` §3 |
 
 <!-- bandit-baseline:begin -->
 | ID | File | Test | Severity / confidence | Fingerprint | Class |
@@ -222,6 +222,12 @@ CI job `security-python` runs Bandit 1.9.4 (hash-checked tool lock) as `bandit -
 | BL-43 | `scripts/verify_phase0.py` | B607 | LOW / HIGH | `d611e2f7b809` | F8 |
 | BL-44 | `scripts/verify_phase0.py` | B603 | LOW / HIGH | `ac3d6393febd` | F8 |
 | BL-45 | `scripts/verify_phase0.py` | B607 | LOW / HIGH | `3a1f7b05d337` | F8 |
+| BL-46 | `demo_app/live_batch.py` | B404 | LOW / HIGH | `045e93142f2d` | F8 |
+| BL-47 | `demo_app/live_batch.py` | B603 | LOW / HIGH | `c5971a02cca6` | F8 |
+| BL-48 | `demo_app/live_batch.py` | B603 | LOW / HIGH | `9ba897a9b6e5` | F8 |
+| BL-49 | `demo_app/live_prompt_ab.py` | B404 | LOW / HIGH | `ca18ac3feb3f` | F8 |
+| BL-50 | `demo_app/live_prompt_ab.py` | B603 | LOW / HIGH | `20aa39f25485` | F8 |
+| BL-51 | `scripts/import_completed_ab.py` | B310 | MEDIUM / HIGH | `b114d5738277` | F6 |
 <!-- bandit-baseline:end -->
 
 ## 9. History secret-scan exceptions (R104-3)

@@ -6,11 +6,11 @@ import { formatInt } from "../../lib/format";
 import { formatIsoNs } from "../../lib/nanos";
 import { ChartCard, LegendItem } from "../chart-card";
 import { OutcomeChart, type OutcomePoint } from "../charts/outcome-chart";
-import { NullValue } from "../data-table";
 import { SectionHeading } from "../page-header";
 import { ProvenanceBadge } from "../provenance-badge";
 import { Notice } from "../states";
-import { codeLabel, Count, Ms, OutcomeLabel, RateText, Usd, VariantCost } from "./values";
+import { CaseDiffTable } from "./case-diff-table";
+import { Count, Ms, RateText, Usd, VariantCost } from "./values";
 
 /**
  * Phase 4D: one stored experiment report (`llminsight.experiment_report.v1`), as served. The
@@ -343,57 +343,22 @@ export function caseRows(report: ExperimentReport): { id: number; a: ResultRow |
   return [...byCase.entries()].sort(([x], [y]) => x - y).map(([id, v]) => ({ id, ...v }));
 }
 
-function ResultCell({ row }: { row: ResultRow | null }) {
-  if (row === null) return <NullValue label="no result under this version">no result</NullValue>;
-  return (
-    <span className="inline-flex flex-col gap-0.5">
-      <OutcomeLabel outcome={row.outcome} code={row.detail_code} />
-      {row.outcome !== "passed" && <span className="text-xs text-ink-3">{codeLabel(row.detail_code)}</span>}
-    </span>
-  );
-}
-
+/**
+ * Results per test case with the outcome change from baseline A to B (UI-5). Only outcome and
+ * detail code cross to the client table; the rest of each stored result stays on the server.
+ */
 export function CaseResultsTable({ report, project }: { report: ExperimentReport; project: string }) {
-  const rows = caseRows(report);
+  const slim = (r: ResultRow | null) => (r === null ? null : { outcome: r.outcome, detail_code: r.detail_code });
+  const rows = caseRows(report).map((r) => ({ id: r.id, a: slim(r.a), b: slim(r.b) }));
   return (
-    <div className="relative overflow-x-auto rounded-lg border border-line" role="region" aria-label="Results per test case" tabIndex={0} data-testid="case-results-table">
-      <table className="w-full min-w-[36rem] border-collapse text-sm">
-        <caption className="px-3 py-2 text-left text-xs text-ink-3">
-          {formatInt(rows.length)} test case ids evaluated; {report.cases.ids_identical_across_versions ? "identical under both versions" : "NOT identical under both versions"}. Open a case for its stored
-          metadata and evaluation details.
-        </caption>
-        <thead className="bg-raised">
-          <tr>
-            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-ink-2">
-              Test case
-            </th>
-            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-ink-2">
-              Version A · {report.experiment.prompt_version_a}
-            </th>
-            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-ink-2">
-              Version B · {report.experiment.prompt_version_b}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-t border-line" data-testid="case-result-row" data-case-id={r.id}>
-              <th scope="row" className="px-3 py-2 text-left align-top font-medium">
-                <Link href={`/experiments/${report.experiment.id}/cases/${r.id}?project=${project}`} className="underline underline-offset-2" data-testid="case-result-link">
-                  #{r.id}
-                </Link>
-              </th>
-              <td className="px-3 py-2 align-top" data-slot="a">
-                <ResultCell row={r.a} />
-              </td>
-              <td className="px-3 py-2 align-top" data-slot="b">
-                <ResultCell row={r.b} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <CaseDiffTable
+      rows={rows}
+      experimentId={report.experiment.id}
+      project={project}
+      versionA={report.experiment.prompt_version_a}
+      versionB={report.experiment.prompt_version_b}
+      identical={report.cases.ids_identical_across_versions}
+    />
   );
 }
 

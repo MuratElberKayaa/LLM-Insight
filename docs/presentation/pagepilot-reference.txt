@@ -1,0 +1,124 @@
+PAGE 1
+PagePilot
+EPUB okuma asistanı
+Okuma sınırına göre kaynaklı soru-cevap
+Lewis Carroll · Project Gutenberg #11
+
+
+PAGE 2
+Mobil ve bulut mimarisi
+Demoda EPUB emülatörden yüklenir. İndeksleme ve soru-cevap AWS EC2 üzerinde çalışır.
+Flutter / CLI
+Caddy + FastAPI
+PostgreSQL + 
+pgvector
+multilingual-e5-small
+Groq API
+HTTPS
+Mobilde SQLite
+çevrimdışı okuma
+EPUB ayrıştırma, indeksleme
+ve okuma sınırı kontrolü
+Veritabanı, kitap parçalarıyla birlikte okuma konumunu ve kitap sohbetini saklar.
+
+
+PAGE 3
+Okuma sınırı ve prompt
+Soru vektörüyle arama, kullanıcının bulunduğu konuma kadar olan parçalar üzerinde çalışır.
+Bağlam seçimi
+Kitap, indeks sürümü ve okuma konumu doğrulanır. 
+Varsayılan olarak en çok 6 parça seçilir.
+Prompt girdisi
+Kitap adı, yazar, soru, okuma sınırı ve kimlikli metin 
+parçaları ayrı JSON alanlarında iletilir.
+Yanıt doğrulaması
+API, JSON şemasını ve kaynak kimliklerini doğrular. 
+Kanıt yetersizse kaynak listesi boş kalır.
+“Yalnızca verilen kitap 
+metinlerine dayan.”
+Sayfa 3’te Cheshire Kedisi 
+sorulduğunda, beklenen yanıt mevcut 
+metnin yetersiz olduğunu belirtir.
+
+
+PAGE 4
+Model seçimi ve maliyet
+Groq GPT-OSS 20B, düşük liste fiyatı ve JSON Object Mode desteği için seçildi.
+Model
+Girdi
+Çıktı
+Kullanım
+Groq GPT-OSS 20B
+$0,075
+$0,30
+Canlı değerlendirme
+Groq GPT-OSS 120B
+$0,15
+$0,60
+Daha büyük üretim modeli
+Groq Qwen 3.8 27B
+$0,80
+$4,00
+Önizleme modeli
+Gemini 3.8 Flash
+$0,75
+$3,75
+Gemini adaptörünün varsayılanı
+USD / 1 milyon token. Gemini sütunları 31 Aralık 2026’ya kadar geçerli tanıtım fiyatıdır.
+1.000 istek tahmini · Groq $0,369 · Gemini $4,125
+İstek başına 2.600 girdi ve 580 çıktı tokenı varsayıldı. Gemini’ye canlı istek gönderilmedi.
+
+
+PAGE 5
+Canlı değerlendirme
+Alice Harikalar Diyarında · 24 vaka · Groq GPT-OSS 20B · 11 Kasım 2026
+%54,2
+24 vakanın 13’ü geçti
+22 başarılı HTTP yanıtı
+1 beklenen sınır reddi (422)
+1 kota hatası (429)
+Uçtan uca API gecikmesi
+p50 0,96 sn · p95 1,56 sn
+22 HTTP 200 yanıtı
+Kaynak ve kayıt kontrolleri
+17/17 kaynak okuma sınırı içindeydi.
+22/22 yanıt kitap sohbetinden geri alındı.
+EPUB indeksleme
+145 parça · ilk READY 31,8 sn
+Başarı, yanıtın doğruluğunu, kaynak desteğini ve gerektiğinde bilgi yetersizliğini belirtmesini kapsar.
+
+
+PAGE 6
+İleri sayfalarda geriye dönük sorular
+Aynı üç soru 65. ve 130. sayfalarda tekrarlandı. Tüm kanıtlar iki sınırda da okunmuştu.
+Zorluk
+Aranan bilgi
+Sayfa 65
+Sayfa 130
+Kolay
+Kavanozun içi (sayfa 4)
+Geçti
+Kaldı · İngilizce
+Orta
+Eldiven, yelpaze ve küçülme (15, 17)
+Kaldı · çekimser
+Kaldı · HTTP 503
+Zor
+Şişe ve mantarın etkileri (10, 47–48)
+Kaldı · eksik yanıt
+Kaldı · çekimser
+65. sayfada 1/3, 130. sayfada 0/3
+Altı ek vaka ayrı puanlandı. Sonuçlar bu kitaptaki üç soruyla sınırlıdır.
+
+
+PAGE 7
+Emülatör demosu
+Alice Harikalar Diyarında, sayfa 3 / 145
+Kaynaklı yanıt
+“Beyaz Tavşan yelek cebinden ne çıkardı?”
+Groq “Bir saat.” yanıtını verdi ve sayfa 3’ü gösterdi.
+Okunmamış bölüme ait soru
+Cheshire Kedisi sorusunda uygulama, mevcut metnin yetersiz 
+olduğunu gösterdi.
+Kalıcı kitap sohbeti
+Panel yeniden açıldığında iki yanıt da aynı kitapta görünüyordu.
