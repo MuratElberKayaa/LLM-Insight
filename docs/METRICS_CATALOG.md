@@ -43,7 +43,7 @@ Provenance values are defined in `TELEMETRY_CONTRACT.md` §5. Usage rows and spa
 | M13 | Price versions used | distinct `price_version` per model | usage_records | — |
 | M14 | Usage source mix | count by `usage_source` | usage_records | — |
 | M15 | Provider / model / prompt-version breakdown | M02, M04, M06, M10, M11 grouped | usage + spans | `requested_model` vs `response_model` both available |
-| M16 | Eval pass rate per prompt_version | `passed=true` ÷ evaluated results | experiment_results | `passed IS NULL` means "not evaluated" and is excluded from the denominator and shown separately |
+| M16 | Eval pass rate per prompt_version | `passed=true` ÷ evaluated results | experiment_results | `passed IS NULL` means "not evaluated" and is excluded from the denominator and shown separately. Phase 9D (ADR-53): it carries a 95 % Wilson interval, and paired versions get an exact McNemar test (`ab_statistics.py`) |
 | M17 | Experiment cost & latency per version | M06 / M10-style aggregates over experiment_results | experiment_results | `mode=mock` results labeled SYNTHETIC |
 | M18 | Review counts | count by `issue_type`, `review_status`, `reviewer_decision` | failure_reviews | Counts of hypotheses, not of root causes |
 | M19 | Server-dropped attribute count | `SUM(server_dropped_attributes_count)` | spans | Privacy health signal. Excludes the client's own OTLP `dropped_attributes_count`, which is not stored |
@@ -58,6 +58,7 @@ Implemented in `backend/app/repositories/metrics.py` (SQL) and `backend/app/serv
 - **M08/M09** sums skip `NULL`; a sum is `null` when no row reports the value. Subsets carry `calls_reporting`, because an absent subset may mean 0 or not reported.
 - **M10/M11/M12**: `cost_complete` is true only when no row of the population has an unknown cost (`null` for an empty population). M12 is the exact quotient rounded once, half-even, to 10 places.
 - **M13** lists `(provider, model, price_version)` of computed rows through their exact `model_price_id`.
+- **M15 list-price reference (Phase 9B, ADR-52; additive, read-time, not a measure of spend):** each group also carries `reference_list_price`. It is the group's eligible provider-reported tokens priced with the `reference-2026-11-19` catalogue (`PRICING.md` §9). It is never part of M10–M12, and the overview has no reference total.
 - **M15** groups by `provider`, `requested_model`, `response_model` and the span's prompt version, and reports M02, M04, M06, M10, M11 plus the provenance counts per group. **Phase 3C (additive, no formula changed):** each group also carries `tokens` (M08/M09, the overview's block: sums skip `NULL`, `null` when nothing is reported, unknown counts, subsets with `calls_reporting`) and `usage_source` (M14 counts), so the comparison page shows token statistics without recomputing anything. Groups partition the usage rows, so their token sums add up to the overview total (integration-tested).
 - **Filters** apply at each metric's own level (trace columns for trace-level metrics, the usage row and its span for usage-level metrics). `provenance=mixed` selects mixed traces; no usage row is mixed, so usage-level metrics are then empty.
 - **Rates** are JSON numbers rounded to 6 places next to their numerator and denominator; money is never a float.

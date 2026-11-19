@@ -194,6 +194,9 @@ def test_golden_experiment_end_to_end(api_client, golden_setup, db):
     assert (va["passed"], va["failed"], va["not_evaluated"]) == (7, 4, 1)
     assert (vb["passed"], vb["failed"], vb["not_evaluated"]) == (4, 6, 2)
     assert va["pass_rate"] == {"value": 0.636364, "numerator": 7, "denominator": 11}
+    # Phase 9D: 95 % Wilson bounds, pinned from an independent float computation.
+    assert va["pass_rate_wilson_95"] == {"low": 0.353801, "high": 0.848335}
+    assert vb["pass_rate_wilson_95"] == {"low": 0.16818, "high": 0.687326}
     assert vb["pass_rate"] == {"value": 0.4, "numerator": 4, "denominator": 10}
     assert vb["not_evaluated_by_code"] == {"expected_output_missing": 1, "provider_timeout": 1}
 
@@ -222,6 +225,7 @@ def test_golden_experiment_end_to_end(api_client, golden_setup, db):
         "b_passed_on_paired": 4,
         "higher_pass_rate": None,
         "reason": doc["comparison"]["quality"]["reason"],
+        "paired_test": None,  # Phase 9D: no test on a partial comparison
     }
     assert doc["comparison"]["cost"]["status"] == "incomplete"
     assert doc["comparison"]["cost"]["difference_usd_b_minus_a"] is None

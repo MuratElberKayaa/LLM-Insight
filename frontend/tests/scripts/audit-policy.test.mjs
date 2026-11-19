@@ -5,7 +5,9 @@
 // revised R102 advisory, 2026-11-01 kept unchanged as historical evidence, and synthetic mutations.
 // Sections 1-17 and the mutation sweep test the gate with the R102-only policy as committed on
 // 2026-11-08 (policy-r102-2026-11-08.json, a byte-for-byte copy), which matches their reports;
-// section 18 tests the current security/npm-audit-policy.json against the 2026-11-18 reports.
+// Section 18 tests the R102 + R144 policy of 2026-11-18 (policy-r102-r144-2026-11-18.json, a byte-for-byte
+// copy) against the 2026-11-18 reports. Section 19 tests the current security/npm-audit-policy.json (R102
+// only, re-reviewed 2026-11-19; R144 removed after GitHub withdrew its advisory) against the 2026-11-19 reports.
 // Run: npm run test:audit-policy
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -29,6 +31,8 @@ const REGISTRY_ERROR = read("tests/fixtures/npm-audit/registry-error-econnrefuse
 // The R102-only policy of 2026-11-08 (unchanged copy): the policy the 2026-11-08 reports were approved against.
 const POLICY = read("tests/fixtures/npm-audit/policy-r102-2026-11-08.json");
 const CURRENT_POLICY = read("security/npm-audit-policy.json");
+// The R102 + R144 policy as committed on 2026-11-18 (unchanged copy): the policy the 2026-11-18 reports were approved against.
+const POLICY_1118 = read("tests/fixtures/npm-audit/policy-r102-r144-2026-11-18.json");
 const LOCKFILE = read("package-lock.json");
 const R102 = POLICY.exceptions[0];
 const VULNERABLE_NODE = "node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch";
@@ -722,15 +726,15 @@ describe("17. revised advisory of 2026-11-04: two independent, exact range field
   });
 });
 
-describe("18. picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102, current policy", () => {
+describe("18. picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102, policy of 2026-11-18", () => {
   // Captured 2026-11-18 as CI audits: clean npm ci, empty npm cache, current registry metadata.
   const REPORT = read("tests/fixtures/npm-audit/full-r102-r144-2026-11-18.json");
   const REPORT_RUN2 = read("tests/fixtures/npm-audit/full-r102-r144-2026-11-18-run2.json");
   // Captured 2026-11-17 with a local npm cache whose typescript-eslint metadata predates 8.73.0.
   const STALE_REPORTS = ["full-r102-r144-2026-11-17.json", "full-r102-r144-2026-11-17-run2.json"].map((f) => read(`tests/fixtures/npm-audit/${f}`));
   const NOW_1117 = Date.parse("2026-11-17T19:00:00Z");
-  const R144 = CURRENT_POLICY.exceptions.find((e) => e.riskId === "R144");
-  const CURRENT_R102 = CURRENT_POLICY.exceptions.find((e) => e.riskId === "R102");
+  const R144 = POLICY_1118.exceptions.find((e) => e.riskId === "R144");
+  const CURRENT_R102 = POLICY_1118.exceptions.find((e) => e.riskId === "R102");
   const PICOMATCH_NODES = { "node_modules/picomatch": "2.3.2", "node_modules/tinyglobby/node_modules/picomatch": "4.0.7" };
   const R144_CHAIN = [
     "@next/eslint-plugin-next",
@@ -748,7 +752,7 @@ describe("18. picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102, current pol
     "typescript-eslint",
   ];
   const SHARED = R144_CHAIN.filter((n) => n in CURRENT_R102.chain);
-  const current = (over = {}) => ({ report: clone(REPORT), npmExitCode: 1, lockfile: clone(LOCKFILE), policy: clone(CURRENT_POLICY), now: NOW_1117, ...over });
+  const current = (over = {}) => ({ report: clone(REPORT), npmExitCode: 1, lockfile: clone(LOCKFILE), policy: clone(POLICY_1118), now: NOW_1117, ...over });
   const changed = (fn, over = {}) => {
     const i = current(over);
     fn(i);
@@ -783,8 +787,8 @@ describe("18. picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102, current pol
     assert.deepEqual(strip(STALE_REPORTS[1]), strip(STALE_REPORTS[0]));
   });
   test("R144 records exactly the verified advisory (literal values)", () => {
-    assert.equal(CURRENT_POLICY.schemaVersion, 2);
-    assert.deepEqual(CURRENT_POLICY.exceptions.map((e) => e.riskId), ["R102", "R144"]);
+    assert.equal(POLICY_1118.schemaVersion, 2);
+    assert.deepEqual(POLICY_1118.exceptions.map((e) => e.riskId), ["R102", "R144"]);
     assert.equal(R144.advisory, "GHSA-fc5q-39xc-vjpf");
     assert.equal(R144.advisoryUrl, "https://github.com/advisories/GHSA-fc5q-39xc-vjpf");
     assert.equal(R144.cve, "CVE-2026-112366");
@@ -920,14 +924,79 @@ describe("18. picomatch GHSA-fc5q-39xc-vjpf (R144) overlapping R102, current pol
     const result = assertFails(current({ now: END_OF_DEADLINE }), /\(R144\): EXPIRED/);
     assert.ok(result.errors.some((e) => /R102\): EXPIRED/.test(e)));
   });
-  test("the current policy accepts no report from before its approval date", () => {
+  test("the 2026-11-18 policy accepts no report from before its approval date", () => {
     assertFails(current({ now: Date.parse("2026-11-16T23:59:59Z") }), /R144\): approvedOn is in the future/);
   });
-  test("CLI on the real 2026-11-18 CI-equivalent report with the real policy: exit 0 before the deadline, 1 after it", () => {
-    const report = path.join(root, "tests/fixtures/npm-audit/full-r102-r144-2026-11-18.json");
+  test("run() on the real 2026-11-18 CI-equivalent report with the 2026-11-18 policy file: pass before the deadline, fail after it", () => {
+    // Phase 9E: the CLI always reads security/npm-audit-policy.json, which no longer holds R144; run() takes the copy.
+    const paths = {
+      reportPath: path.join(root, "tests/fixtures/npm-audit/full-r102-r144-2026-11-18.json"),
+      npmExitCode: "1",
+      policyPath: path.join(root, "tests/fixtures/npm-audit/policy-r102-r144-2026-11-18.json"),
+      lockfilePath: path.join(root, "package-lock.json"),
+    };
+    const before = run({ ...paths, now: END_OF_DEADLINE - 1 });
+    assert.equal(before.verdict, "conditional-pass", before.errors.join("\n"));
+    assert.match(before.lines.at(-1), /CONDITIONAL PASS: .*R102 GHSA-g3hv-75wg-m249 .*R144 GHSA-fc5q-39xc-vjpf \(review by 2026-11-30 UTC\)/);
+    assert.equal(run({ ...paths, now: END_OF_DEADLINE }).verdict, "fail");
+  });
+});
+
+describe("19. current policy (R102 only, re-reviewed 2026-11-19) and the 2026-11-19 reports", () => {
+  // Captured 2026-11-19T13:35Z as CI audits: an empty npm cache for each run, current registry metadata.
+  // GitHub withdrew GHSA-fc5q-39xc-vjpf on 2026-11-18T15:38:56Z, so picomatch is no longer reported.
+  const REPORTS = ["full-r102-2026-11-19.json", "full-r102-2026-11-19-run2.json"].map((x) => read(`tests/fixtures/npm-audit/${x}`));
+  const NOW_1119 = Date.parse("2026-11-19T14:00:00Z");
+  const END_1207 = Date.parse("2026-12-08T00:00:00Z");
+  const NEW_R102 = CURRENT_POLICY.exceptions[0];
+  const OLD_R102 = POLICY_1118.exceptions.find((e) => e.riskId === "R102");
+  const current = (over = {}) => ({ report: clone(REPORTS[0]), npmExitCode: 1, lockfile: clone(LOCKFILE), policy: clone(CURRENT_POLICY), now: NOW_1119, ...over });
+
+  test("both 2026-11-19 reports with the real lockfile are a CONDITIONAL PASS on R102 alone", () => {
+    for (const report of REPORTS) {
+      const result = evaluate(current({ report: clone(report) }));
+      assert.equal(result.verdict, "conditional-pass", result.errors.join("\n"));
+      assert.equal(result.findings.length, 7);
+      assert.deepEqual(result.notices, []);
+      for (const f of result.findings) assert.deepEqual(f.advisories, ["GHSA-g3hv-75wg-m249"], f.name);
+      assert.ok(!("picomatch" in report.vulnerabilities));
+    }
+  });
+  test("the current policy holds exactly R102, re-approved 2026-11-19 until 2026-12-07, otherwise unchanged", () => {
+    assert.deepEqual(CURRENT_POLICY.exceptions.map((e) => e.riskId), ["R102"]);
+    assert.equal(NEW_R102.approvedOn, "2026-11-19");
+    assert.equal(NEW_R102.reviewDeadline, "2026-12-07");
+    assert.ok(Date.parse("2026-12-07") - Date.parse("2026-11-19") <= MAX_EXCEPTION_DAYS * 86400000);
+    const reviewed = new Set(["approvedOn", "approvedBy", "reviewDeadline", "justification", "remediation", "blockingConditions"]);
+    for (const key of Object.keys(OLD_R102)) if (!reviewed.has(key)) assert.deepEqual(NEW_R102[key], OLD_R102[key], key);
+    assert.deepEqual(Object.keys(NEW_R102).sort(), Object.keys(OLD_R102).sort());
+    assert.ok(NEW_R102.blockingConditions.includes("the review deadline (end of 2026-12-07 UTC) has passed"));
+    assert.match(NEW_R102.remediation, /on or after 2026-11-30T17:07:26Z, upgrade typescript-eslint/);
+  });
+  test("a picomatch finding is no longer accepted: the 2026-11-18 report fails the current policy", () => {
+    const report = read("tests/fixtures/npm-audit/full-r102-r144-2026-11-18.json");
+    const result = evaluate(current({ report: clone(report) }));
+    assert.equal(result.verdict, "fail");
+    assert.ok(result.errors.some((e) => /GHSA-fc5q-39xc-vjpf/.test(e)), result.errors.join("\n"));
+  });
+  test("the 2026-11-18 policy on the 2026-11-19 report asks for R144 to be removed (the trigger of this review)", () => {
+    const result = evaluate(current({ policy: clone(POLICY_1118) }));
+    assert.equal(result.verdict, "conditional-pass", result.errors.join("\n"));
+    assert.ok(result.notices.some((x) => /R144 \(GHSA-fc5q-39xc-vjpf\) no longer appears in the audit/.test(x)), result.notices.join("\n"));
+  });
+  test("R102 expires at 2026-12-08T00:00:00Z and accepts nothing before 2026-11-19", () => {
+    assert.equal(evaluate(current({ now: END_1207 - 1 })).verdict, "conditional-pass");
+    assertFails(current({ now: END_1207 }), /R102\): EXPIRED \(review deadline 2026-12-07 UTC has passed\)/);
+    assertFails(current({ now: Date.parse("2026-11-18T23:59:59Z") }), /R102\): approvedOn is in the future/);
+  });
+  test("CLI on the real 2026-11-19 report with the real policy: exit 0 before the deadline, 1 after it", () => {
+    const report = path.join(root, "tests/fixtures/npm-audit/full-r102-2026-11-19.json");
     const cli = spawnSync(process.execPath, ["scripts/audit-policy.mjs", "--report", report, "--npm-exit-code", "1"], { cwd: root, encoding: "utf8" });
-    assert.equal(cli.status, Date.now() < END_OF_DEADLINE ? 0 : 1, cli.stdout + cli.stderr);
-    if (cli.status === 0) assert.match(cli.stdout, /CONDITIONAL PASS: .*R102 GHSA-g3hv-75wg-m249 .*R144 GHSA-fc5q-39xc-vjpf \(review by 2026-11-30 UTC\)/);
+    assert.equal(cli.status, Date.now() < END_1207 ? 0 : 1, cli.stdout + cli.stderr);
+    if (cli.status === 0) {
+      assert.match(cli.stdout, /CONDITIONAL PASS: .*R102 GHSA-g3hv-75wg-m249 \(review by 2026-12-07 UTC\)/);
+      assert.doesNotMatch(cli.stdout, /R144/);
+    }
   });
 });
 

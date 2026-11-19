@@ -26,6 +26,7 @@ from app.models.imported_experiment import ImportedExperiment
 from app.models.telemetry import Span, Trace
 from app.models.usage import UsageRecord
 from app.repositories.traces import project_exists
+from app.services import ab_statistics
 
 router = APIRouter(
     prefix="/api/v1/imported-experiments",
@@ -173,8 +174,49 @@ def verified_report(session: Session, project: int, body: ImportEvidence) -> dic
     }
 
 
+def derived_statistics(cases: list[dict]) -> dict:
+    """Phase 9D (ADR-53): computed at read time from the stored, immutable case evidence; the
+    snapshot itself is never changed. Rates are JSON numbers with 6 decimals (never money)."""
+    passed = {(c["case_id"], c["variant"]): bool(c["passed"]) for c in cases}
+    variants = []
+    for variant in ("v1", "v2"):
+        k = sum(1 for (_, v), p in passed.items() if v == variant and p)
+        n = sum(1 for (_, v) in passed if v == variant)
+        bounds = ab_statistics.wilson_interval(k, n)
+        variants.append(
+            {
+                "variant": variant,
+                "passed": k,
+                "evaluated": n,
+                "wilson_95": None
+                if bounds is None
+                else {"low": float(bounds[0]), "high": float(bounds[1])},
+            }
+        )
+    case_ids = sorted({case for case, _ in passed})
+    v1_only = sum(1 for c in case_ids if passed[(c, "v1")] and not passed[(c, "v2")])
+    v2_only = sum(1 for c in case_ids if passed[(c, "v2")] and not passed[(c, "v1")])
+    test = ab_statistics.exact_mcnemar(v1_only, v2_only)
+    return {
+        "derived_at_read": True,
+        "variants": variants,
+        "paired_test": {
+            "method": test["method"],
+            "paired_cases": len(case_ids),
+            "v1_only": v1_only,
+            "v2_only": v2_only,
+            "p_value": float(test["p_value"]),
+            "significant_at_0_05": test["significant_at_0_05"],
+            "min_discordant_for_0_05": test["min_discordant_for_0_05"],
+        },
+    }
+
+
 def document(row: ImportedExperiment, *, detail: bool = True) -> dict:
     report = dict(row.report)
+    # Phase 9D: derived from the stored cases; `winner` stays null (ADR-51).
+    report["statistics"] = derived_statistics(report["cases"])
+    report["statistical_significance"] = "exact_mcnemar"
     if not detail:
         report.pop("cases")
     return {

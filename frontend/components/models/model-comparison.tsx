@@ -131,6 +131,56 @@ function CostCell({ g }: { g: ModelGroup }) {
   );
 }
 
+const TIER_LABEL = { paid_standard: "paid Standard tier", on_demand: "on-demand" } as const;
+const REFERENCE_UNAVAILABLE_LABEL = {
+  not_in_reference_catalogue: "not in the reference catalogue",
+  no_priced_calls: "no priceable usage",
+  price_not_listed: "cached-input rate not listed",
+} as const;
+
+/** Phase 9B (ADR-52): a read-time reference beside the ledger cost, never inside it. */
+function ReferenceCell({ g }: { g: ModelGroup }) {
+  const r = g.reference_list_price;
+  const amount = r.reference_usd === null ? null : formatUsd(r.reference_usd);
+  const day = r.verified_at === null ? null : r.verified_at.slice(0, 10);
+  const tier = r.tier === null ? null : TIER_LABEL[r.tier];
+  const title =
+    tier === null
+      ? "No list-price reference for this model."
+      : `Reference only: what these provider-reported tokens would cost at the published ${tier} price (${r.catalogue_version ?? ""}, verified ${day ?? ""}, ${r.source_url ?? ""}). Not billed, not an invoice, never added to the known cost.`;
+  return (
+    <span className="block" data-testid="group-reference" data-reference-state={r.available ? (r.stale ? "stale" : "available") : "unavailable"} title={title}>
+      <span className="block">
+        {amount === null || r.unavailable_reason !== null ? (
+          <NullValue label="no list-price reference">{r.unavailable_reason === null ? "none" : REFERENCE_UNAVAILABLE_LABEL[r.unavailable_reason]}</NullValue>
+        ) : (
+          <span data-exact={r.reference_usd ?? ""}>{amount.text}</span>
+        )}
+        {r.available && (
+          <span className="ml-1">
+            <Flag tone="neutral" title="A reference at list price, not a charge">
+              Not billed
+            </Flag>
+          </span>
+        )}
+        {r.stale === true && (
+          <span className="ml-1">
+            <Flag tone="warning" title="The reference prices were verified more than 30 days ago">
+              Stale price
+            </Flag>
+          </span>
+        )}
+      </span>
+      {tier !== null && (
+        <span className="block text-xs text-ink-3">
+          {tier} · verified {day}
+        </span>
+      )}
+      {r.available && r.calls_not_priced > 0 && <span className="block text-xs text-ink-3">{formatInt(r.calls_not_priced)} attempts not included</span>}
+    </span>
+  );
+}
+
 function Provenance({ g }: { g: ModelGroup }) {
   return (
     <span className="flex flex-wrap gap-1">
@@ -151,6 +201,7 @@ const COLUMNS: Column<ModelGroup>[] = [
   { key: "latency", header: "Latency (attempt)", render: (g) => <LatencyCell g={g} /> },
   { key: "tokens", header: "Tokens in / out", render: (g) => <TokensCell g={g} /> },
   { key: "cost", header: "Known cost (USD)", render: (g) => <CostCell g={g} /> },
+  { key: "reference", header: "List-price reference (USD)", render: (g) => <ReferenceCell g={g} /> },
 ];
 
 function Item({ label, children }: { label: string; children: ReactNode }) {
@@ -190,6 +241,11 @@ function GroupCards({ groups }: { groups: ModelGroup[] }) {
               </Item>
             </div>
             <div className="col-span-2">
+              <Item label="List-price reference (USD)">
+                <ReferenceCell g={g} />
+              </Item>
+            </div>
+            <div className="col-span-2">
               <Item label="Provenance (attempts)">
                 <Provenance g={g} />
               </Item>
@@ -216,6 +272,13 @@ export function ComparisonNotices({ data }: { data: ModelsCompare }) {
         <Notice tone="info" title="Labeled real by the instrumentation" testId="compare-real">
           Real-labeled attempts came from a provider request, as stated by the instrumentation; the label is asserted, not verified by the server. It does not show which upstream served a request
           (for example behind OpenRouter), and a group from one or a few requests describes those requests only.
+        </Notice>
+      )}
+      {n.anyReference && (
+        <Notice tone="info" title="List-price reference: not billed" testId="compare-reference">
+          The list-price reference shows what the provider-reported tokens would cost at the provider&apos;s published price. It is not a charge and not an invoice, and it is never added to the known cost: free-tier calls stay
+          unknown there. Gemini input uses the text rate; cache-write tokens are left out.
+          {n.anyStaleReference ? " Some reference prices were verified more than 30 days ago." : ""}
         </Notice>
       )}
       <Notice tone="info" title="Groups are not ranked" testId="compare-not-ranked">

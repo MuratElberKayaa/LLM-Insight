@@ -18,6 +18,8 @@ import {
   type ExperimentOptions,
   type ExperimentReport,
   type ExperimentSummary,
+  type Interval,
+  type PairedTest,
   type QualityComparison,
   type Rate,
   type ResultRow,
@@ -131,6 +133,29 @@ const tokenSum: Decoder<TokenSum> = (v, path) => {
   return t;
 };
 
+/** Phase 9D (ADR-53): 0 ≤ low ≤ high ≤ 1. */
+export const intervalDecoder: Decoder<Interval> = (v, path) => {
+  const i = object<Interval>({ low: rate, high: rate })(v, path);
+  if (i.low > i.high) throw new DecodeError(`${path}.low`, "at most high");
+  return i;
+};
+
+/** Phase 9D (ADR-53): counts within the paired cases; no significance below the minimum. */
+export function checkPairedTest(t: PairedTest, paired: number, path: string): void {
+  if (t.a_only + t.b_only > paired) throw new DecodeError(path, "discordant pairs within the paired cases");
+  if (t.significant_at_0_05 && t.a_only + t.b_only < t.min_discordant_for_0_05) throw new DecodeError(`${path}.significant_at_0_05`, "no significance with fewer discordant pairs than the minimum");
+  if (t.significant_at_0_05 !== t.p_value < 0.05 && Math.abs(t.p_value - 0.05) > 0.000001) throw new DecodeError(`${path}.significant_at_0_05`, "significant exactly when p < 0.05");
+}
+
+const pairedTestDecoder: Decoder<PairedTest> = object<PairedTest>({
+  method: literal("exact_mcnemar"),
+  a_only: count,
+  b_only: count,
+  p_value: rate,
+  significant_at_0_05: boolean,
+  min_discordant_for_0_05: positiveInt,
+});
+
 const variantDecoder: Decoder<Variant> = (v, path) => {
   const x = object<Variant>({
     slot: literal("a", "b"),
@@ -141,6 +166,7 @@ const variantDecoder: Decoder<Variant> = (v, path) => {
     not_evaluated: count,
     not_evaluated_by_code: codeCounts(code),
     pass_rate: rateDecoder,
+    pass_rate_wilson_95: nullable(intervalDecoder),
     duration_ms: object<Variant["duration_ms"]>({ n: count, p50: nullable(nonNegativeNumber), p95: nullable(nonNegativeNumber), p95_low_sample: boolean }),
     tokens: object<Variant["tokens"]>({ input: tokenSum, output: tokenSum }),
     cost: object<Variant["cost"]>({
@@ -155,6 +181,9 @@ const variantDecoder: Decoder<Variant> = (v, path) => {
   if (x.passed + x.failed + x.not_evaluated !== x.results) throw new DecodeError(`${path}.results`, "passed + failed + not evaluated");
   if (sumOf(x.not_evaluated_by_code) !== x.not_evaluated) throw new DecodeError(`${path}.not_evaluated_by_code`, "codes summing to not_evaluated");
   if (x.pass_rate.numerator !== x.passed || x.pass_rate.denominator !== x.passed + x.failed) throw new DecodeError(`${path}.pass_rate`, "passed / (passed + failed)");
+  const w = x.pass_rate_wilson_95;
+  if ((w === null) !== (x.pass_rate.value === null)) throw new DecodeError(`${path}.pass_rate_wilson_95`, "an interval exactly when a result was evaluated");
+  if (w !== null && x.pass_rate.value !== null && (w.low > x.pass_rate.value || w.high < x.pass_rate.value)) throw new DecodeError(`${path}.pass_rate_wilson_95`, "an interval around the pass rate");
   if (x.cost.computed + x.cost.unknown !== x.results) throw new DecodeError(`${path}.cost`, "computed + unknown = results");
   if (sumOf(x.cost.unknown_by_reason) !== x.cost.unknown) throw new DecodeError(`${path}.cost.unknown_by_reason`, "reasons summing to unknown");
   if (x.cost.complete !== (x.results > 0 && x.cost.unknown === 0)) throw new DecodeError(`${path}.cost.complete`, "complete exactly when every result is priced");
@@ -174,8 +203,14 @@ const qualityDecoder: Decoder<QualityComparison> = (v, path) => {
     b_passed_on_paired: count,
     higher_pass_rate: nullable(literal("a", "b", "equal")),
     reason: nullable(string(500)),
+    paired_test: nullable(pairedTestDecoder),
   })(v, path);
   const complete = q.status === "complete";
+  if ((q.paired_test !== null) !== complete) throw new DecodeError(`${path}.paired_test`, "a paired test exactly when complete");
+  if (q.paired_test !== null) {
+    checkPairedTest(q.paired_test, q.paired_cases, `${path}.paired_test`);
+    if (q.a_passed_on_paired - q.b_passed_on_paired !== q.paired_test.a_only - q.paired_test.b_only) throw new DecodeError(`${path}.paired_test`, "discordant pairs matching the paired passes");
+  }
   // A better version is named only on complete evidence (ADR-25).
   if ((q.higher_pass_rate !== null) !== complete || (q.reason === null) !== complete) throw new DecodeError(`${path}.higher_pass_rate`, "a verdict exactly when complete");
   if (q.a_passed_on_paired > q.paired_cases || q.b_passed_on_paired > q.paired_cases) throw new DecodeError(`${path}`, "passes within the paired cases");

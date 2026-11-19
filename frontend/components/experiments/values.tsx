@@ -45,6 +45,31 @@ export function Usd({ value, unknownLabel = "cost unknown" }: { value: string | 
 }
 
 /** `numerator / denominator` with the backend's rate; no rate without an evaluated result. */
+/** Phase 9D (ADR-53): a 95 % Wilson interval as percentages. */
+export function IntervalText({ interval }: { interval: { low: number; high: number } | null }) {
+  if (interval === null) return <NullValue label="no evaluated result">no interval</NullValue>;
+  return (
+    <span className="tabular" data-testid="wilson-interval">
+      {formatPercent(interval.low)} – {formatPercent(interval.high)}
+    </span>
+  );
+}
+
+/** Phase 9D (ADR-53): one sentence on the exact McNemar test; never names a winner itself. */
+export function PairedTestText({ test, a, b }: { test: { a_only: number; b_only: number; p_value: number; significant_at_0_05: boolean; min_discordant_for_0_05: number }; a: string; b: string }) {
+  const discordant = test.a_only + test.b_only;
+  return (
+    <span className="block text-xs text-ink-3" data-testid="paired-test" data-significant={String(test.significant_at_0_05)}>
+      Exact McNemar test on the paired cases: {formatInt(test.a_only)} passed only under {a}, {formatInt(test.b_only)} only under {b}; p = {test.p_value.toFixed(3)}.{" "}
+      {test.significant_at_0_05
+        ? "The difference is significant at the 0.05 level."
+        : discordant < test.min_discordant_for_0_05
+          ? `Not significant: with fewer than ${formatInt(test.min_discordant_for_0_05)} disagreeing cases no split can reach p < 0.05.`
+          : "Not significant at the 0.05 level; this is not evidence that the versions are equal."}
+    </span>
+  );
+}
+
 export function RateText({ rate }: { rate: Rate }) {
   if (rate.value === null) return <NullValue label="no evaluated result">no evaluated result</NullValue>;
   return (

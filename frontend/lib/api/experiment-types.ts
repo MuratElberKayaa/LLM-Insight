@@ -96,6 +96,22 @@ export interface TokenSum {
   n: number;
 }
 
+/** Phase 9D (ADR-53): a 95 % Wilson interval of a pass rate, as JSON numbers (6 places). */
+export interface Interval {
+  low: number;
+  high: number;
+}
+
+/** Phase 9D (ADR-53): the exact two-sided McNemar test on paired cases. */
+export interface PairedTest {
+  method: "exact_mcnemar";
+  a_only: number;
+  b_only: number;
+  p_value: number;
+  significant_at_0_05: boolean;
+  min_discordant_for_0_05: number;
+}
+
 export interface Variant {
   slot: Slot;
   prompt_version: string;
@@ -105,6 +121,8 @@ export interface Variant {
   not_evaluated: number;
   not_evaluated_by_code: Partial<Record<string, number>>;
   pass_rate: Rate;
+  /** Phase 9D: null exactly when no result was evaluated. */
+  pass_rate_wilson_95: Interval | null;
   duration_ms: { n: number; p50: number | null; p95: number | null; p95_low_sample: boolean };
   tokens: { input: TokenSum; output: TokenSum };
   cost: {
@@ -125,6 +143,8 @@ export interface QualityComparison {
   b_passed_on_paired: number;
   higher_pass_rate: "a" | "b" | "equal" | null;
   reason: string | null;
+  /** Phase 9D: present exactly on a complete comparison. */
+  paired_test: PairedTest | null;
 }
 
 export interface CostComparison {

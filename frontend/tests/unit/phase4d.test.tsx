@@ -89,6 +89,7 @@ function wireReport(): any {
         not_evaluated: 0,
         not_evaluated_by_code: {},
         pass_rate: { value: 0.333333, numerator: 1, denominator: 3 },
+        pass_rate_wilson_95: { low: 0.061492, high: 0.79234 }, // Phase 9D, independent float computation
         duration_ms: { n: 3, p50: 400, p95: 400, p95_low_sample: true },
         tokens: { input: { sum: 150, n: 3 }, output: { sum: 45, n: 3 } },
         cost: { known_cost_usd: "0.0000455000", computed: 3, unknown: 0, unknown_by_reason: {}, complete: true },
@@ -102,6 +103,7 @@ function wireReport(): any {
         not_evaluated: 1,
         not_evaluated_by_code: { provider_timeout: 1 },
         pass_rate: { value: 1, numerator: 2, denominator: 2 },
+        pass_rate_wilson_95: { low: 0.34238, high: 1 },
         duration_ms: { n: 2, p50: 400, p95: 400, p95_low_sample: true },
         tokens: { input: { sum: 100, n: 2 }, output: { sum: 30, n: 2 } },
         cost: { known_cost_usd: "0.0000345000", computed: 2, unknown: 1, unknown_by_reason: { usage_missing: 1 }, complete: false },
@@ -116,6 +118,7 @@ function wireReport(): any {
         a_passed_on_paired: 1,
         b_passed_on_paired: 2,
         higher_pass_rate: null,
+        paired_test: null,
         reason: "some cases were evaluated under only one prompt version (timeout, provider error, no scripted output, a limit or the budget), so the versions are not compared",
       },
       cost: { status: "incomplete", difference_usd_b_minus_a: null, reason: "at least one prompt version has results with unknown cost; a partially priced total is not compared with another total" },
@@ -132,12 +135,12 @@ function wireComplete(): any {
   r.cases.count = 2;
   r.provenance.synthetic = 4;
   const [a, b] = r.variants;
-  Object.assign(a, { results: 2, passed: 1, failed: 1, pass_rate: { value: 0.5, numerator: 1, denominator: 2 }, duration_ms: { n: 2, p50: 400, p95: 400, p95_low_sample: true } });
+  Object.assign(a, { results: 2, passed: 1, failed: 1, pass_rate: { value: 0.5, numerator: 1, denominator: 2 }, pass_rate_wilson_95: { low: 0.094531, high: 0.905469 }, duration_ms: { n: 2, p50: 400, p95: 400, p95_low_sample: true } });
   a.tokens = { input: { sum: 100, n: 2 }, output: { sum: 30, n: 2 } };
   a.cost = { known_cost_usd: "0.0000305000", computed: 2, unknown: 0, unknown_by_reason: {}, complete: true };
   Object.assign(b, { results: 2, passed: 2, failed: 0, not_evaluated: 0, not_evaluated_by_code: {}, pass_rate: { value: 1, numerator: 2, denominator: 2 } });
   b.cost = { known_cost_usd: "0.0000345000", computed: 2, unknown: 0, unknown_by_reason: {}, complete: true };
-  r.comparison.quality = { status: "complete", paired_cases: 2, excluded_by_design: 0, unpaired_cases: 0, a_passed_on_paired: 1, b_passed_on_paired: 2, higher_pass_rate: "b", reason: null };
+  r.comparison.quality = { status: "complete", paired_cases: 2, excluded_by_design: 0, unpaired_cases: 0, a_passed_on_paired: 1, b_passed_on_paired: 2, higher_pass_rate: "b", reason: null, paired_test: { method: "exact_mcnemar", a_only: 0, b_only: 1, p_value: 1, significant_at_0_05: false, min_discordant_for_0_05: 6 } };
   r.comparison.cost = { status: "complete", difference_usd_b_minus_a: "0.0000040000", reason: null };
   return r;
 }
@@ -379,7 +382,9 @@ describe("experiment report presentation", () => {
     const m = html(<ComparisonVerdict report={r} />);
     assert.match(m, /data-higher="b"/);
     assert.match(m, /version B \(golden-prompt-v2\) passed more/);
-    assert.match(m, /no significance test/);
+    // Phase 9D: the verdict carries the exact McNemar test instead of "no significance test".
+    assert.match(m, /Exact McNemar test on the paired cases/);
+    assert.doesNotMatch(m, /no significance test/);
     assert.match(m, /B − A = /);
     assert.equal(reportWarnings(r).filter((w) => /not compared/i.test(w)).length, 0);
   });
@@ -448,5 +453,49 @@ describe("experiment setup form", () => {
   it("preselects only a dataset of the listing", () => {
     assert.match(html(<ExperimentForm project="7" datasets={datasets} options={OPTIONS} initialDataset="3" />), /24 simulated calls/);
     assert.doesNotMatch(html(<ExperimentForm project="7" datasets={datasets} options={OPTIONS} initialDataset="99" />), /simulated calls \(/);
+  });
+});
+
+// ---------------------------------------------------------------- Phase 9D (ADR-53)
+describe("Phase 9D: Wilson intervals and the exact McNemar test in the mock report", () => {
+  const mutations: [string, (r: any) => void][] = [
+    ["an interval without an evaluated result", (r) => ((r.variants[0].pass_rate = { value: null, numerator: 0, denominator: 0 }), (r.variants[0].passed = 0), (r.variants[0].failed = 0), (r.variants[0].not_evaluated = 3), (r.variants[0].not_evaluated_by_code = { provider_timeout: 3 }))],
+    ["an interval that misses the rate", (r) => (r.variants[0].pass_rate_wilson_95 = { low: 0.6, high: 0.9 })],
+    ["an inverted interval", (r) => (r.variants[0].pass_rate_wilson_95 = { low: 0.5, high: 0.2 })],
+    ["a paired test on a complete comparison missing", (r) => (r.comparison.quality.paired_test = null)],
+    ["discordant pairs that contradict the passes", (r) => (r.comparison.quality.paired_test.b_only = 2)],
+    ["significance below the minimum discordant pairs", (r) => ((r.comparison.quality.paired_test.significant_at_0_05 = true), (r.comparison.quality.paired_test.p_value = 0.01))],
+    ["a float-rounded significance flag that disagrees with p", (r) => (r.comparison.quality.paired_test.significant_at_0_05 = true)],
+  ];
+  for (const [name, mutate] of mutations) {
+    it(`refuses ${name}`, () => {
+      const wire = wireComplete();
+      mutate(wire);
+      assert.equal(decode(experimentReportDecoder, wire).ok, false);
+    });
+  }
+
+  it("refuses a paired test on a partial comparison", () => {
+    const wire = wireReport();
+    wire.comparison.quality.paired_test = { method: "exact_mcnemar", a_only: 0, b_only: 1, p_value: 1, significant_at_0_05: false, min_discordant_for_0_05: 6 };
+    assert.equal(decode(experimentReportDecoder, wire).ok, false);
+  });
+
+  it("shows the interval row and the test next to the verdict, without a new winner", () => {
+    const r = decoded(wireComplete());
+    const table = renderToStaticMarkup(<ComparisonTable report={r} />);
+    assert.match(table, /Pass rate, 95 % interval \(Wilson\)/);
+    assert.match(table, /data-testid="wilson-interval"/);
+    const verdict = renderToStaticMarkup(<ComparisonVerdict report={r} />);
+    assert.match(verdict, /Exact McNemar test on the paired cases: 0 passed only under A, 1 only under B; p = 1\.000\./);
+    assert.match(verdict, /Not significant: with fewer than 6 disagreeing cases no split can reach p &lt; 0\.05\./);
+    assert.match(verdict, /data-higher="b"/); // the backend's verdict is unchanged
+    assert.doesNotMatch(renderToStaticMarkup(<ComparisonVerdict report={decoded(wireReport())} />), /paired-test/);
+  });
+
+  it("states significance only when the backend says so", () => {
+    const r = decoded(wireComplete());
+    r.comparison.quality.paired_test = { method: "exact_mcnemar", a_only: 0, b_only: 6, p_value: 0.03125, significant_at_0_05: true, min_discordant_for_0_05: 6 };
+    assert.match(renderToStaticMarkup(<ComparisonVerdict report={r} />), /significant at the 0\.05 level\./);
   });
 });

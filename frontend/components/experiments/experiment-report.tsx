@@ -10,7 +10,7 @@ import { SectionHeading } from "../page-header";
 import { ProvenanceBadge } from "../provenance-badge";
 import { Notice } from "../states";
 import { CaseDiffTable } from "./case-diff-table";
-import { Count, Ms, RateText, Usd, VariantCost } from "./values";
+import { Count, IntervalText, Ms, PairedTestText, RateText, Usd, VariantCost } from "./values";
 
 /**
  * Phase 4D: one stored experiment report (`llminsight.experiment_report.v1`), as served. The
@@ -138,7 +138,8 @@ export function ComparisonVerdict({ report }: { report: ExperimentReport }) {
                 {formatInt(quality.b_passed_on_paired)}:{" "}
                 <strong className="font-semibold">{winner === "equal" ? "both passed the same number" : `version ${winner?.toUpperCase()} (${versionName(report, winner === "a" ? "a" : "b")}) passed more`}</strong>.
                 {" "}
-                <span className="text-ink-3">Synthetic outputs; no significance test.</span>
+                <span className="text-ink-3">Synthetic outputs.</span>
+                {quality.paired_test !== null && <PairedTestText test={quality.paired_test} a="A" b="B" />}
               </>
             ) : (
               <>
@@ -193,6 +194,7 @@ export function ComparisonTable({ report }: { report: ExperimentReport }) {
       ),
     },
     { key: "pass_rate", label: "Pass rate = passed / (passed + failed)", cell: (v) => <RateText rate={v.pass_rate} /> },
+    { key: "wilson", label: "Pass rate, 95 % interval (Wilson)", cell: (v) => <IntervalText interval={v.pass_rate_wilson_95} /> },
     {
       key: "p50",
       label: "Duration p50 (synthetic)",

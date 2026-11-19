@@ -150,3 +150,43 @@ def test_downgrade_preserves_imported_evidence(api_client, evidence, ingest_url)
         f"{PATH}/{report['id']}", params={"project": project}, headers=ADMIN_AUTH
     )
     assert response.json() == report
+
+
+def test_statistics_are_derived_at_read_and_the_snapshot_is_unchanged(api_client, evidence, db):
+    """Phase 9D (ADR-53): v1 passes t01–t03 (3/6), v2 passes t01–t05 (5/6). The discordant
+    pairs are t04 and t05, both v2-only: exact McNemar p = 2 · 1/4 = 0.5. The Wilson bounds are
+    pinned from an independent float computation. No winner is named (ADR-51)."""
+    project, _, body = evidence
+    report = send(api_client, project, body).json()
+    stats = report["statistics"]
+    assert stats["derived_at_read"] is True
+    assert stats["variants"] == [
+        {
+            "variant": "v1",
+            "passed": 3,
+            "evaluated": 6,
+            "wilson_95": {"low": 0.187616, "high": 0.812384},
+        },
+        {
+            "variant": "v2",
+            "passed": 5,
+            "evaluated": 6,
+            "wilson_95": {"low": 0.436497, "high": 0.969947},
+        },
+    ]
+    assert stats["paired_test"] == {
+        "method": "exact_mcnemar",
+        "paired_cases": 6,
+        "v1_only": 0,
+        "v2_only": 2,
+        "p_value": 0.5,
+        "significant_at_0_05": False,
+        "min_discordant_for_0_05": 6,
+    }
+    assert report["statistical_significance"] == "exact_mcnemar" and report["winner"] is None
+    listed = api_client.get(PATH, params={"project": project}, headers=ADMIN_AUTH).json()
+    assert listed["items"][0]["statistics"] == stats and "cases" not in listed["items"][0]
+    # The stored, immutable snapshot keeps the evidence exactly as imported.
+    with db.connect() as conn:
+        stored = conn.execute(text("SELECT report FROM imported_experiments")).scalar_one()
+    assert "statistics" not in stored and stored["statistical_significance"] == "not_computed"

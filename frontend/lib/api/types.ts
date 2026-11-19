@@ -8,6 +8,16 @@ export const USAGE_PROVENANCES = ["real", "synthetic", "unknown"] as const;
 export const TRACE_PROVENANCES = ["real", "synthetic", "mixed", "unknown"] as const;
 export const COST_UNKNOWN_REASONS = ["price_missing", "usage_missing", "usage_inconsistent"] as const;
 export const USAGE_SOURCES = ["provider_reported", "estimated", "unknown"] as const;
+/** Phase 9B (ADR-52): why a call is left out of the list-price reference. */
+export const REFERENCE_NOT_PRICED_REASONS = [
+  "usage_missing",
+  "usage_inconsistent",
+  "cache_write_not_representable",
+  "not_in_reference_catalogue",
+  "price_not_listed",
+] as const;
+export const REFERENCE_UNAVAILABLE_REASONS = ["not_in_reference_catalogue", "no_priced_calls", "price_not_listed"] as const;
+export const REFERENCE_TIERS = ["paid_standard", "on_demand"] as const;
 
 export type UsageProvenance = (typeof USAGE_PROVENANCES)[number];
 export type TraceProvenance = (typeof TRACE_PROVENANCES)[number];
@@ -131,6 +141,28 @@ export interface Overview {
   trend: { bucket: "hour" | "day"; items: TrendItem[] };
 }
 
+export type ReferenceNotPricedReason = (typeof REFERENCE_NOT_PRICED_REASONS)[number];
+
+/**
+ * Phase 9B (ADR-52): read-time list-price reference of one group. NOT ledger data: what the
+ * provider-reported tokens would cost at the published price. Never billed, never added to cost.
+ */
+export interface ReferenceListPrice {
+  available: boolean;
+  unavailable_reason: (typeof REFERENCE_UNAVAILABLE_REASONS)[number] | null;
+  label: "reference_not_billed";
+  currency: "USD" | null;
+  tier: (typeof REFERENCE_TIERS)[number] | null;
+  catalogue_version: string | null;
+  verified_at: string | null;
+  source_url: string | null;
+  reference_usd: string | null;
+  calls_priced: number;
+  calls_not_priced: number;
+  not_priced_by_reason: Record<ReferenceNotPricedReason, number>;
+  stale: boolean | null;
+}
+
 export interface ModelGroup {
   provider: string;
   requested_model: string | null;
@@ -152,6 +184,8 @@ export interface ModelGroup {
     cost_complete: boolean;
   };
   by_provenance: Record<UsageProvenance, number>;
+  /** Phase 9B (additive): a reference beside the cost, never inside it. */
+  reference_list_price: ReferenceListPrice;
 }
 
 export interface ModelsCompare {
