@@ -19,6 +19,9 @@ import {
 } from "../validate";
 import {
   COST_UNKNOWN_REASONS,
+  REFERENCE_NOT_PRICED_REASONS,
+  REFERENCE_TIERS,
+  REFERENCE_UNAVAILABLE_REASONS,
   TRACE_PROVENANCES,
   USAGE_PROVENANCES,
   USAGE_SOURCES,
@@ -30,6 +33,7 @@ import {
   type ModelGroup,
   type ModelsCompare,
   type Overview,
+  type ReferenceListPrice,
   type ProjectList,
   type Split,
   type TokenSubset,
@@ -171,6 +175,28 @@ export const overviewDecoder: Decoder<Overview> = object<Overview>({
   trend: object({ bucket: literal("hour", "day"), items: array(trendItem, MAX_TREND_BUCKETS) }),
 });
 
+const httpsUrl: Decoder<string> = (v, path) => {
+  const s = string(512)(v, path);
+  if (!s.startsWith("https://")) throw new DecodeError(path, "an https URL");
+  return s;
+};
+
+const referenceListPrice: Decoder<ReferenceListPrice> = object<ReferenceListPrice>({
+  available: boolean,
+  unavailable_reason: nullable(literal(...REFERENCE_UNAVAILABLE_REASONS)),
+  label: literal("reference_not_billed"),
+  currency: nullable(literal("USD")),
+  tier: nullable(literal(...REFERENCE_TIERS)),
+  catalogue_version: nullable(string(64)),
+  verified_at: nullable(isoUtc),
+  source_url: nullable(httpsUrl),
+  reference_usd: nullable(decimalString),
+  calls_priced: count,
+  calls_not_priced: count,
+  not_priced_by_reason: keyed(REFERENCE_NOT_PRICED_REASONS, count),
+  stale: nullable(boolean),
+});
+
 const modelGroup: Decoder<ModelGroup> = object<ModelGroup>({
   provider: label,
   requested_model: nullable(label),
@@ -190,6 +216,7 @@ const modelGroup: Decoder<ModelGroup> = object<ModelGroup>({
     cost_complete: boolean,
   }),
   by_provenance: keyed(USAGE_PROVENANCES, count),
+  reference_list_price: referenceListPrice,
 });
 
 /** Group-level consistency: what the backend counts per group must add up per group. */
@@ -200,6 +227,16 @@ const checkedModelGroup: Decoder<ModelGroup> = (v, path) => {
   if (g.cost.cost_complete !== (g.cost.unknown_cost_calls === 0)) throw new DecodeError(`${path}.cost.cost_complete`, "complete exactly when no cost is unknown");
   if ((g.cost.known_cost_usd === null) !== (g.cost.computed_cost_calls === 0)) throw new DecodeError(`${path}.cost.known_cost_usd`, "a known cost exactly when a call was priced");
   if (g.tokens.n !== g.attempts || g.latency.n > g.attempts) throw new DecodeError(`${path}.tokens.n`, "sample sizes within the group");
+  const r = g.reference_list_price;
+  const rp = `${path}.reference_list_price`;
+  if (r.available !== (r.reference_usd !== null) || r.available !== (r.unavailable_reason === null)) throw new DecodeError(rp, "an amount exactly when available");
+  if (r.available !== (r.calls_priced > 0)) throw new DecodeError(`${rp}.calls_priced`, "priced calls exactly when available");
+  if (r.calls_priced + r.calls_not_priced !== g.attempts) throw new DecodeError(rp, "priced + not priced calls = attempts");
+  if (REFERENCE_NOT_PRICED_REASONS.reduce((s, k) => s + r.not_priced_by_reason[k], 0) !== r.calls_not_priced) throw new DecodeError(`${rp}.not_priced_by_reason`, "reasons add up to the calls not priced");
+  const inCatalogue = r.unavailable_reason !== "not_in_reference_catalogue";
+  for (const k of ["currency", "tier", "catalogue_version", "verified_at", "source_url", "stale"] as const) {
+    if ((r[k] !== null) !== inCatalogue) throw new DecodeError(`${rp}.${k}`, "catalogue details exactly when the model is in the catalogue");
+  }
   return g;
 };
 

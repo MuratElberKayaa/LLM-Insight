@@ -317,10 +317,35 @@ def trace_trend(session: Session, f: MetricsFilter, width: timedelta) -> list[Ro
 
 
 # ---------------------------------------------------------------- M15 (models/compare)
+def _reference_columns() -> list[Any]:
+    """Phase 9B (ADR-52, additive): the aggregates of the read-time list-price reference.
+
+    A row is eligible when the ledger found its usage priceable (`computed`, or `unknown`
+    with `price_missing`: usage is checked before applicability) and it reports no cache-write
+    tokens. Token sums cover eligible rows only. Nothing here reads or changes a stored cost
+    beyond these filters."""
+    u = UsageRecord
+    count = func.count()
+    priceable = or_(u.cost_status == "computed", u.cost_unknown_reason == "price_missing")
+    cache_write = func.coalesce(u.cache_write_input_tokens, 0)
+    eligible = and_(priceable, cache_write == 0)
+    return [
+        count.label("usage_rows"),
+        count.filter(eligible).label("ref_eligible_calls"),
+        func.coalesce(func.sum(u.input_tokens).filter(eligible), 0).label("ref_input_tokens"),
+        func.coalesce(func.sum(func.coalesce(u.cached_input_tokens, 0)).filter(eligible), 0).label(
+            "ref_cached_input_tokens"
+        ),
+        func.coalesce(func.sum(u.output_tokens).filter(eligible), 0).label("ref_output_tokens"),
+        count.filter(and_(priceable, cache_write > 0)).label("ref_cache_write_calls"),
+    ]
+
+
 def model_groups(session: Session, f: MetricsFilter, limit: int) -> list[Row[Any]]:
     """M02, M04, M06, M08–M11 and M14 per (provider, requested_model, response_model,
     prompt_version), the largest groups first; `limit + 1` rows so truncation is visible.
-    The M08/M09 token columns were added in Phase 3C (additive)."""
+    The M08/M09 token columns were added in Phase 3C (additive); the reference aggregates in
+    Phase 9B (additive, `_reference_columns`)."""
     u = UsageRecord
     count = func.count()
     prompt = prompt_version_of_span().label("prompt_version")
@@ -341,6 +366,7 @@ def model_groups(session: Session, f: MetricsFilter, limit: int) -> list[Row[Any
                 for r in COST_UNKNOWN_REASONS
             ],
             *[count.filter(u.provenance == p).label(f"prov_{p}") for p in USAGE_PROVENANCES],
+            *_reference_columns(),
         )
         .select_from(u)
         .join(Span, _span_of_usage())

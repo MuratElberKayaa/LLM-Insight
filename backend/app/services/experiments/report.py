@@ -19,6 +19,11 @@ Comparison (A vs B) never names a better version on incomplete evidence:
 - cost is compared only when both versions are completely priced: a partially priced total is
   never set against a fully priced one;
 - latency is reported per version only; no difference is claimed.
+
+Phase 9D (ADR-53, additive): each variant carries the 95 % Wilson interval of its pass rate
+(`pass_rate_wilson_95`), and a complete quality comparison carries the exact McNemar test on its
+paired cases (`paired_test`). `higher_pass_rate` is unchanged: it names more passes, and
+`paired_test.significant_at_0_05` says whether that difference is distinguishable from chance.
 """
 
 from collections import Counter
@@ -26,6 +31,8 @@ from collections.abc import Sequence
 from decimal import ROUND_HALF_EVEN, Decimal
 from fractions import Fraction
 from typing import Any
+
+from app.services import ab_statistics
 
 CONTRACT = "llminsight.experiment_report.v1"
 STRUCTURAL_CODES = frozenset(
@@ -64,7 +71,9 @@ LIMITATIONS = (
     ),
     (
         "small_sample",
-        "Pass rates come from small samples; no statistical significance is computed.",
+        "Pass rates come from small samples. Each rate has a 95 % Wilson interval and paired"
+        " cases get an exact McNemar test; a difference that is not significant is not evidence"
+        " that the versions are equal.",
     ),
     (
         "single_attempt",
@@ -98,6 +107,11 @@ def _percentile(sorted_values: Sequence[int], p: Fraction) -> Decimal | None:
     return (Decimal(exact.numerator) / Decimal(exact.denominator)).quantize(_SIX, ROUND_HALF_EVEN)
 
 
+def _interval(passed: int, evaluated: int) -> dict[str, Decimal] | None:
+    bounds = ab_statistics.wilson_interval(passed, evaluated)
+    return None if bounds is None else {"low": bounds[0], "high": bounds[1]}
+
+
 def _sum(values: list[int | None]) -> dict[str, Any]:
     known = [v for v in values if v is not None]
     return {"sum": sum(known) if known else None, "n": len(known)}
@@ -121,6 +135,7 @@ def _variant(slot: str, version: str, rows: Sequence[Any]) -> dict[str, Any]:
             sorted(Counter(detail_code(None, r.evaluation_detail) for r in nulls).items())
         ),
         "pass_rate": _rate(passed, passed + failed),
+        "pass_rate_wilson_95": _interval(passed, passed + failed),
         "duration_ms": {
             "n": len(durations),
             "p50": _percentile(durations, Fraction(1, 2)),
@@ -162,6 +177,8 @@ def _quality(by_case: dict[int, dict[str, Any]], a: str, b: str, finished: bool)
             unpaired.append(case_id)
     a_passed = sum(1 for x, _ in paired if x)
     b_passed = sum(1 for _, y in paired if y)
+    a_only = sum(1 for x, y in paired if x and not y)
+    b_only = sum(1 for x, y in paired if y and not x)
     reason = None
     if not finished:
         reason = "the experiment has not finished"
@@ -185,6 +202,8 @@ def _quality(by_case: dict[int, dict[str, Any]], a: str, b: str, finished: bool)
         "b_passed_on_paired": b_passed,
         "higher_pass_rate": higher,
         "reason": reason,
+        # Phase 9D: only on a complete comparison, where the pairs are the whole evidence.
+        "paired_test": ab_statistics.exact_mcnemar(a_only, b_only) if complete else None,
     }
 
 

@@ -31,6 +31,7 @@ from app.repositories.metrics import (
     USAGE_SOURCES,
     MetricsFilter,
 )
+from app.services import reference_pricing
 
 LOW_SAMPLE_MIN = {"p95": 20, "p99": 100}
 RATE_DIGITS = 6
@@ -290,6 +291,7 @@ def compare(session: Session, f: MetricsFilter, limit: int) -> dict[str, Any]:
     prompt version, largest groups first. `tokens` and `usage_source` (Phase 3C) use the
     same blocks as the overview, so unknown token counts stay `null` and are counted."""
     rows = repo.model_groups(session, f, limit)
+    now = datetime.now(UTC)  # staleness of the reference catalogue only
     groups = []
     for r in rows[:limit]:
         n = int(r.attempts)
@@ -318,6 +320,23 @@ def compare(session: Session, f: MetricsFilter, limit: int) -> dict[str, Any]:
                     "cost_complete": unknown == 0,
                 },
                 "by_provenance": {p: int(getattr(r, f"prov_{p}")) for p in USAGE_PROVENANCES},
+                # Phase 9B (ADR-52, additive): a read-time reference, never ledger data.
+                "reference_list_price": reference_pricing.reference_block(
+                    r.provider,
+                    r.requested_model,
+                    r.response_model,
+                    reference_pricing.GroupUsage(
+                        calls=int(r.usage_rows),
+                        eligible_calls=int(r.ref_eligible_calls),
+                        input_tokens=int(r.ref_input_tokens),
+                        cached_input_tokens=int(r.ref_cached_input_tokens),
+                        output_tokens=int(r.ref_output_tokens),
+                        usage_missing=int(r.unknown_usage_missing),
+                        usage_inconsistent=int(r.unknown_usage_inconsistent),
+                        cache_write_calls=int(r.ref_cache_write_calls),
+                    ),
+                    now=now,
+                ),
             }
         )
     return {

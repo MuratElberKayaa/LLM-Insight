@@ -136,6 +136,15 @@ def test_complete_comparison_reports_the_difference_and_higher_pass_rate():
         "b_passed_on_paired": 2,
         "higher_pass_rate": "b",
         "reason": None,
+        # Phase 9D: case 2 is the only discordant pair (B passed, A failed): p = 1.
+        "paired_test": {
+            "method": "exact_mcnemar",
+            "a_only": 0,
+            "b_only": 1,
+            "p_value": Decimal("1.000000"),
+            "significant_at_0_05": False,
+            "min_discordant_for_0_05": 6,
+        },
     }
     assert q["cost"] == {
         "status": "complete",
@@ -155,12 +164,14 @@ def test_an_execution_failure_on_one_side_makes_the_quality_comparison_partial()
     assert q["status"] == "partial" and q["higher_pass_rate"] is None
     assert q["unpaired_cases"] == 1 and q["paired_cases"] == 1
     assert "only one prompt version" in q["reason"]
+    assert q["paired_test"] is None  # Phase 9D: no test on a partial comparison
 
 
 def test_an_unfinished_experiment_is_never_compared():
     doc = build([row(1, "a-v1", True), row(1, "b-v2", True)], finished=False)
     assert doc["experiment"]["state"] == "running" and doc["experiment"]["finished_at"] is None
     assert doc["comparison"]["quality"]["higher_pass_rate"] is None
+    assert doc["comparison"]["quality"]["paired_test"] is None  # Phase 9D: not finished
     assert doc["comparison"]["cost"]["status"] == "incomplete"
 
 

@@ -4,7 +4,7 @@
  * production components never import this file (tests/unit/security-static.test.ts).
  */
 
-import type { Cost, Latency, ModelsCompare, Overview, Tokens } from "../../lib/api/types";
+import type { Cost, Latency, ModelsCompare, Overview, ReferenceListPrice, Tokens } from "../../lib/api/types";
 
 const latency = (n: number, p50: number | null, p95: number | null, p99: number | null): Latency => ({
   n,
@@ -123,6 +123,51 @@ export function makeEmptyOverview(): Overview {
   return o;
 }
 
+/** A group whose model is not in the reference catalogue (Phase 9B). */
+export function noReference(attempts: number, usageMissing = 0): ReferenceListPrice {
+  return {
+    available: false,
+    unavailable_reason: "not_in_reference_catalogue",
+    label: "reference_not_billed",
+    currency: null,
+    tier: null,
+    catalogue_version: null,
+    verified_at: null,
+    source_url: null,
+    reference_usd: null,
+    calls_priced: 0,
+    calls_not_priced: attempts,
+    not_priced_by_reason: {
+      usage_missing: usageMissing,
+      usage_inconsistent: 0,
+      cache_write_not_representable: 0,
+      not_in_reference_catalogue: attempts - usageMissing,
+      price_not_listed: 0,
+    },
+    stale: null,
+  };
+}
+
+/** A Gemini reference as the backend computes it (Phase 9B): 1200 in (200 cached) / 300 out. */
+export function geminiReference(overrides: Partial<ReferenceListPrice> = {}): ReferenceListPrice {
+  return {
+    available: true,
+    unavailable_reason: null,
+    label: "reference_not_billed",
+    currency: "USD",
+    tier: "paid_standard",
+    catalogue_version: "reference-2026-11-19",
+    verified_at: "2026-11-19T12:51:42.000000Z",
+    source_url: "https://aistudio.google.com/docs/pricing",
+    reference_usd: "0.0007050000",
+    calls_priced: 1,
+    calls_not_priced: 0,
+    not_priced_by_reason: { usage_missing: 0, usage_inconsistent: 0, cache_write_not_representable: 0, not_in_reference_catalogue: 0, price_not_listed: 0 },
+    stale: false,
+    ...overrides,
+  };
+}
+
 export function makeCompare(): ModelsCompare {
   return {
     project: 1,
@@ -150,6 +195,7 @@ export function makeCompare(): ModelsCompare {
           cost_complete: true,
         },
         by_provenance: { real: 0, synthetic: 4, unknown: 0 },
+        reference_list_price: noReference(4),
       },
       {
         provider: "mock",
@@ -170,6 +216,7 @@ export function makeCompare(): ModelsCompare {
           cost_complete: false,
         },
         by_provenance: { real: 0, synthetic: 2, unknown: 0 },
+        reference_list_price: noReference(2),
       },
     ],
     groups_truncated: false,

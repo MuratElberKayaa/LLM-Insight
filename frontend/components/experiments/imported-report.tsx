@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DataTable } from "../data-table";
 import type { ImportedReport, ImportedSummary } from "../../lib/api/imported-experiments";
 import { LIVE_RULES } from "../../lib/api/imported-experiments";
+import { IntervalText, PairedTestText } from "./values";
 
 export const modelLabel = (model: string) => model === "openai/gpt-oss-20b" ? "Groq · GPT-OSS 20B" : "Gemini · Flash Lite";
 const labels = { t01: "Login blocked", t02: "Invoice download workaround", t03: "Urgent feature request", t04: "Saving blocked", t05: "Browser login workaround", t06: "User guide question" };
@@ -24,7 +25,8 @@ export function ImportedReportView({ report }: { report: ImportedReport }) {
       <h2 className="text-lg font-semibold">Real provider calls · synthetic test inputs</h2>
       <p className="text-sm text-ink-2">12 completed calls, six paired cases, eight fixed checks. Opening this report sends no model request.</p>
       <p className="text-sm text-ink-2">Telemetry was checked against this project’s traces at import. Rule results come from the recorded evaluator; raw responses are not stored and are not re-evaluated here.</p>
-      <p className="text-sm text-ink-2">Six cases, one sample per version: no general winner or statistical significance. Cost is unknown. “Real” is the SDK’s declared provenance.</p>
+      <p className="text-sm text-ink-2">Six cases, one sample per version: no general winner is named. Cost is unknown. “Real” is the SDK’s declared provenance.</p>
+      <PairedTestText test={{ a_only: report.statistics.paired_test.v1_only, b_only: report.statistics.paired_test.v2_only, p_value: report.statistics.paired_test.p_value, significant_at_0_05: report.statistics.paired_test.significant_at_0_05, min_discordant_for_0_05: report.statistics.paired_test.min_discordant_for_0_05 }} a="V1" b="V2" />
     </section>
     <div className="grid gap-4 md:grid-cols-2">
       <section className="rounded-lg border border-line bg-raised p-4"><h2 className="font-semibold">V1 · Short instruction</h2><p className="mt-2 text-sm text-ink-2">Choose category and priority; return only the two required JSON fields.</p></section>
@@ -33,6 +35,7 @@ export function ImportedReportView({ report }: { report: ImportedReport }) {
     <DataTable caption="Observed results on this six-case dataset" rows={report.groups} rowKey={g => g.variant} columns={[
       { key: "version", header: "Prompt", rowHeader: true, render: g => g.prompt_version },
       { key: "passed", header: "All checks passed", render: g => <strong>{g.passed} / {g.evaluated}</strong> },
+      { key: "wilson", header: "95 % interval (Wilson)", render: g => <IntervalText interval={report.statistics.variants.find(s => s.variant === g.variant)?.wilson_95 ?? null} /> },
       { key: "latency", header: "CLIENT p50", render: g => `${g.client_p50_ms.toFixed(1)} ms` },
       { key: "tokens", header: "Reported tokens (input / output)", render: g => <span>{g.input_tokens} / {g.output_tokens}{(g.missing_input_usage + g.missing_output_usage > 0) && " · incomplete usage"}</span> },
       { key: "cost", header: "Cost", render: () => "Unknown" },

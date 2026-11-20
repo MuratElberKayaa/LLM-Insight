@@ -712,3 +712,40 @@ The architectural review of `reports/phase-8a-0.md` authorized checkpoint 8A-1 (
 - **Validation:** disposable PostgreSQL tests cover auth/scope, incomplete and mismatched
   evidence, immutability, idempotency and non-destructive downgrade; frontend tests cover
   source labels, trace links, strict decoders and no additional write surface.
+
+### ADR-52 — Read-time list-price reference for Gemini and Groq, outside the cost ledger (complements ADR-35 and ADR-40; ADR-11 unchanged)
+
+- **Status:** accepted by the owner on 2026-11-19, with decisions D1–D6 of `reports/phase-9a.md` §7 as recommended. Implemented in Phase 9B (`reports/phase-9b.md`).
+- **Context:** ADR-35 rejected "computing a paid-tier list price for information" for two reasons: it could be read as a charge, and no verified catalogue existed. Every real trace so far is Gemini or Groq with unknown cost, so model comparison had no token-cost scale. Verified prices now exist (`PRICING.md` §9).
+- **Decision:**
+  - A versioned, code-only catalogue `reference-2026-11-19` (`backend/app/services/reference_pricing_catalog.py`) with two rows: `gcp.gemini` / `gemini-3.1-flash-lite` at the paid Standard text rates, and `groq` / `openai/gpt-oss-20b` at its on-demand rates. There is no OpenAI row (OpenAI is ledger-priced) and no OpenRouter row (`:free`, price 0).
+  - The reference is computed at read time, only for each `GET /api/v1/models/compare` group. It sits in a separate `reference_list_price` block labelled `reference_not_billed` and uses the ledger's own equation (`pricing.compute_cost`). It covers only rows whose usage the ledger found priceable and that report no cache-write tokens.
+  - It is never written to `usage_records`. It is never added to `known_cost_usd` or shown in its place, and the overview has no reference total. Ledger rules, stored rows and M10–M12 are unchanged.
+  - The catalogue row must match `(provider, model)` exactly. A group with no priced call gets no amount, never `0`. A catalogue older than 30 days is flagged `stale` and is still computed.
+- **Alternatives rejected:**
+  - Writing the reference to the ledger: it would become billing data.
+  - A `reference_prices` table: a migration for a value that is never stored per row.
+  - An overview total: it would read as spend.
+  - Including OpenAI (it duplicates the ledger) or OpenRouter `:free` (its price is 0).
+- **Consequences:** ledger behaviour and stored data are unchanged. Free-tier calls stay unknown in the ledger and get a labelled reference. Misreading is still possible; the label, the "Not billed" flag, the notice and the absence of totals reduce it. Spans do not record input modality, so the Gemini text rate is assumed (audio is priced higher).
+- **Affected files:** `backend/app/services/reference_pricing.py`, `backend/app/services/reference_pricing_catalog.py`, `backend/app/repositories/metrics.py` (`model_groups`), `backend/app/services/metrics.py` (`compare`), `frontend/lib/api/{types,schema}.ts`, `frontend/lib/model-groups.ts`, `frontend/components/models/model-comparison.tsx`, `PRICING.md` §9, `METRICS_CATALOG.md`, `ARCHITECTURE.md` §5.
+- **Tests:** `backend/tests/unit/test_reference_pricing.py`, `backend/tests/integration/test_phase9b_reference_price.py`, `frontend/tests/unit/phase9b.test.tsx`, and the re-recorded `frontend/tests/fixtures/models-compare.live.json`.
+
+### ADR-53 — Wilson intervals and the exact McNemar test in A/B reports (additive to ADR-25 and ADR-51)
+
+- **Status:** accepted 2026-11-19 under the owner's batch authorization, which takes the recommended option at each decision. Implemented in Phase 9D (`reports/phase-9d.md`).
+- **Context:** both A/B reports compare pass counts on six to twelve cases. The mock report stated "no statistical significance is computed". The live import stored `statistical_significance: not_computed`. A difference of two passes in six cases looks meaningful but cannot be told apart from chance.
+- **Decision:**
+  - `backend/app/services/ab_statistics.py` is a pure, deterministic module (no bootstrap, no randomness). It provides the 95 % Wilson score interval per pass rate, and the exact two-sided McNemar test on paired cases: p = min(1, 2 · P(X ≤ min(b, c))), X ~ Bin(b + c, 1/2), computed with integers. The 0.05 decision is taken on the exact fraction. Values are rounded half-even to 6 places.
+  - Mock report `llminsight.experiment_report.v1` (additive): each variant gets `pass_rate_wilson_95` (null without an evaluated result). `comparison.quality` gets `paired_test` on a complete comparison only. `higher_pass_rate` is unchanged. The `small_sample` limitation text now describes the intervals and the test.
+  - Imported live A/B (additive, read time): `statistics` is derived from the stored case evidence on every read. The immutable snapshot is not changed. `statistical_significance` reads `exact_mcnemar`, and `winner` stays `null` (ADR-51).
+  - The dashboard shows the intervals and one sentence per test. It names a significant difference only when the backend's flag says so. When fewer discordant pairs exist than the minimum (6 at 0.05), it says that no split could reach significance.
+- **Alternatives rejected:**
+  - Bootstrap intervals: random, and meaningless at n = 6.
+  - The normal ("Wald") interval: it collapses at 0 or n passes.
+  - Fisher's exact test or a two-proportion z-test: they ignore the pairing.
+  - Storing the statistics in the import snapshot: the snapshot is immutable evidence.
+  - Turning `higher_pass_rate` into a significance verdict: it would change ADR-25 semantics.
+- **Consequences:** reports now show how little their samples establish. For the two stored live runs, p = 0.5. No migration, no write path and no provider request were added.
+- **Affected files:** `backend/app/services/ab_statistics.py`, `backend/app/services/experiments/report.py`, `backend/app/api/imported_experiments.py`, `frontend/lib/api/{experiment-types,experiment-schema,imported-experiments}.ts`, `frontend/components/experiments/{values,experiment-report,imported-report}.tsx`, `METRICS_CATALOG.md` (M16), `ARCHITECTURE.md` §5.
+- **Tests:** `backend/tests/unit/test_ab_statistics.py`, `backend/tests/unit/test_experiment_report.py`, `backend/tests/integration/test_experiment_api.py`, `backend/tests/integration/test_imported_experiments.py`, `frontend/tests/unit/{phase4d,imported-experiments}.test.tsx`, `frontend/tests/e2e/phase4d.spec.ts` (text expectation).

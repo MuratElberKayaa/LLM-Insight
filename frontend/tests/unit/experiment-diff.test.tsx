@@ -92,6 +92,7 @@ describe("VersionCards", () => {
     not_evaluated: ne,
     not_evaluated_by_code: ne > 0 ? { no_output: ne } : {},
     pass_rate: { value: passed + failed === 0 ? null : passed / (passed + failed), numerator: passed, denominator: passed + failed },
+    pass_rate_wilson_95: passed + failed === 0 ? null : { low: 0, high: 1 }, // not decoded here; display only
     duration_ms: { n: 3, p50: 120, p95: 300, p95_low_sample: true },
     tokens: { input: { sum: 900, n: 3 }, output: { sum: null, n: 0 } },
     cost: { known_cost_usd: null, computed: 0, unknown: 3, unknown_by_reason: { price_missing: 3 }, complete: false },

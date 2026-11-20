@@ -55,6 +55,9 @@ export interface CompareNotice {
   anyUnknownCost: boolean;
   anyLowSample: boolean;
   anyEstimated: boolean;
+  /** Phase 9B: a group has a list-price reference (not billed). */
+  anyReference: boolean;
+  anyStaleReference: boolean;
 }
 
 /** Which caveats apply to the groups shown ("any" logic, exact even when truncated). */
@@ -66,5 +69,7 @@ export function compareNotice(data: ModelsCompare): CompareNotice {
     anyUnknownCost: data.groups.some((g) => g.cost.unknown_cost_calls > 0),
     anyLowSample: data.groups.some((g) => g.latency.low_sample.p95),
     anyEstimated: data.groups.some((g) => g.usage_source.estimated > 0),
+    anyReference: data.groups.some((g) => g.reference_list_price.available),
+    anyStaleReference: data.groups.some((g) => g.reference_list_price.stale === true),
   };
 }

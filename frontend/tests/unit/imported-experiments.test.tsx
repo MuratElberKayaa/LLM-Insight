@@ -21,7 +21,12 @@ function fixture() {
       missing_input_usage: 0, missing_output_usage: 0 })),
     started_at: "2026-11-12T23:12:00Z", finished_at: "2026-11-12T23:21:00Z", imported_at: "2026-11-13T01:00:00Z",
     cost_status: "unknown", evaluation_source: "operator_import", provenance: "real_asserted",
-    inputs: "synthetic", winner: null, statistical_significance: "not_computed" };
+    inputs: "synthetic", winner: null, statistical_significance: "exact_mcnemar",
+    // Phase 9D: as the backend derives it (3/6 vs 5/6; t04, t05 pass only under v2: p = 0.5).
+    statistics: { derived_at_read: true,
+      variants: [{ variant: "v1", passed: 3, evaluated: 6, wilson_95: { low: 0.187616, high: 0.812384 } },
+        { variant: "v2", passed: 5, evaluated: 6, wilson_95: { low: 0.436497, high: 0.969947 } }],
+      paired_test: { method: "exact_mcnemar", paired_cases: 6, v1_only: 0, v2_only: 2, p_value: 0.5, significant_at_0_05: false, min_discordant_for_0_05: 6 } } };
 }
 
 describe("imported live comparisons", () => {
@@ -52,4 +57,34 @@ describe("imported live comparisons", () => {
     assert.equal(decode(importedReportDecoder, data).ok, false);
     assert.equal(decode(importedReportDecoder, { ...fixture(), winner: "v2" }).ok, false);
   });
+});
+
+describe("Phase 9D: statistics derived from the live A/B evidence", () => {
+  it("shows the intervals and the exact test, and still names no winner", () => {
+    const html = renderToStaticMarkup(<ImportedReportView report={importedReportDecoder(fixture(), "$")} />);
+    assert.match(html, /95 % interval \(Wilson\)/);
+    assert.equal((html.match(/data-testid="wilson-interval"/g) ?? []).length, 2);
+    assert.match(html, /18\.76% – 81\.24%/);
+    assert.match(html, /0 passed only under V1, 2 only under V2; p = 0\.500\./);
+    assert.match(html, /with fewer than 6 disagreeing cases no split can reach p &lt; 0\.05/);
+    assert.match(html, /no general winner is named/);
+  });
+
+  type Wire = ReturnType<typeof fixture>;
+  const broken: [string, (d: Wire) => void][] = [
+    ["the stored 'not computed' label", (d) => (d.statistical_significance = "not_computed")],
+    ["statistics that are not derived at read", (d) => (d.statistics.derived_at_read = false)],
+    ["a pass count that differs from the groups", (d) => (d.statistics.variants[1]!.passed = 4)],
+    ["discordant pairs that contradict the passes", (d) => (d.statistics.paired_test.v2_only = 3)],
+    ["significance with two discordant pairs", (d) => ((d.statistics.paired_test.significant_at_0_05 = true), (d.statistics.paired_test.p_value = 0.01))],
+    ["an inverted interval", (d) => (d.statistics.variants[0]!.wilson_95 = { low: 0.9, high: 0.1 })],
+    ["missing statistics", (d) => Reflect.deleteProperty(d, "statistics")],
+  ];
+  for (const [name, mutate] of broken) {
+    it(`refuses ${name}`, () => {
+      const data = fixture();
+      mutate(data);
+      assert.equal(decode(importedReportDecoder, data).ok, false);
+    });
+  }
 });

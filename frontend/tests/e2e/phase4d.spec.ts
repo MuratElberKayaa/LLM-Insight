@@ -340,7 +340,8 @@ test("complete evidence: the backend's verdict and cost difference are shown, an
   await expect(verdict).toHaveAttribute("data-status", "complete");
   await expect(verdict).toHaveAttribute("data-higher", "b");
   await expect(page.getByTestId("quality-verdict")).toContainText(`version B (${B}) passed more`);
-  await expect(page.getByTestId("quality-verdict")).toContainText("no significance test");
+  // Phase 9D: the complete verdict now carries the exact McNemar test instead of "no significance test".
+  await expect(page.getByTestId("paired-test")).toContainText("Exact McNemar test on the paired cases");
   const report = await api(request, `/api/v1/experiments/${id}`);
   expect(report.comparison.cost.status).toBe("complete");
   await expect(page.getByTestId("cost-verdict")).toContainText("B − A =");

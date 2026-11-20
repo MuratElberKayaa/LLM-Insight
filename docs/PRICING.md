@@ -44,6 +44,16 @@ Every row has `version = openai-2026-10-24`, `currency = USD`, `verified_at = 20
 
 **Re-verification (Phase 2 closure, 2026-10-25T06:38Z, UTC).** Checked again before seeding: the pricing page, the three model pages and the deprecations page through the page summarizer, and the pricing and model pages downloaded raw (2026-10-25T06:38:13Z–06:38:16Z, HTTP 200). The raw pricing page's first row per model is 0.75 / 0.075 / 4.5, 0.25 / 0.025 / 2 and 0.4 / 0.1 / 1.6; each model page lists only the catalogued default snapshot with the same three prices; no long-context row or cache-write price; shutdown dates and replacements unchanged; `gpt-5.4-mini` has no deprecation notice. **Nothing was changed.**
 
+**Re-verification (Phase 9C, 2026-11-19T13:17:43Z, UTC).** The pricing page, the three model pages and the deprecations page were downloaded raw (2026-11-19T13:17:43Z–13:17:46Z, HTTP 200).
+- **Prices:** the raw pricing page's first row per model is unchanged: 0.75 / 0.075 / 4.5, 0.25 / 0.025 / 2 and 0.4 / 0.1 / 1.6.
+- **Snapshots:** each model page lists only the catalogued default snapshot, with the same three prices.
+- **Tiers and endpoints:** the tier names are unchanged (Standard, Batch, Flex, Fast, Ultrafast). The GPT-5.4 mini page repeats the 10 % regional-endpoint uplift.
+- **Shutdowns:** the deprecations page still gives 2026-12-11 for `gpt-5-mini` / `gpt-5-mini-2025-08-07` and 2027-01-14 for `gpt-4.1-mini-2025-04-14`. `gpt-5.4-mini` has no deprecation notice.
+
+**Nothing was changed:** no new version, nothing re-dated, nothing deactivated.
+
+The SDK live guard still refuses real OpenAI execution, because its evidence (`PRICE_VERIFIED_AT` 2026-10-24T21:40Z) is older than 14 days (R83). That is deliberate. Releasing an identical catalogue version would reopen the guard for 14 days with no approved spend planned. The new version is released right before an approved, budgeted smoke test, not before (`reports/phase-9c.md`).
+
 **Seeding:** `python -m app.cli seed-prices --dry-run`, then `python -m app.cli seed-prices` (backend). It inserts missing rows, reports identical rows as unchanged, and exits 1 writing nothing if a stored row with the same identity differs. It never reprices usage rows. **The local development database was seeded on 2026-10-25** with user approval limited to that database (`reports/phase-2-final.md` §3): 6 rows inserted, a second run inserted 0 and left 6 unchanged, the usage ledger was empty and untouched, and no backfill exists.
 
 ## 3. Applicability: what the stored price covers
@@ -119,3 +129,43 @@ Tests insert their own prices with provider `synthetic.test` (or a per-test vari
 - **Coverage (R29):** most current OpenAI models, every non-standard tier and every regional endpoint are `price_missing`. This is deliberate (no guessing), and the dashboard must show unknown-cost counts next to every known cost (M11).
 - **Not an invoice:** discounts, credits, taxes, minimums, data-sharing programmes and organisation-specific pricing are not modelled.
 - **Client-asserted attributes:** tier, endpoint, model and usage come from the instrumentation (R16). A misreporting client gets a wrong estimate; provenance and `usage_source` are stored next to every cost.
+
+## 9. List-price reference (Phase 9B, ADR-52): not ledger data
+
+A **reference** is "what these provider-reported tokens would cost at the published price". It is computed when `GET /api/v1/models/compare` is read, and it appears in its own `reference_list_price` block and its own dashboard column, labelled `reference_not_billed`.
+
+It is **not** an estimate of spend:
+
+- A Free Tier or Free Plan call stays `cost_status = unknown` in the ledger (§3).
+- The reference is never written to `usage_records`.
+- It is never added to `known_cost_usd` and never totalled in the overview.
+
+**Catalogue `reference-2026-11-19`** (`backend/app/services/reference_pricing_catalog.py`; USD per 1M tokens). Both pages were read on 2026-11-19 through the page fetcher, then again as raw HTML (2026-11-19T12:51:42Z–12:51:43Z, HTTP 200). `verified_at` = 2026-11-19T12:51:42Z.
+
+| Provider | Model | Input | Cached input | Output | Tier | Source |
+|---|---|---|---|---|---|---|
+| gcp.gemini | gemini-3.1-flash-lite | 0.25 | 0.025 | 1.50 | paid_standard | https://aistudio.google.com/docs/pricing |
+| groq | openai/gpt-oss-20b | 0.075 | 0.037 | 0.30 | on_demand | https://console.groq.com/docs/model/openai/gpt-oss-20b |
+
+- **Gemini.** Source: the Standard tab, column "Paid Tier, per 1M tokens in USD". Input is "$0.25 (text / image / video)". Output is "$1.50", under "Output price (including thinking tokens)". Context caching is "$0.025 (text / image / video)".
+  - The adapter's output count is `candidatesTokenCount + thoughtsTokenCount`, so thinking tokens are priced once, inside output.
+  - Not applied: audio input (0.50), Batch and Flex (0.125 / 0.75), Priority (0.45 / 2.70), cache storage ($1.00 / 1M tokens per hour) and grounding.
+  - Spans carry no input modality, so the text rate is assumed (D3).
+- **Groq.** Source: the model page's price card, Input "$0.075", Cached Input "$0.037", Output "$0.30".
+  - The page shows `$` with no ISO code. It is recorded as USD on the same basis as §2 (D2).
+  - Batch and Flex are not applied.
+  - The adapter records the provider-reported output count as `gen_ai.usage.output_tokens`, with reasoning as a subset (`groq_adapter.py`).
+- **Excluded:** OpenAI (its cost is in the ledger, §2) and OpenRouter (its only allowed model is `:free`).
+
+**Rules.**
+1. **Eligible rows.** A row is eligible when the ledger found its usage priceable: `cost_status = computed`, or `unknown` with `price_missing`, because rule 1 of §4 runs before applicability. It must also report no cache-write tokens, because no cache-write rate is listed. Other rows are counted in `not_priced_by_reason` as `usage_missing`, `usage_inconsistent` or `cache_write_not_representable`.
+2. **Selection.** An exact `(provider, model)` match on the response model, or on the requested model only when there is no response model (§4 rule 3). No match → `available: false`, `not_in_reference_catalogue`.
+3. **Equation.** `pricing.compute_cost` over the group's summed eligible tokens. Each group has one model and one catalogue row, so this equals the sum of the per-row costs (tested). Cached tokens with no listed cached rate give `price_not_listed`; they are never priced at the input rate.
+4. **No priced call, no amount.** The result is `no_priced_calls` with `reference_usd: null`, never `0`. Real zero counts give a known `0`, as in §4.
+5. **Event dates.** The current catalogue applies to every event in the window. It means "today's list price", stated with `verified_at`, not "the price on that day" (D4).
+6. **Staleness.** More than 30 days after `verified_at`, the block says `stale: true` and the dashboard warns. The amount is still computed (D5).
+7. **Price changes.** A price change is a new catalogue version in a new commit. Nothing is stored, so there is nothing to backfill.
+
+**Worked examples.**
+- Gemini, 1 200 input (200 cached) / 300 output: (1 000 · 0.25 + 200 · 0.025 + 300 · 1.50) / 10^6 = **0.0007050000**.
+- Groq, two calls of 222 / 96 and 244 / 363: (466 · 0.075 + 459 · 0.30) / 10^6 = **0.0001726500**, which is the sum of 0.0000454500 and 0.0001272000.
