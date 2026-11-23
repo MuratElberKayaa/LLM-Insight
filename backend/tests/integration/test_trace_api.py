@@ -509,7 +509,11 @@ def test_detail_of_the_fixture(api_client, make_key):
         "usage_truncated",
         "reviews",
         "reviews_truncated",  # Phase 4B
+        "agent_summary",  # Phase 10A (ADR-54)
     }
+    # Phase 10A: the fixture has no agent, tool, retrieval or MCP span.
+    assert d["agent_summary"]["agent_steps"] == d["agent_summary"]["tool_calls"] == 0
+    assert d["agent_summary"]["mcp_calls"] == 0 and d["agent_summary"]["tools"] == []
     assert d["trace"]["trace_id"] == FIXTURE_TRACE_ID and d["trace"]["span_count"] == 3
     assert (d["spans_truncated"], d["usage_truncated"], d["reviews"]) == (False, False, [])
     assert d["reviews_truncated"] is False
@@ -522,7 +526,9 @@ def test_detail_of_the_fixture(api_client, make_key):
     assert spans[FIXTURE_LLM]["provenance"] == "synthetic"
     assert all(s["provenance_verified"] is False for s in d["spans"])
     assert all("status_message" not in s for s in d["spans"])
-    assert spans[FIXTURE_LLM]["attributes_schema_version"] == "llminsight.attrmap.v1"
+    assert (
+        spans[FIXTURE_LLM]["attributes_schema_version"] == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     (u,) = d["usage"]
     assert u["span_id"] == FIXTURE_LLM
     assert u["canonical_call_key"] == "resp:openai:chatcmpl-SYNTHETIC-0001"

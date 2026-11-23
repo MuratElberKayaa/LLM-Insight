@@ -133,7 +133,9 @@ def test_a_groq_trace_reaches_postgresql_and_every_read_view(priced_backend, pro
     span = client_span(priced_backend, pid, tid)
     assert span["name"] == f"chat {MODEL}" and span["status"] != "ERROR"
     assert span["provenance"] == "synthetic"
-    assert span["attributes_schema_version"] == "llminsight.attrmap.v1"
+    assert (
+        span["attributes_schema_version"] == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     assert span["server_dropped_attributes_count"] == 0
     (root,) = priced_backend.query(
         "SELECT span_id FROM spans WHERE project_id = %s AND trace_id = %s AND name = 'demo.groq'",

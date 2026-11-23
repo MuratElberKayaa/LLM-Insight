@@ -1,0 +1,9 @@
+{
+  "version": "llminsight.alert_rules.v1",
+  "rules": [
+    {"id": "inference_error_rate", "metric": "inference_error_rate", "threshold": "0.05", "min_n": 20},
+    {"id": "inference_latency_p95", "metric": "inference_latency_p95_ms", "threshold": "10000", "min_n": 20},
+    {"id": "time_to_first_chunk_p95", "metric": "time_to_first_chunk_p95_ms", "threshold": "2000", "min_n": 20},
+    {"id": "known_cost_window", "metric": "known_cost_usd", "threshold": "1.00", "min_n": 1}
+  ]
+}

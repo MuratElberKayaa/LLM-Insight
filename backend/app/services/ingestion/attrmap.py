@@ -1,4 +1,9 @@
-"""Attribute allowlist and GenAI normalization: `llminsight.attrmap.v1`.
+"""Attribute allowlist and GenAI normalization: `llminsight.attrmap.v2`.
+
+v2 (Phase 10A/10B, ADR-54/ADR-55) adds agent, tool, retrieval and MCP **metadata** identifiers
+and the streaming time to first chunk to v1; every
+v1 rule is unchanged. Tool arguments and results, agent and tool descriptions, MCP session IDs and
+resource URIs are always denied. Each stored span records the version it was mapped with.
 
 TELEMETRY_CONTRACT.md §3 (ADR-14, ADR-15, ADR-19). Everything not allowlisted, every
 always-denied key, every value of the wrong type, out of range or of the wrong format, every
@@ -19,7 +24,7 @@ from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
 
 from app.services.ingestion import sensitive
 
-SCHEMA_VERSION = "llminsight.attrmap.v1"
+SCHEMA_VERSION = "llminsight.attrmap.v2"
 
 MAX_STRING = 256
 MAX_ARRAY = 16
@@ -61,6 +66,9 @@ INT = Spec("int")
 NUM = Spec("num")
 BOOL = Spec("bool")
 TOKENS = Spec("int", min_value=0)
+# v2 (ADR-55): semconv `gen_ai.response.time_to_first_chunk`, a double in seconds. A value
+# outside [0, 3600] (one hour) is implausible for one response and is dropped, never clamped.
+SECONDS = Spec("num", min_value=0, max_value=3600)
 
 
 def _identifier(pattern: str, max_len: int, *, opaque: bool = False) -> Spec:
@@ -104,6 +112,10 @@ PROMPT_VERSION = _identifier(r"[A-Za-z0-9][A-Za-z0-9._:+/-]*", 64)
 # description, not a type, and is dropped (R21).
 ERROR_TYPE_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:$/-]*")
 ERROR_TYPE = Spec("str", exact_max=MAX_STRING, non_empty=True, pattern=ERROR_TYPE_RE)
+# v2 (ADR-54): a tool name as declared to the model ("search_kb", "github.create_issue",
+# "files/read"); an MCP method ("tools/call", "notifications/initialized").
+TOOL_NAME = _identifier(r"[A-Za-z0-9_][A-Za-z0-9_.:/-]*", 128)
+MCP_METHOD = _identifier(r"[a-z][A-Za-z0-9_./-]*", 64)
 
 RESOURCE_ALLOWLIST: dict[str, Spec] = {
     "service.name": LABEL,
@@ -137,6 +149,19 @@ SPAN_ALLOWLIST: dict[str, Spec] = {
     "gen_ai.usage.cache_read.input_tokens": TOKENS,
     "gen_ai.usage.cache_write.input_tokens": TOKENS,
     "gen_ai.usage.reasoning.output_tokens": TOKENS,
+    # Streaming (v2, ADR-55); `gen_ai.request.stream` is allowlisted since v1
+    "gen_ai.response.time_to_first_chunk": SECONDS,
+    # GenAI agents, tools and retrieval (v2, ADR-54): identifiers only, never content
+    "gen_ai.agent.name": LABEL_ID,
+    "gen_ai.agent.id": RESPONSE_ID,
+    "gen_ai.agent.version": VERSION,
+    "gen_ai.tool.name": TOOL_NAME,
+    "gen_ai.tool.type": KEYWORD,
+    "gen_ai.tool.call.id": RESPONSE_ID,
+    "gen_ai.data_source.id": LABEL_ID,
+    # MCP (v2, ADR-54)
+    "mcp.method.name": MCP_METHOD,
+    "mcp.protocol.version": VERSION,
     # Stable core
     "error.type": ERROR_TYPE,
     "server.address": HOST,
@@ -183,6 +208,13 @@ _DENY_EXACT = (
     "gen_ai.tool.definitions",
     "gen_ai.prompt.variable",
     "gen_ai.conversation.id",
+    # v2 (ADR-54): agent and tool content stays out, even if a client sends it
+    "gen_ai.tool.call.arguments",
+    "gen_ai.tool.call.result",
+    "gen_ai.tool.description",
+    "gen_ai.agent.description",
+    "mcp.session.id",
+    "mcp.resource.uri",
     "url.full",
     "url.query",
     "client.address",
@@ -292,10 +324,17 @@ def _coerce(spec: Spec, v: AnyValue) -> Any:
         return n
     if spec.kind == "num":
         if which == "int_value":
-            return v.int_value
-        if which == "double_value" and math.isfinite(v.double_value):
-            return v.double_value  # JSONB has no NaN/Infinity
-        return _MISSING
+            x: float = v.int_value
+        elif which == "double_value" and math.isfinite(v.double_value):
+            x = v.double_value  # JSONB has no NaN/Infinity
+        else:
+            return _MISSING
+        # v2 (ADR-55): a range applies only where a spec sets one; v1 NUM specs set none.
+        if spec.min_value is not None and x < spec.min_value:
+            return _MISSING
+        if spec.max_value is not None and x > spec.max_value:
+            return _MISSING
+        return x
     if spec.kind == "bool":
         return v.bool_value if which == "bool_value" else _MISSING
     if spec.kind == "str_array":

@@ -60,6 +60,16 @@ export default async function TracesPage({ searchParams }: PageProps) {
       <div className="mb-5">
         <RangeForm action="/traces" hidden={restartFields(state, ["range", "from", "to"])} window={state.window} shown={data?.window ?? null} />
       </div>
+      {state.session ? (
+        <div className="mb-5">
+          <Notice tone="info" title="Filtered by one session" testId="session-notice">
+            Traces with a span of pseudonymous session <code className="font-mono text-xs">{state.session}</code>. The raw conversation id is never stored.{" "}
+            <a className="underline underline-offset-2" href={traceListHref({ ...firstPageState(state), session: null })}>
+              Show all traces
+            </a>
+          </Notice>
+        </div>
+      ) : null}
       {query.ignored.length > 0 && (
         <div className="mb-5">
           <Notice tone="info" title="Unsupported filter value ignored" testId="ignored-notice">

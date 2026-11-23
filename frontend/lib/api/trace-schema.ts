@@ -18,12 +18,15 @@ import {
 } from "../validate";
 import {
   CALL_KEY_SOURCES,
+  GENAI_STEP_KINDS,
   OPERATION_NAMES,
   SPAN_KINDS,
   SPAN_ROLES,
   SPAN_STATUSES,
   TRACE_STATUSES,
+  type AgentSummary,
   type AttributeValue,
+  type GenAiStep,
   type SpanRecord,
   type TraceDetail,
   type TraceList,
@@ -164,6 +167,34 @@ export const traceListDecoder: Decoder<TraceList> = object<TraceList>({
   window,
 });
 
+/** Phase 10A (ADR-54): identifiers only, in the attrmap v2 formats (no whitespace). */
+const stepName = pattern(/^[A-Za-z0-9_][A-Za-z0-9_.:+/-]{0,127}$/, "a recorded agent, tool, source or MCP identifier");
+const genAiStepDecoder: Decoder<GenAiStep> = (v, path) => {
+  const s = object<GenAiStep>({ kind: nullable(literal(...GENAI_STEP_KINDS)), name: nullable(stepName), mcp_method: nullable(stepName) })(v, path);
+  if (s.kind === null && s.name !== null) throw new DecodeError(`${path}.name`, "a name only on a classified step");
+  if (s.kind === "inference" && s.name !== null) throw new DecodeError(`${path}.name`, "no step name on an inference span");
+  return s;
+};
+
+const MAX_TOOLS = 50;
+const agentSummaryDecoder: Decoder<AgentSummary> = (v, path) => {
+  const a = object<AgentSummary>({
+    agent_steps: count,
+    inference_calls: count,
+    tool_calls: count,
+    tool_errors: count,
+    retrievals: count,
+    mcp_calls: count,
+    tools: array(object({ name: nullable(stepName), calls: positiveInt, errors: count }), MAX_TOOLS),
+    tools_truncated: boolean,
+  })(v, path);
+  if (a.tool_errors > a.tool_calls) throw new DecodeError(`${path}.tool_errors`, "at most the tool calls");
+  const listed = a.tools.reduce((n, t) => n + t.calls, 0);
+  if (a.tools_truncated ? listed > a.tool_calls : listed !== a.tool_calls) throw new DecodeError(`${path}.tools`, "per-tool calls adding up to tool_calls");
+  if (a.tools.some((t) => t.errors > t.calls)) throw new DecodeError(`${path}.tools`, "errors within calls");
+  return a;
+};
+
 const spanDecoder: Decoder<SpanRecord> = (v, path) => {
   const s = object<SpanRecord>({
     span_id: spanId,
@@ -184,6 +215,7 @@ const spanDecoder: Decoder<SpanRecord> = (v, path) => {
     resource_attributes: attributeMap(0),
     attributes: attributeMap(0),
     attributes_schema_version: string(64),
+    genai_step: genAiStepDecoder,
     provenance: literal(...USAGE_PROVENANCES),
     provenance_verified: literal(false),
     server_dropped_attributes_count: count,
@@ -225,12 +257,26 @@ const usageDecoder: Decoder<UsageRecord> = (v, path) => {
   return u;
 };
 
-export const traceDetailDecoder: Decoder<TraceDetail> = object<TraceDetail>({
+const traceDetailShape: Decoder<TraceDetail> = object<TraceDetail>({
   trace: traceSummaryDecoder,
   spans: array(spanDecoder, MAX_DETAIL_SPANS),
   spans_truncated: boolean,
+  agent_summary: agentSummaryDecoder,
   usage: array(usageDecoder, MAX_DETAIL_USAGE),
   usage_truncated: boolean,
   reviews: array(reviewDecoder, MAX_REVIEWS),
   reviews_truncated: boolean,
 });
+
+/** Phase 10A: the summary counts the returned spans' steps, so it is checked against them. */
+export const traceDetailDecoder: Decoder<TraceDetail> = (v, path) => {
+  const d = traceDetailShape(v, path);
+  const kinds = (k: string) => d.spans.filter((s) => s.genai_step.kind === k).length;
+  const a = d.agent_summary;
+  if (a.agent_steps !== kinds("agent") || a.inference_calls !== kinds("inference") || a.tool_calls !== kinds("tool") || a.retrievals !== kinds("retrieval")) {
+    throw new DecodeError(`${path}.agent_summary`, "counts matching the returned spans");
+  }
+  if (a.mcp_calls !== d.spans.filter((s) => s.genai_step.mcp_method !== null).length) throw new DecodeError(`${path}.agent_summary.mcp_calls`, "MCP calls matching the returned spans");
+  if (a.tool_errors !== d.spans.filter((s) => s.genai_step.kind === "tool" && s.status === "ERROR").length) throw new DecodeError(`${path}.agent_summary.tool_errors`, "tool errors matching the returned spans");
+  return d;
+};

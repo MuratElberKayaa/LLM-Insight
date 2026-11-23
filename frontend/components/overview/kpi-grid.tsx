@@ -1,4 +1,4 @@
-import type { Latency, Overview, TraceProvenance } from "../../lib/api/types";
+import type { Latency, Overview, TimeToFirstChunk, TraceProvenance } from "../../lib/api/types";
 import { formatUsd } from "../../lib/decimal";
 import { formatInt, formatMs, formatPercent } from "../../lib/format";
 import { PROVENANCE_LABEL } from "../../lib/provenance";
@@ -41,6 +41,13 @@ function LatencyFlags({ l }: { l: Latency }) {
       )}
     </>
   );
+}
+
+/** M20 (Phase 10B, ADR-55): one plain sentence; never an estimate. */
+export function ttfcSentence(t: TimeToFirstChunk): string {
+  if (t.reason === "no_streaming_attempts") return "Time to first chunk: no streaming attempt in scope.";
+  if (t.reason === "not_recorded") return `Time to first chunk: not recorded by ${formatInt(t.streaming_attempts)} streaming attempt(s).`;
+  return `Time to first chunk p50 ${formatMs(t.p50_ms) ?? "—"}, p95 ${formatMs(t.p95_ms) ?? "—"} (n ${formatInt(t.n)}${t.low_sample.p95 ? ", low sample" : ""}).`;
 }
 
 function LatencyDetail({ l }: { l: Latency }) {
@@ -123,7 +130,7 @@ export function KpiGrid({ data }: { data: Overview }) {
         value={formatMs(infLat.p95_ms)}
         flag={<LatencyFlags l={infLat} />}
         detail={infLat.n > 0 && <LatencyDetail l={infLat} />}
-        footer={<span>Inference span durations. Time to first chunk: not recorded (no streaming).</span>}
+        footer={<span data-testid="ttfc-footer">Inference span durations. {ttfcSentence(inf.time_to_first_chunk.total)}</span>}
       />
       <MetricCard
         id="trace-latency"

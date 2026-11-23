@@ -4,7 +4,7 @@
  * production components never import this file (tests/unit/security-static.test.ts).
  */
 
-import type { Cost, Latency, ModelsCompare, Overview, ReferenceListPrice, Tokens } from "../../lib/api/types";
+import type { Cost, Latency, ModelsCompare, Overview, ReferenceListPrice, TimeToFirstChunk, Tokens } from "../../lib/api/types";
 
 const latency = (n: number, p50: number | null, p95: number | null, p99: number | null): Latency => ({
   n,
@@ -39,6 +39,17 @@ const cost = (n: number, known: string | null, computed: number, unknown: number
 });
 
 const empty3 = <T,>(v: T) => ({ real: v, synthetic: v, unknown: v });
+/** M20 with no streaming attempt in scope (Phase 10B). */
+export const NO_TTFC: TimeToFirstChunk = {
+  available: false,
+  reason: "no_streaming_attempts",
+  detail: "no streaming inference attempt (gen_ai.request.stream true) in scope",
+  streaming_attempts: 0,
+  n: 0,
+  p50_ms: null,
+  p95_ms: null,
+  low_sample: { p95: true },
+};
 const empty4 = <T,>(v: T) => ({ real: v, synthetic: v, mixed: v, unknown: v });
 
 /** 6 synthetic attempts in 4 synthetic traces; 1 failed; 4 priced, 2 unknown cost. */
@@ -77,7 +88,7 @@ export function makeOverview(): Overview {
         total: latency(6, 85.25, 300.5, 310.1),
         by_provenance: { ...empty3(latency(0, null, null, null)), synthetic: latency(6, 85.25, 300.5, 310.1) },
       },
-      time_to_first_chunk: { available: false, reason: "not_recorded", detail: "streaming time-to-first-chunk is not captured by the MVP (M20, P1)" },
+      time_to_first_chunk: { total: NO_TTFC, by_provenance: empty3(NO_TTFC) },
       tokens: {
         total: tokens(6, 1200, 340, 1, 1),
         by_provenance: { ...empty3(tokens(0, null, null)), synthetic: tokens(6, 1200, 340, 1, 1) },
@@ -184,6 +195,7 @@ export function makeCompare(): ModelsCompare {
         attempts: 4,
         errors: { failed: 1, succeeded: 3, rate: 0.25 },
         latency: latency(4, 80, 290, 300),
+        time_to_first_chunk: NO_TTFC,
         tokens: tokens(4, 480, 192),
         usage_source: { provider_reported: 4, estimated: 0, unknown: 0 },
         cost: {
@@ -205,6 +217,7 @@ export function makeCompare(): ModelsCompare {
         attempts: 2,
         errors: { failed: 0, succeeded: 2, rate: 0 },
         latency: latency(2, 5, 9, 9.5),
+        time_to_first_chunk: NO_TTFC,
         tokens: tokens(2, null, 40, 2, 0),
         usage_source: { provider_reported: 1, estimated: 1, unknown: 0 },
         cost: {

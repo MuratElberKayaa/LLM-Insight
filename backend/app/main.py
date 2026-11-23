@@ -10,8 +10,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import (
     admin,
+    alerts,
     datasets,
     diagnostics,
+    error_patterns,
     experiments,
     health,
     imported_experiments,
@@ -19,6 +21,7 @@ from app.api import (
     overview,
     projects,
     reviews,
+    sessions,
     traces,
 )
 from app.core.config import Settings, get_settings
@@ -81,4 +84,7 @@ def create_app(settings: Settings | None = None, clock: Clock = time.monotonic) 
     app.include_router(datasets.router)
     app.include_router(experiments.router)
     app.include_router(imported_experiments.router)
+    app.include_router(sessions.router)
+    app.include_router(error_patterns.router)
+    app.include_router(alerts.router)
     return app

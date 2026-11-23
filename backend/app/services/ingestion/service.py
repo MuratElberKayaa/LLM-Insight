@@ -19,7 +19,7 @@ from app.core.config import Settings
 from app.core.db import RETRYABLE_DB_ERRORS
 from app.core.ratelimit import KeyedTokenBucket
 from app.repositories import api_keys, telemetry
-from app.services.ingestion import errors
+from app.services.ingestion import errors, sessions
 from app.services.ingestion.body import gunzip_bounded
 from app.services.ingestion.normalize import NormalizedSpan, count_spans, normalize
 
@@ -125,7 +125,7 @@ class Ingestor:
         n = count_spans(req)
         if n > self.settings.otlp_max_spans_per_request:
             raise errors.too_many_spans()
-        spans, violations = normalize(req)
+        spans, violations = normalize(req, sessions.pseudonymizer(self._pepper, project.project_id))
         if violations:
             raise errors.invalid_spans(violations)
         if not spans:

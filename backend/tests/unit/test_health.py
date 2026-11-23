@@ -73,6 +73,9 @@ def test_routes_are_health_otlp_ingest_and_read_api(client):
     assert set(client.app.openapi()["paths"]) == {
         "/api/v1/imported-experiments",
         "/api/v1/imported-experiments/{experiment_id}",
+        "/api/v1/sessions",  # Phase 10C
+        "/api/v1/error-patterns",  # Phase 10D
+        "/api/v1/alerts",  # Phase 10F
         "/api/v1/failure-reviews",
         "/api/v1/failure-reviews/{review_id}",
         "/api/v1/datasets",

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { TraceDetail, TraceSummary } from "../../lib/api/trace-types";
+import type { AgentSummary, TraceDetail, TraceSummary } from "../../lib/api/trace-types";
 import type { TraceProvenance } from "../../lib/api/types";
 import { formatInt } from "../../lib/format";
 import { formatDurationNs, formatExactMs, formatIsoNs } from "../../lib/nanos";
@@ -133,6 +133,30 @@ export function StatusBreakdown({ trace, view }: { trace: TraceSummary; view: Tr
 }
 
 const outcomeTone = (o: CallView["outcome"]) => (o === "recovered" ? "text-ink" : o === "all_failed" || o === "last_failed" ? "text-critical-ink" : "text-ink-2");
+
+/** Phase 10A (ADR-54): agent, tool, retrieval and MCP steps of the returned spans. */
+export function AgentSteps({ summary, spansTruncated }: { summary: AgentSummary; spansTruncated: boolean }) {
+  if (summary.agent_steps + summary.tool_calls + summary.retrievals + summary.mcp_calls === 0) return null;
+  const columns: Column<AgentSummary["tools"][number]>[] = [
+    { key: "tool", header: "Tool", rowHeader: true, render: (t) => (t.name === null ? <NullValue label="no gen_ai.tool.name recorded">unnamed tool</NullValue> : <code className="font-mono text-xs">{t.name}</code>) },
+    { key: "calls", header: "Executions", align: "right", render: (t) => formatInt(t.calls) },
+    { key: "errors", header: "Failed", align: "right", render: (t) => <span className={t.errors > 0 ? "text-critical-ink" : undefined}>{formatInt(t.errors)}</span> },
+  ];
+  return (
+    <section aria-labelledby="agent-heading" className="mt-8 min-w-0" data-testid="agent-steps">
+      <SectionHeading
+        id="agent-heading"
+        title="Agent steps"
+        description="From the agent, tool, retrieval and MCP spans the instrumentation recorded (OTel GenAI agent conventions). Tool arguments and results are never stored."
+      />
+      <p className="mb-3 text-sm text-ink-2" data-testid="agent-counts">
+        {`${formatInt(summary.agent_steps)} agent step(s) · ${formatInt(summary.inference_calls)} inference attempt(s) · ${formatInt(summary.tool_calls)} tool execution(s), ${formatInt(summary.tool_errors)} failed · ${formatInt(summary.retrievals)} retrieval(s) · ${formatInt(summary.mcp_calls)} MCP call(s)${spansTruncated ? " — counted over the returned spans only." : ""}`}
+      </p>
+      {summary.tools.length > 0 && <DataTable caption="Tool executions by tool name" captionHidden columns={columns} rows={summary.tools} rowKey={(t) => t.name ?? "(unnamed)"} testId="table-tools" />}
+      {summary.tools_truncated && <p className="mt-2 text-xs text-ink-3">Only the 50 most executed tools are listed; the totals above include all of them.</p>}
+    </section>
+  );
+}
 
 export function LogicalCalls({ view }: { view: TraceView }) {
   if (view.calls.length === 0) return null;

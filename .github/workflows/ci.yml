@@ -113,6 +113,9 @@ jobs:
       - name: Backend tests (unit + PostgreSQL integration)
         working-directory: backend
         run: .venv/bin/python -m pytest -q -rs -p no:cacheprovider
+      - name: Eval regression gate (offline golden set, SYNTHETIC, Phase 10E)
+        working-directory: backend
+        run: .venv/bin/python -m app.eval_gate --config evals/gate.json --report "$RUNNER_TEMP/eval-gate.json"
       - name: SDK environment
         working-directory: sdk
         run: |

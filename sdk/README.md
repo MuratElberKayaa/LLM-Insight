@@ -338,6 +338,34 @@ outcome = OpenAIResponsesTextAdapter(llm).generate_text(  # metadata-only outcom
   session shares Groq's one-request process slot. A response that does not report exactly 0
   credits and no BYOK halts the session (exit 3 in the runner).
 
+## Agent and tool spans (Phase 10A, ADR-54)
+
+```python
+with telemetry.agent_span(agent_name="support-triage", agent_version="1.2.0"):
+    client.chat(model=..., messages=...)            # a CLIENT inference span, child of the agent
+    with telemetry.tool_span(tool_name="search_kb", tool_call_id=call.id) as step:
+        result = search_kb(...)                      # your code; nothing of it is recorded
+        if result.failed:
+            step.mark_failed("not_found")            # status ERROR + error.type, no message
+    with telemetry.tool_span(tool_name="lookup_order", mcp_method="tools/call"):
+        ...
+```
+
+These helpers create INTERNAL spans named `invoke_agent {name}` and `execute_tool {name}` (OTel GenAI agent conventions, `llminsight.attrmap.v2`). They take identifiers only: there is no parameter for tool arguments, results, instructions or session IDs, and the backend denies those keys anyway. A value that breaks its format is withheld and counted in `stats().attributes_withheld`. An exception inside a step sets status `ERROR` with a classified `error.type`; its message is never recorded.
+
+## Streaming time to first chunk (Phase 10B, ADR-55)
+
+```python
+with telemetry.inference_span(operation="chat", provider="openai", request_model=model,
+                              call_id=call_id, attempt=1, params=RequestParams(stream=True)) as rec:
+    for event in stream:
+        if event_has_new_output(event):   # text, reasoning or a tool-call delta
+            rec.record_first_chunk()      # once; later calls are ignored
+        ...
+```
+
+`params.stream=True` emits `gen_ai.request.stream`. `record_first_chunk()` sets `gen_ai.response.time_to_first_chunk` in seconds from the attempt's start. Call it only when a chunk arrived; no chunk content is recorded.
+
 ## What is recorded
 
 One `CLIENT` span per physical attempt, named `{gen_ai.operation.name} {gen_ai.request.model}`

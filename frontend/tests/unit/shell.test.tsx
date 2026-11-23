@@ -18,7 +18,7 @@ describe("navigation groups", () => {
     assert.deepEqual(
       NAV_GROUPS.map((g) => [g.label, g.items.map((i) => [i.label, i.href])]),
       [
-        ["Observe", [["Overview", "/"], ["Traces", "/traces"], ["Models", "/models"]]],
+        ["Observe", [["Overview", "/"], ["Traces", "/traces"], ["Models", "/models"], ["Sessions", "/sessions"]]], // Sessions: Phase 10C
         ["Evaluate", [["Datasets", "/datasets"], ["Experiments", "/experiments"]]],
       ],
     );

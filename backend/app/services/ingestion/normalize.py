@@ -10,7 +10,7 @@ from typing import Any
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 from opentelemetry.proto.trace.v1.trace_pb2 import Span as SpanPb
 
-from app.services.ingestion import attrmap
+from app.services.ingestion import attrmap, sessions
 from app.services.ingestion.errors import Violation
 
 TS_LIMIT = 2**63  # stored as BIGINT
@@ -134,8 +134,17 @@ def _normalize_span(
     scope_version: str | None,
     resource: attrmap.Mapped,
     withheld_outside_attributes: int,
+    pseudonymize: sessions.Pseudonymizer | None = None,
 ) -> NormalizedSpan:
     mapped = attrmap.map_span(span.attributes)
+    # Phase 10C (ADR-56): `gen_ai.conversation.id` is denied by the map above (and counted as
+    # dropped). With a pseudonymizer, a valid raw value is replaced by its keyed hash instead:
+    # the hash is stored, the raw value is not, and it no longer counts as dropped.
+    raw_session, _ = sessions.raw_session_id(span.attributes)
+    if pseudonymize is not None and raw_session is not None:
+        mapped = attrmap.Mapped(
+            {**mapped.values, sessions.HASH_KEY: pseudonymize(raw_session)}, mapped.dropped - 1
+        )
     status = STATUS_CODES[span.status.code]
     error_type = mapped.values.get("error.type") or _exception_type(span)
     # Empty name -> display fallback; unsafe name (R08) -> a distinct fallback, counted.
@@ -164,9 +173,12 @@ def _normalize_span(
     )
 
 
-def normalize(req: ExportTraceServiceRequest) -> tuple[list[NormalizedSpan], list[Violation]]:
+def normalize(
+    req: ExportTraceServiceRequest, pseudonymize: sessions.Pseudonymizer | None = None
+) -> tuple[list[NormalizedSpan], list[Violation]]:
     """All spans in request order, plus every violation. Spans are only usable when the
-    violation list is empty."""
+    violation list is empty. `pseudonymize` (Phase 10C) is the project's session hash; without
+    it a conversation ID is dropped, as before."""
     spans: list[NormalizedSpan] = []
     violations: list[Violation] = []
     for i, rs in enumerate(req.resource_spans):
@@ -188,6 +200,7 @@ def normalize(req: ExportTraceServiceRequest) -> tuple[list[NormalizedSpan], lis
                             scope_version,
                             resource,
                             name_withheld + version_withheld,
+                            pseudonymize,
                         )
                     )
     return (spans if not violations else []), violations

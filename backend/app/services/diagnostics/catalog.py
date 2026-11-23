@@ -15,7 +15,7 @@ Vocabulary rules (Phase 4A instruction, ADR-10):
 from dataclasses import dataclass
 
 CONTRACT_VERSION = "llminsight.diagnostics.v1"
-RULESET_VERSION = "llminsight.diagnostics.rules.v1"
+RULESET_VERSION = "llminsight.diagnostics.rules.v2"  # v2: repeated_tool_calls (ADR-54)
 
 
 @dataclass(frozen=True)
@@ -507,6 +507,36 @@ CATEGORIES: dict[str, Category] = {
             " design (ADR-19).",
         ),
     ),
+    # Phase 10A (ADR-54, rules v2)
+    "repeated_tool_calls": Category(
+        group="agent_behaviour",
+        trigger=(
+            "One trace stores at least 5 spans with gen_ai.operation.name execute_tool and the"
+            " same gen_ai.tool.name."
+        ),
+        established=(
+            "The trace contains at least this many executions of each listed tool name, as"
+            " recorded by the instrumentation.",
+        ),
+        not_established=(
+            "Whether the repetitions were intended (for example one call per item of a list).",
+            "What the tool was asked or returned: tool arguments and results are never stored.",
+            "Whether the agent finished its task.",
+        ),
+        hypotheses={
+            "possible_agent_loop": (
+                "Possible explanation (not verified): the agent may have repeated the same tool"
+                " call without making progress, for example because a tool result did not"
+                " satisfy its stop condition."
+            ),
+        },
+        steps=(
+            "Compare the number of executions with the number the task needs.",
+            "Check the agent's iteration limit and stop condition in the application code.",
+            "Check whether these tool executions failed (span status ERROR) or succeeded.",
+        ),
+        limitations=("tool_identity_client_declared",),
+    ),
 }
 
 CATEGORY_ORDER = {name: i for i, name in enumerate(CATEGORIES)}
@@ -522,6 +552,10 @@ LIMITATIONS: dict[str, str] = {
     "call_id_client_asserted": (
         "Attempts are grouped by llminsight.call_id and llminsight.attempt as asserted by the"
         " instrumentation; the server cannot verify them."
+    ),
+    "tool_identity_client_declared": (
+        "Tool executions are counted by gen_ai.operation.name and gen_ai.tool.name as recorded by"
+        " the instrumentation; uninstrumented tool calls are not visible."
     ),
     "client_declared_result": (
         "The validation result is declared by the application; this platform did not run or"

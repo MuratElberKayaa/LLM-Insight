@@ -175,7 +175,9 @@ def test_the_metrics_api_reflects_the_demo_traffic(live_backend, run):
     assert inf["latency"]["total"]["n"] == 8 and inf["latency"]["total"]["p50_ms"] is not None
     assert o["traces"]["latency"]["total"]["n"] == 5  # one SERVER root per request
     assert o["traces"]["latency"]["traces_without_root"] == 0
-    assert inf["time_to_first_chunk"]["available"] is False
+    # M20 (Phase 10B, ADR-55): per provenance bucket; the demo does not stream.
+    ttfc = inf["time_to_first_chunk"]["total"]
+    assert (ttfc["available"], ttfc["reason"]) == (False, "no_streaming_attempts")
     versions = inf["price_versions"]["items"]
     assert {(v["model"], v["price_version"], v["calls"]) for v in versions} == {
         ("gpt-5.4-mini-2026-03-17", "openai-2026-10-24", 2)

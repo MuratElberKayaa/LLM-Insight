@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import type { GenAiStep, GenAiStepKind } from "../../lib/api/trace-types";
 import { COST_REASON_LABEL, PLACEMENT_LABEL, formatDigits, type SpanView, type TraceView } from "../../lib/span-tree";
 import { ProvenanceBadge } from "../provenance-badge";
 import { StatusIndicator } from "../status-indicator";
@@ -266,6 +267,24 @@ function SpanDetails({ row }: { row: SpanView }) {
   );
 }
 
+const STEP_LABEL: Record<Exclude<GenAiStepKind, "inference">, string> = {
+  agent: "Agent",
+  workflow: "Workflow",
+  plan: "Plan",
+  tool: "Tool",
+  retrieval: "Retrieval",
+  mcp: "MCP",
+};
+
+/** Phase 10A (ADR-54): a short label for agent, tool, retrieval and MCP steps; inference keeps its LLM tag. */
+export function stepLabel(step: GenAiStep): string | null {
+  if (step.kind === null || step.kind === "inference") return null;
+  const parts = [STEP_LABEL[step.kind]];
+  if (step.name !== null) parts.push(step.name);
+  if (step.mcp_method !== null && step.kind !== "mcp") parts.push(`via MCP ${step.mcp_method}`);
+  return parts.join(" · ");
+}
+
 export function Waterfall({ view, initialSelected, initialMode = "timeline" }: { view: TraceView; initialSelected: string | null; initialMode?: WaterfallMode }) {
   const { rows, axis } = view;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
@@ -451,8 +470,13 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
                       <span className="min-w-0 truncate text-ink" title={row.name} data-testid="span-name">
                         {row.name}
                       </span>
-                      {(row.inference || (row.placement !== "root" && row.placement !== "child")) && (
+                      {(row.inference || stepLabel(row.step) !== null || (row.placement !== "root" && row.placement !== "child")) && (
                         <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] leading-4">
+                          {stepLabel(row.step) !== null && (
+                            <span className="rounded bg-series-2/15 px-1 font-medium text-ink-2" data-testid="span-step" data-step={row.step.kind ?? ""}>
+                              {stepLabel(row.step)}
+                            </span>
+                          )}
                           {row.inference && (
                             <span className="rounded bg-series-1/15 px-1 font-medium text-ink-2">
                               LLM{row.inference.attemptId !== null ? ` · attempt ${row.inference.attemptId}` : ""}

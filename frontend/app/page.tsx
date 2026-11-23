@@ -6,7 +6,9 @@ import { FilterBar } from "../components/filter-bar";
 import { LiveRegion } from "../components/live-region";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../components/navigation-transition";
 import { CostDetails, ErrorTypes, ProvenanceTable } from "../components/overview/breakdowns";
+import { AlertStrip } from "../components/overview/alert-strip";
 import { DataNoticeBanner } from "../components/overview/data-notice";
+import { ErrorPatternsSection } from "../components/overview/error-patterns";
 import { KpiGrid } from "../components/overview/kpi-grid";
 import { LatestTrace } from "../components/overview/latest-trace";
 import { ModelGroups } from "../components/overview/model-groups";
@@ -125,6 +127,7 @@ export default async function OverviewPage({ searchParams }: PageProps) {
                 </EmptyState>
               ) : (
                 <>
+                  <AlertStrip result={ctx.alerts} />
                   <LatestTrace result={ctx.latest} fetchedAt={fetchedAt} project={state.project} filtered={filtered} />
                   <KpiGrid data={data} />
                   <TrendSection data={data} />
@@ -132,6 +135,7 @@ export default async function OverviewPage({ searchParams }: PageProps) {
                     <ProvenanceTable data={data} />
                     <ErrorTypes data={data} />
                   </div>
+                  <ErrorPatternsSection result={ctx.errorPatterns} project={state.project} filtered={filtered} />
                   <ModelGroups result={compare} />
                   <p className="mt-2 text-sm">
                     <Link

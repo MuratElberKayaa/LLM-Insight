@@ -17,7 +17,7 @@
 import { formatUsd } from "./decimal";
 import { LosslessInt } from "./json";
 import { axisPercent, formatDurationNs, formatExactMs, formatIsoNs, parseNs } from "./nanos";
-import type { AttributeValue, SpanKind, SpanRecord, SpanRole, SpanStatus, TraceDetail, UsageRecord } from "./api/trace-types";
+import type { AttributeValue, GenAiStep, SpanKind, SpanRecord, SpanRole, SpanStatus, TraceDetail, UsageRecord } from "./api/trace-types";
 import type { CostUnknownReason, UsageProvenance, UsageSource } from "./api/types";
 
 export type Placement = "root" | "child" | "orphan" | "parent_not_returned" | "unreachable";
@@ -87,6 +87,8 @@ export interface SpanView {
   attributes: [string, string][];
   resourceAttributes: [string, string][];
   inference: InferenceView | null;
+  /** Phase 10A (ADR-54): the backend's step classification of this span. */
+  step: GenAiStep;
 }
 
 export type CallOutcome = "no_failure" | "recovered" | "all_failed" | "last_failed" | "status_unavailable";
@@ -253,6 +255,7 @@ export function buildTraceView(detail: TraceDetail): TraceView {
       attributes: attributeList(s.attributes),
       resourceAttributes: attributeList(s.resource_attributes),
       inference: usage ? inferenceView(usage) : null,
+      step: s.genai_step,
     };
   };
 

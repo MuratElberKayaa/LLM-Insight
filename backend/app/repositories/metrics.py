@@ -29,6 +29,7 @@ from sqlalchemy import (
     Row,
     Select,
     and_,
+    case,
     exists,
     false,
     func,
@@ -144,6 +145,27 @@ def _token_columns() -> list[Any]:
     ]
 
 
+TTFC_KEY = "gen_ai.response.time_to_first_chunk"
+STREAM_KEY = "gen_ai.request.stream"
+
+
+def _ttfc_columns() -> list[Any]:
+    """M20 (Phase 10B, ADR-55): the client time to first chunk of streaming attempts, from the
+    span attribute in seconds, as milliseconds. Only JSON numbers count; percentiles skip NULL."""
+    attrs = Span.attributes
+    ttfc_ms = case(
+        (func.jsonb_typeof(attrs[TTFC_KEY]) == "number", attrs[TTFC_KEY].as_float() * 1000.0),
+        else_=None,
+    )
+    count = func.count()
+    return [
+        count.filter(attrs[STREAM_KEY].as_boolean().is_(True)).label("streaming_attempts"),
+        count.filter(ttfc_ms.is_not(None)).label("ttfc_n"),
+        func.percentile_cont(0.5).within_group(ttfc_ms).label("ttfc_p50"),
+        func.percentile_cont(0.95).within_group(ttfc_ms).label("ttfc_p95"),
+    ]
+
+
 def _usage_source_columns() -> list[Any]:
     count = func.count()
     return [count.filter(UsageRecord.usage_source == s).label(f"source_{s}") for s in USAGE_SOURCES]
@@ -169,6 +191,7 @@ def usage_summary_stmt(f: MetricsFilter) -> Select[Any]:
         ],
         *_usage_source_columns(),  # M14
         *_percentiles(Span.duration_ns),  # M06
+        *_ttfc_columns(),  # M20 (Phase 10B)
     ]
     return (
         select(*columns)
@@ -367,6 +390,7 @@ def model_groups(session: Session, f: MetricsFilter, limit: int) -> list[Row[Any
             ],
             *[count.filter(u.provenance == p).label(f"prov_{p}") for p in USAGE_PROVENANCES],
             *_reference_columns(),
+            *_ttfc_columns(),  # M20 (Phase 10B)
         )
         .select_from(u)
         .join(Span, _span_of_usage())

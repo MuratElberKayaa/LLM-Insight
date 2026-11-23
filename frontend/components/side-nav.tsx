@@ -28,6 +28,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Overview", href: "/", icon: <OverviewIcon /> },
       { label: "Traces", href: "/traces", icon: <TracesIcon /> },
       { label: "Models", href: "/models", icon: <ModelsIcon /> },
+      // Phase 10C: pseudonymous conversation sessions.
+      { label: "Sessions", href: "/sessions", icon: <TracesIcon /> },
     ],
   },
   {

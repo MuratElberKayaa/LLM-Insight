@@ -407,7 +407,9 @@ def test_each_scenario_is_stored_and_read_back_with_its_exact_identity(
     assert (root["status"], client["status"]) == ("UNSET", "UNSET")
     assert not any(k.startswith("gen_ai.") for k in root["attributes"])  # no parent double count
     assert (root["provenance"], client["provenance"]) == ("unknown", "real")
-    assert client["attributes_schema_version"] == "llminsight.attrmap.v1"
+    assert (
+        client["attributes_schema_version"] == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     assert client["server_dropped_attributes_count"] == 0
     assert root["server_dropped_attributes_count"] == 0
     attrs = client["attributes"]

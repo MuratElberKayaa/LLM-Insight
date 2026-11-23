@@ -65,6 +65,9 @@ API_ROUTES = {
     ("POST", "/api/v1/imported-experiments"),
     ("GET", "/api/v1/imported-experiments"),
     ("GET", "/api/v1/imported-experiments/{experiment_id}"),
+    ("GET", "/api/v1/sessions"),  # Phase 10C
+    ("GET", "/api/v1/error-patterns"),  # Phase 10D
+    ("GET", "/api/v1/alerts"),  # Phase 10F
 }
 PATH_VALUES = {"trace_id": TRACE, "review_id": "1", "dataset_id": "1", "experiment_id": "1"}
 # Over the JSON body cap and not JSON: if a refused write read its body, it would answer

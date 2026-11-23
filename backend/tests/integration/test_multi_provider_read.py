@@ -280,7 +280,9 @@ def test_each_comparison_span_is_stored_with_its_identity_and_unknown_cost(seede
             == root["server_dropped_attributes_count"]
             == 0
         )
-        assert client["attributes_schema_version"] == "llminsight.attrmap.v1"
+        assert (
+            client["attributes_schema_version"] == "llminsight.attrmap.v2"
+        )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
         assert set(client["attributes"]) == GROQ_KEYS
         assert client["attributes"]["gen_ai.prompt.name"] == prompt_name
         assert client["attributes"]["gen_ai.prompt.version"] == prompt_version

@@ -68,7 +68,9 @@ def test_fixture_expected_ingest_result(client, make_key, db):
     assert {r["server_dropped_attributes_count"] for r in s.values()} == {0}
     assert s[FIXTURE_LLM]["provenance"] == "synthetic"
     assert s[FIXTURE_ROOT]["provenance"] == s[FIXTURE_VALIDATE]["provenance"] == "unknown"
-    assert {r["attributes_schema_version"] for r in s.values()} == {"llminsight.attrmap.v1"}
+    assert {r["attributes_schema_version"] for r in s.values()} == {
+        "llminsight.attrmap.v2"
+    }  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     assert s[FIXTURE_LLM]["attributes"]["gen_ai.response.finish_reasons"] == ["stop"]
     assert s[FIXTURE_VALIDATE]["attributes"]["llminsight.validation.passed"] is True
 

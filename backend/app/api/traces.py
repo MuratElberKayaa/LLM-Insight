@@ -40,6 +40,8 @@ from app.api.admin import (
 from app.core.db import RETRYABLE_DB_ERRORS
 from app.repositories import reviews as review_repo
 from app.repositories import traces as repo
+from app.services import genai_steps
+from app.services.ingestion.sessions import HASH_PATTERN as SESSION_HASH_PATTERN
 
 logger = logging.getLogger("app.api")
 
@@ -250,6 +252,8 @@ def _span(r: Any, children: list[str]) -> dict[str, Any]:
         "resource_attributes": r.resource_attributes,
         "attributes": r.attributes,
         "attributes_schema_version": r.attributes_schema_version,
+        # Phase 10A (ADR-54, additive): derived from the stored metadata at read time.
+        "genai_step": genai_steps.step(r.attributes or {}),
         "provenance": r.provenance,
         "provenance_verified": False,
         "server_dropped_attributes_count": r.server_dropped_attributes_count,
@@ -297,12 +301,14 @@ async def list_traces(
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     cursor: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     provider: ProviderParam = None,
+    session: Annotated[str | None, Query(pattern=SESSION_HASH_PATTERN, max_length=35)] = None,
 ) -> JSONResponse:
     """Traces of one project whose start is in `[from, to)`, newest first, keyset-paginated.
-    `model` and `provider` select traces with one usage row matching both (Phase 6C-C)."""
+    `model` and `provider` select traces with one usage row matching both (Phase 6C-C);
+    `session` selects traces with a span carrying that session hash (Phase 10C)."""
     start, end = resolve_window(from_, to, datetime.now(UTC))
     position = decode_cursor(cursor) if cursor is not None else None
-    f = repo.TraceFilter(project, start, end, status, provenance, model, provider)
+    f = repo.TraceFilter(project, start, end, status, provenance, model, provider, session)
 
     def read(
         session: Session,
@@ -382,6 +388,8 @@ async def get_trace(
             "trace": trace_summary(trace, models),
             "spans": [_span(s, children.get(s.span_id, [])) for s in span_rows],
             "spans_truncated": spans_truncated,
+            # Phase 10A (ADR-54, additive): over the returned spans only (see spans_truncated).
+            "agent_summary": genai_steps.summary(span_rows),
             "usage": [_usage(u) for u in usage_rows[: repo.DETAIL_MAX_SPANS]],
             "usage_truncated": usage_truncated,
             "reviews": _reviews(review_rows[:MAX_REVIEWS], case_rows),

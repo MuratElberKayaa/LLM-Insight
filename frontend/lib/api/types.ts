@@ -129,7 +129,8 @@ export interface Overview {
       by_error_type_truncated: boolean;
     };
     latency: Split<Latency, UsageProvenance>;
-    time_to_first_chunk: { available: boolean; reason: string; detail: string };
+    /** M20 (Phase 10B, ADR-55): per provenance bucket, from recorded values only. */
+    time_to_first_chunk: Split<TimeToFirstChunk, UsageProvenance>;
     tokens: Split<Tokens, UsageProvenance>;
     cost: Split<Cost, UsageProvenance>;
     price_versions: {
@@ -163,6 +164,18 @@ export interface ReferenceListPrice {
   stale: boolean | null;
 }
 
+/** M20 (Phase 10B, ADR-55): client time to first chunk of streaming attempts; never estimated. */
+export interface TimeToFirstChunk {
+  available: boolean;
+  reason: "no_streaming_attempts" | "not_recorded" | null;
+  detail: string | null;
+  streaming_attempts: number;
+  n: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  low_sample: { p95: boolean };
+}
+
 export interface ModelGroup {
   provider: string;
   requested_model: string | null;
@@ -171,6 +184,8 @@ export interface ModelGroup {
   attempts: number;
   errors: { failed: number; succeeded: number; rate: number | null };
   latency: Latency;
+  /** M20 per group (Phase 10B, additive). */
+  time_to_first_chunk: TimeToFirstChunk;
   /** M08/M09 per group (Phase 3C, additive): unknown sums are null and counted. */
   tokens: Tokens;
   /** M14 per group: how the token counts were obtained. */

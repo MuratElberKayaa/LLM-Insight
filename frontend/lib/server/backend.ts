@@ -31,7 +31,10 @@ export type BackendPath =
   | "/api/v1/imported-experiments"
   | `/api/v1/imported-experiments/${string}`
   | `/api/v1/experiments/${string}`
-  | "/api/v1/experiment-options";
+  | "/api/v1/experiment-options"
+  | "/api/v1/sessions"
+  | "/api/v1/error-patterns"
+  | "/api/v1/alerts";
 
 /**
  * Runtime allowlist behind the type: a trace id path segment must be 32 lowercase hex, a
@@ -39,7 +42,7 @@ export type BackendPath =
  * dataset reads; Phase 4D the experiment list, report and run options.
  */
 const PATH_RE =
-  /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|traces\/[0-9a-f]{32}\/diagnostics|projects|datasets|datasets\/[1-9][0-9]{0,18}\/cases|experiments|experiments\/[1-9][0-9]{0,18}|imported-experiments|imported-experiments\/[1-9][0-9]{0,18}|experiment-options)$/;
+  /^\/api\/v1\/(?:overview|models\/compare|traces|traces\/[0-9a-f]{32}|traces\/[0-9a-f]{32}\/diagnostics|projects|datasets|datasets\/[1-9][0-9]{0,18}\/cases|experiments|experiments\/[1-9][0-9]{0,18}|imported-experiments|imported-experiments\/[1-9][0-9]{0,18}|experiment-options|sessions|error-patterns|alerts)$/;
 /** Endpoints without a `project` parameter. */
 const GLOBAL_PATHS: ReadonlySet<string> = new Set(["/api/v1/projects"]);
 

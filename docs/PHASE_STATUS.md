@@ -1,6 +1,6 @@
 # LLM Insight — Phase Status
 
-**Current state (2026-11-19 UTC).** The local-only MVP of Phases 0–6 is released. Phases 7–8 added multi-provider live comparison, and Phase 9 runs the short-term roadmap. Work in progress is on `feature/phase-9b-reference-price`, branched from `9120e7f` (`release/groq-first-observed-request`). Phases 9A–9F are complete there and **not yet committed**: the owner asked for one commit at the end of the batch and pushes it themselves.
+**Current state (2026-11-19 UTC).** The local-only MVP of Phases 0–6 is released. Phases 7–8 added multi-provider live comparison, and Phase 9 runs the short-term roadmap. Phases 9A–9F are on `main` (`ad1ec8e`, PR #17; CI 7/7 green). The medium-term batch, Phases 10A–10F (agent/tool/MCP steps, streaming TTFT, pseudonymous sessions, error patterns, a CI eval gate, alert rules; ADR-54…59), is committed on `feature/phase-10-medium-term` from `ad1ec8e`; the owner pushes.
 
 **Provider execution switches (SDK, as on this branch):** Groq `groq_adapter.REAL_EXECUTION_ENABLED = True` (Phase 8G-B release branch); Gemini `gemini_live.REAL_EXECUTION_ENABLED = False` (re-locked 2026-11-17); OpenRouter `False`. OpenAI live execution is refused by its 14-day price-evidence rule (R83; `reports/phase-9c.md`). Each real request still needs its own written authorization.
 
@@ -13,9 +13,8 @@
 | 2026-12-07 | R102 review deadline; the audit gate fails from 2026-12-08T00:00Z | `frontend/security/npm-audit-policy.json` |
 | 2026-12-11 | `gpt-5-mini` shutdown; its catalogue rows stay valid for historical events | `PRICING.md` §2 |
 | 2026-12-19 12:51 | The list-price reference catalogue becomes `stale` (still computed, flagged) | `PRICING.md` §9 |
-| not dated | GitHub CI and the Playwright E2E gate for Phases 9B–9D (CI-only); runs after the owner's push | Phases 9B, 9D |
 
-**Latest verified local results (2026-11-19, this branch):** backend 2008 passed (PostgreSQL required); SDK 2724 passed; frontend unit 430 passed; audit-policy tests 116 passed; typecheck, lint, build (Node 22.23.4), bundle scan with 0 findings, Ruff; production npm audit 0; full npm audit CONDITIONAL PASS (R102 only). These are local runs, not CI.
+**Latest verified results (2026-11-19, Phase 9; CI confirmed 2026-11-20):** backend 2008 passed (PostgreSQL required); SDK 2724 passed; frontend unit 430 passed; audit-policy tests 116 passed; typecheck, lint, build (Node 22.23.4), bundle scan with 0 findings, Ruff; production npm audit 0; full npm audit CONDITIONAL PASS (R102 only). These are local runs, not CI. **Phase 10 batch (2026-11-23, local):** backend 2111 passed; frontend unit 503 and audit-policy 116 passed; build and bundle scan clean; SDK in the batch commit message. CI after the owner's push.
 
 **How this file is organised.** One section per phase, in order, each with its checklist and evidence report. The free-form running log that used to stand here (Phase 8 live validation, UI-1…UI-5, 8H-CI and the code-state summary, 2026-10 to 2026-11-18) was moved verbatim to `reports/phase-status-log-2026-11.md`. New status goes into the phase's own section and this header, not into a new log paragraph.
 
@@ -529,8 +528,8 @@
 - [x] Tests: backend full 1986 passed (DB required), 32 new; frontend unit 412 passed, 19 new; typecheck, lint, build (Node 22.23.4), bundle scan 0; Ruff; doc verifier; mutants 7/7 caught
 - [x] Real local backend, read-only: the same-window compare response equals the Phase 3C recording outside the new block; `models-compare.live.json` re-recorded
 - [x] SDK full suite (DB required): 2724 passed, 0 failed
-- [ ] Playwright E2E and GitHub CI: **NOT RUN** (CI-only gate; branch not pushed)
-- [ ] Owner review; commit and push are separate owner decisions
+- [x] Playwright E2E and GitHub CI: PR run 44544264449 on `aca65f2`, 7/7 jobs success including `e2e`; post-merge `main` run 44725779130 on `ad1ec8e`, 7/7 success (job conclusions read from the public API, 2026-11-20)
+- [x] Owner review: committed as `aca65f2` in the 9A–9F batch, pushed by the owner, merged by PR #17
 
 ## Phase 9C — OpenAI price catalogue re-verification (2026-11-19; evidence: `reports/phase-9c.md`)
 - [x] Five official pages read raw (2026-11-19T13:17:43Z): prices, snapshots, tiers, regional uplift and shutdown dates unchanged from `openai-2026-10-24`
@@ -541,7 +540,7 @@
 - [x] ADR-53 (batch authorization, recommended options): 95 % Wilson intervals per pass rate; exact two-sided McNemar on paired cases; additive to the mock report, derived at read for live imports (snapshot unchanged, no winner)
 - [x] Stored live A/B (Groq, Gemini): 3/6 vs 5/6, 2 discordant pairs both v2, p = 0.5, not significant
 - [x] Tests: backend full 2008 passed (DB required); frontend unit 430 passed; typecheck, lint, Ruff; mutants 5 caught, 2 equivalent (reasoned)
-- [ ] Playwright E2E: **NOT RUN** (CI-only); `phase4d.spec.ts` text expectation updated
+- [x] Playwright E2E: the `e2e` job passed in runs 44544264449 and 44725779130, including the updated `phase4d.spec.ts` expectation
 
 ## Phase 9E — npm audit exceptions R102 / R144 re-review (2026-11-19; evidence: `reports/phase-9e.md`)
 - [x] R144 removed: GitHub withdrew GHSA-fc5q-39xc-vjpf (2026-11-18T15:38:56Z); empty-cache audits no longer report `picomatch`
@@ -552,7 +551,40 @@
 ## Phase 9F — PHASE_STATUS cleanup (2026-11-19; evidence: `reports/phase-9f.md`)
 - [x] Running log (57 KB above Phase 0) moved verbatim to `reports/phase-status-log-2026-11.md`; short dated header written; phase sections byte-identical
 - [x] Doc verifier 865 PASS, 0 FAIL
-- [ ] Batch commit of Phases 9A–9F (owner's request: one commit at the end; the owner pushes)
+- [x] Batch commit of Phases 9A–9F: `aca65f2` (2026-11-19), pushed by the owner, PR #17 merged into `main` as `ad1ec8e`
+
+## Phase 10A — Agent, tool, retrieval and MCP steps (F1) (2026-11-20; evidence: `reports/phase-10a.md`)
+- [x] ADR-54 (batch authorization): `llminsight.attrmap.v2` allowlists agent/tool/data-source/MCP identifiers and denies their content keys; read-time `genai_step` and `agent_summary`; diagnostics `rules.v2` with `repeated_tool_calls`; SDK `agent_span` / `tool_span`; trace-detail "Agent steps"
+- [x] Tests: backend unit 19 + integration 3 new; SDK 9 new; frontend 16 new; 10 earlier version pins updated with notes; mutants 5/5 caught after two added tests
+- [x] Trace-detail contract fixtures re-recorded read-only, identical apart from the new fields
+
+## Phase 10B — Streaming time to first chunk (F7, M20) (2026-11-20; evidence: `reports/phase-10b.md`)
+- [x] ADR-55: `gen_ai.response.time_to_first_chunk` (seconds, [0, 3600]) in attrmap v2; M20 per provenance bucket and per Compare group, never estimated; SDK `RequestParams.stream` and `record_first_chunk()`
+- [x] Tests: backend full 2047 passed (DB required, 10A + 10B); SDK 35 targeted; frontend unit 459 passed; typecheck, lint, Ruff, mypy; doc verifier 865 PASS
+- [x] Overview and Compare contract fixtures re-recorded read-only; differences limited to the new M20 shape (and the 6C-C `filters.provider` echo on the Phase 3A overview)
+
+## Phase 10C — Pseudonymous sessions (F2) (2026-11-20; evidence: `reports/phase-10c.md`)
+- [x] ADR-56 (amends ADR-19 for `gen_ai.conversation.id` only): server-side keyed, project-scoped HMAC `llminsight.session.hash`; raw ID never stored, logged or returned; `GET /api/v1/sessions`, `GET /api/v1/traces?session=`, Sessions page; user identifiers stay denied
+- [x] Tests: backend unit 13 + integration 4 (sentinel raw IDs absent everywhere; a real status-case defect found and fixed); frontend 16; route, reader, navigation and query pins updated with notes
+
+## Phase 10D — Deterministic error patterns (F8) (2026-11-20; evidence: `reports/phase-10d.md`)
+- [x] ADR-57: `GET /api/v1/error-patterns` groups ERROR spans by exact fingerprint (source, provider, model or tool, error.type) with the diagnostics `error_class` label; overview section; no clustering, no root-cause claim
+- [x] Tests: backend integration 3 (an `array_agg` SQL defect found and fixed); frontend 15
+
+## Phase 10E — CI regression gate on the golden set (F4) (2026-11-20; evidence: `reports/phase-10e.md`)
+- [x] ADR-58: `python -m app.eval_gate --config evals/gate.json`, offline (mock, SYNTHETIC, no DB or secret); fails on lost passes or a pass-rate floor; CI `python` job step added; v1 → v2 fails on G04, G07–G10 as documented
+- [x] Tests: 20 unit (a stdout-binding defect found and fixed); CI run pending the owner's push
+
+## Phase 10F — Threshold alert rules (F6, M21) (2026-11-20; evidence: `reports/phase-10f.md`)
+- [x] ADR-59: `backend/alerts/rules.json` evaluated at read time on M04, M06, M10, M20; `GET /api/v1/alerts`; overview strip; `insufficient_data` below `min_n`; cost lower bound; **no outbound delivery**
+- [x] Tests: backend unit 21 + integration 3; frontend 14
+
+## Batch 10A–10F — final verification (2026-11-23)
+- [x] Backend full: 2111 passed, 0 failed (PostgreSQL required)
+- [x] Frontend: typecheck, lint, unit 503 passed, audit-policy 116 passed, production audit 0, build (Node 22.23.4), bundle scan 0
+- [x] Mutation checks: 10A 5/5 (after two added tests), 10B–10F 9/9
+- [x] SDK: six live-backend tests pinned `attrmap.v1` or the old M20 shape and were updated with notes (they first failed because the PostgreSQL container had stopped; reproduced after a restart); SDK full suite: see the commit message
+- [ ] GitHub CI (including the new eval-gate step and the Playwright E2E gate): after the owner's push
 
 ## Commands
 

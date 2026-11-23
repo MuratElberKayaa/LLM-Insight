@@ -18,6 +18,28 @@ export const TRACE_STATUSES = ["ok", "error"] as const;
 export const SPAN_STATUSES = ["UNSET", "OK", "ERROR"] as const;
 export const SPAN_KINDS = ["UNSPECIFIED", "INTERNAL", "SERVER", "CLIENT", "PRODUCER", "CONSUMER"] as const;
 export const SPAN_ROLES = ["root", "child", "orphan"] as const;
+/** Phase 10A (ADR-54): the step a span represents, derived by the backend from stored metadata. */
+export const GENAI_STEP_KINDS = ["inference", "agent", "workflow", "plan", "tool", "retrieval", "mcp"] as const;
+export type GenAiStepKind = (typeof GENAI_STEP_KINDS)[number];
+
+export interface GenAiStep {
+  kind: GenAiStepKind | null;
+  /** Only a recorded identifier: agent name, tool name, data source id or MCP method. */
+  name: string | null;
+  mcp_method: string | null;
+}
+
+/** Phase 10A (ADR-54): counts over the returned spans of one trace. */
+export interface AgentSummary {
+  agent_steps: number;
+  inference_calls: number;
+  tool_calls: number;
+  tool_errors: number;
+  retrievals: number;
+  mcp_calls: number;
+  tools: { name: string | null; calls: number; errors: number }[];
+  tools_truncated: boolean;
+}
 export const OPERATION_NAMES = ["chat", "text_completion", "generate_content", "embeddings"] as const;
 export const CALL_KEY_SOURCES = ["provider_response_id", "sdk_attempt", "span_fallback"] as const;
 
@@ -105,6 +127,8 @@ export interface SpanRecord {
   resource_attributes: Record<string, AttributeValue>;
   attributes: Record<string, AttributeValue>;
   attributes_schema_version: string;
+  /** Phase 10A (additive). */
+  genai_step: GenAiStep;
   provenance: UsageProvenance;
   provenance_verified: false;
   server_dropped_attributes_count: number;
@@ -140,6 +164,8 @@ export interface TraceDetail {
   trace: TraceSummary;
   spans: SpanRecord[];
   spans_truncated: boolean;
+  /** Phase 10A (additive): agent, tool, retrieval and MCP counts over `spans`. */
+  agent_summary: AgentSummary;
   usage: UsageRecord[];
   usage_truncated: boolean;
   /** Human failure reviews of this trace (Phase 4B), oldest first, at most 200. */

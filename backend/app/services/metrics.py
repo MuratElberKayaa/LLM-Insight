@@ -39,11 +39,34 @@ COST_QUANTUM = Decimal("1E-10")  # NUMERIC(20,10), the cost column's scale
 HOURLY_TREND_MAX_WINDOW = timedelta(days=2)
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
-TTFC_UNAVAILABLE = {
-    "available": False,
-    "reason": "not_recorded",
-    "detail": "streaming time-to-first-chunk is not captured by the MVP (M20, P1)",
+TTFC_DETAIL = {
+    "no_streaming_attempts": "no streaming inference attempt (gen_ai.request.stream true) in scope",
+    "not_recorded": (
+        "streaming attempts exist but none recorded gen_ai.response.time_to_first_chunk"
+    ),
 }
+
+
+def ttfc(row: Any) -> dict[str, Any]:
+    """M20 (Phase 10B, ADR-55): never estimated. `available` only with at least one recorded
+    value; otherwise the reason says whether streaming happened at all."""
+    streaming = 0 if row is None else int(row.streaming_attempts)
+    n = 0 if row is None else int(row.ttfc_n)
+
+    def ms(v: float | None) -> float | None:
+        return None if v is None or n == 0 else round(v, 6)
+
+    reason = None if n else ("not_recorded" if streaming else "no_streaming_attempts")
+    return {
+        "available": n > 0,
+        "reason": reason,
+        "detail": None if reason is None else TTFC_DETAIL[reason],
+        "streaming_attempts": streaming,
+        "n": n,
+        "p50_ms": ms(None if row is None else row.ttfc_p50),
+        "p95_ms": ms(None if row is None else row.ttfc_p95),
+        "low_sample": {"p95": n < LOW_SAMPLE_MIN["p95"]},
+    }
 
 
 # ---------------------------------------------------------------- small formatters
@@ -265,7 +288,7 @@ def overview(session: Session, f: MetricsFilter) -> dict[str, Any]:
                 "by_error_type_truncated": len(error_type_rows) > repo.MAX_ERROR_TYPES,
             },
             "latency": _per_bucket(u_total, u_by, lambda r: latency(r, _n(r))),  # M06
-            "time_to_first_chunk": TTFC_UNAVAILABLE,  # M20 (P1): not recorded
+            "time_to_first_chunk": _per_bucket(u_total, u_by, ttfc),  # M20 (Phase 10B)
             "tokens": _per_bucket(u_total, u_by, _tokens),  # M08, M09
             "cost": _per_bucket(u_total, u_by, _cost),  # M10, M11, M12
             "price_versions": {  # M13
@@ -306,6 +329,7 @@ def compare(session: Session, f: MetricsFilter, limit: int) -> dict[str, Any]:
                 "attempts": n,
                 "errors": {"failed": failed, "succeeded": n - failed, "rate": rate(failed, n)},
                 "latency": latency(r, n),
+                "time_to_first_chunk": ttfc(r),  # M20 (Phase 10B, additive)
                 "tokens": _tokens(r),
                 "usage_source": _usage_sources(r),
                 "cost": {

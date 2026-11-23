@@ -556,6 +556,45 @@ def _validation_findings(ctx: _Trace) -> list[_Finding]:
     ]
 
 
+REPEATED_TOOL_CALLS = 5  # Phase 10A (ADR-54): executions of one tool name in one trace
+
+
+def _tool_loop_findings(ctx: _Trace) -> list[_Finding]:
+    by_tool: dict[str, list[SpanInput]] = {}
+    for s in ctx.spans:
+        if _text(s, "gen_ai.operation.name", 64) != "execute_tool":
+            continue
+        name = _text(s, "gen_ai.tool.name", 128)
+        if name is not None:
+            by_tool.setdefault(name, []).append(s)
+    repeated = {n: g for n, g in sorted(by_tool.items()) if len(g) >= REPEATED_TOOL_CALLS}
+    if not repeated:
+        return []
+    # One finding per trace (its id is `repeated_tool_calls:trace`), one fact entry per tool.
+    return [
+        _Finding(
+            "repeated_tool_calls",
+            {"type": "trace"},
+            [
+                _fact(
+                    "repeated_tools",
+                    [
+                        {
+                            "tool_name": n,
+                            "executions": len(g),
+                            "failed_executions": sum(_is_error(s) for s in g),
+                        }
+                        for n, g in repeated.items()
+                    ],
+                ),
+                _fact("threshold", REPEATED_TOOL_CALLS),
+            ],
+            [s for g in repeated.values() for s in g],
+            "possible_agent_loop",
+        )
+    ]
+
+
 def _finish_reason_findings(ctx: _Trace) -> list[_Finding]:
     out = []
     openai = [s for s in ctx.inference if _text(s, "gen_ai.provider.name", 64) == "openai"]
@@ -851,6 +890,7 @@ def diagnose(
             *_call_findings(ctx),
             *_error_span_findings(ctx),
             *_validation_findings(ctx),
+            *_tool_loop_findings(ctx),
             *_finish_reason_findings(ctx),
             *_usage_findings(ctx),
             *_structure_findings(ctx),

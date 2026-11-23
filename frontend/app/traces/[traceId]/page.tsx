@@ -9,6 +9,7 @@ import { DiagnosticsPanel } from "../../../components/reviews/diagnostics-panel"
 import { ReviewSection } from "../../../components/reviews/review-section";
 import { ErrorState } from "../../../components/states";
 import {
+  AgentSteps,
   AttemptsTable,
   LogicalCalls,
   ProvenanceNotice,
@@ -146,6 +147,7 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
                   {/* Keyed by the selected span so an evidence link re-selects in the waterfall. */}
                   <Waterfall key={rawSpan ?? "none"} view={view} initialSelected={rawSpan} />
                 </section>
+                <AgentSteps summary={data.agent_summary} spansTruncated={data.spans_truncated} />
                 <LogicalCalls view={view} />
                 <AttemptsTable view={view} usageTruncated={data.usage_truncated} />
                 <SpanTable view={view} />

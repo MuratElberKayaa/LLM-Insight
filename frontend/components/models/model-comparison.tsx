@@ -73,6 +73,13 @@ function LatencyCell({ g }: { g: ModelGroup }) {
         p99 {formatMs(l.p99_ms) ?? "no sample"}
         {l.low_sample.p99 ? " (low sample)" : ""} · n {formatInt(l.n)}
       </span>
+      {g.time_to_first_chunk.streaming_attempts > 0 && (
+        <span className="block text-xs text-ink-3" data-testid="group-ttfc">
+          {g.time_to_first_chunk.available
+            ? `first chunk p50 ${formatMs(g.time_to_first_chunk.p50_ms)} · p95 ${formatMs(g.time_to_first_chunk.p95_ms)} · n ${formatInt(g.time_to_first_chunk.n)}`
+            : `first chunk not recorded (${formatInt(g.time_to_first_chunk.streaming_attempts)} streaming)`}
+        </span>
+      )}
     </span>
   );
 }

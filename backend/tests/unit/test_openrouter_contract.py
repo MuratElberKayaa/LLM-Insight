@@ -51,7 +51,9 @@ def test_every_openrouter_attribute_is_kept_under_the_unchanged_mapping():
     stored = normalized()
     assert stored.server_dropped_attributes_count == 0
     assert stored.provenance == "synthetic"
-    assert attrmap.SCHEMA_VERSION == "llminsight.attrmap.v1"
+    assert (
+        attrmap.SCHEMA_VERSION == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     for key, value in ATTRIBUTES.items():
         assert stored.attributes[key] == value, key
 

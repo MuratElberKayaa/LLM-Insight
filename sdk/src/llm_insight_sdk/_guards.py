@@ -104,6 +104,13 @@ CALL_ID = _opaque(r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}", 64)
 HOST = _identifier(r"[A-Za-z0-9\[][A-Za-z0-9._:\[\]-]*", 253)  # server.address
 FINGERPRINT = _opaque(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", 128)  # openai.response.system_fingerprint
 LABEL = Rule("label", 256)  # service name, environment, span name
+# attrmap v2 (Phase 10A, ADR-54): agent, tool and MCP identifiers, never content
+AGENT_NAME = _identifier(r"[A-Za-z0-9][A-Za-z0-9._:+/-]*", 128)
+AGENT_VERSION = VERSION
+TOOL_NAME = _identifier(r"[A-Za-z0-9_][A-Za-z0-9_.:/-]*", 128)
+TOOL_TYPE = KEYWORD
+MCP_METHOD = _identifier(r"[a-z][A-Za-z0-9_./-]*", 64)
+OPAQUE_ID = RESPONSE_ID  # gen_ai.agent.id, gen_ai.tool.call.id
 
 
 def check(value: object, rule: Rule) -> str | None:

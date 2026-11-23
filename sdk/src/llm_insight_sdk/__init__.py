@@ -18,6 +18,7 @@ from llm_insight_sdk.config import ConfigError, LLMInsightConfig
 from llm_insight_sdk.instrumentation import (
     InferenceRecorder,
     RequestParams,
+    StepRecorder,
     TokenUsage,
     acall_with_retries,
     call_with_retries,
@@ -41,6 +42,7 @@ __all__ = [
     "InferenceRecorder",
     "LLMInsightConfig",
     "RequestParams",
+    "StepRecorder",
     "Telemetry",
     "TelemetryStats",
     "TokenUsage",
