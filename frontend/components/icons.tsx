@@ -40,6 +40,14 @@ export const TracesIcon = () => (
   </Icon>
 );
 
+/** UI-R1: two conversation bubbles (pseudonymous sessions). */
+export const SessionsIcon = () => (
+  <Icon>
+    <path d="M2.5 3.5h7a1 1 0 011 1v3.5a1 1 0 01-1 1H6L3.5 11V9h-1a1 1 0 01-1-1V4.5a1 1 0 011-1z" />
+    <path d="M12.5 6.5h1a1 1 0 011 1v3.5a1 1 0 01-1 1h-1V14L10 12H8" />
+  </Icon>
+);
+
 export const ModelsIcon = () => (
   <Icon>
     <path d="M8 2l6 3-6 3-6-3 6-3z" />
@@ -68,11 +76,11 @@ export const LockIcon = () => (
   </Icon>
 );
 
-/** Brand mark: a rounded square in the series-1 accent with a rising trace line. */
+/** Brand mark: a rounded square in the accent token with a rising trace line (UI-R1). */
 export function BrandMark() {
   return (
     <svg aria-hidden="true" focusable="false" viewBox="0 0 26 26" width="26" height="26" className="shrink-0">
-      <rect x="0.5" y="0.5" width="25" height="25" rx="7" className="fill-series-1" />
+      <rect x="0.5" y="0.5" width="25" height="25" rx="7" className="fill-accent" />
       <path d="M7 16.5l3.5-4 3 2.5L19 9" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );

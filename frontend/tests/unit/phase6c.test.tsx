@@ -554,7 +554,7 @@ describe("loaders (Phase 6C-C reads)", () => {
     return { fetch: (async (input: string | URL | Request) => respond(new URL(input instanceof Request ? input.url : input.toString()))) as typeof fetch };
   }
 
-  it("the overview reads the latest trace (limit 1) and the unfiltered filter values of the same project and window", async () => {
+  it("the overview reads the recent traces (limit 5; UI-R1, was 1) and the unfiltered filter values of the same project and window", async () => {
     const calls: URL[] = [];
     const now = new Date("2026-11-01T10:00:00Z");
     const ctx = await loadOverview(parseOverviewQuery({ project: "148", range: "7d", provider: "gcp.gemini" }), now, deps(calls, "gcp.gemini"));
@@ -564,7 +564,7 @@ describe("loaders (Phase 6C-C reads)", () => {
     const data = calls.filter((u) => !u.pathname.endsWith("/projects"));
     for (const u of data) assert.equal(u.searchParams.get("project"), "148", u.pathname);
     const latest = data.find((u) => u.pathname === "/api/v1/traces");
-    assert.equal(latest?.searchParams.get("limit"), "1");
+    assert.equal(latest?.searchParams.get("limit"), "5"); // UI-R1: recent traces list (was 1)
     assert.equal(latest?.searchParams.get("provider"), "gcp.gemini");
     const compares = data.filter((u) => u.pathname === "/api/v1/models/compare");
     assert.deepEqual(compares.map((u) => u.searchParams.get("provider")).sort(), ["gcp.gemini", null].sort());

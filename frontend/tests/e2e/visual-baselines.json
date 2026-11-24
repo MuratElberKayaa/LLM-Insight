@@ -1,0 +1,5 @@
+{
+  "$comment": "Linux visual-regression acceptance (tests/setup/visual-policy.ts). Set a spec to \"accepted\" only in the commit that adds its reviewed *-linux.png baselines from the CI capture (.github/workflows/visual-baselines.yml); from then on CI must run it. Procedure: docs/reports/frontend-final-stabilization.md.",
+  "ui-r3-visual.spec.ts": { "linux": "pending" },
+  "ui-r4-visual.spec.ts": { "linux": "pending" }
+}

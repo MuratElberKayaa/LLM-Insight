@@ -3,6 +3,7 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { formatInt } from "../../lib/format";
+import { ChartTooltip, TooltipRow } from "./chart-tooltip";
 import { CHART } from "./trend-charts";
 
 /**
@@ -31,20 +32,13 @@ const UNKNOWN = CHART.unknown;
 function Body({ active, payload }: { active?: boolean | undefined; payload?: readonly { payload?: unknown }[] | undefined }) {
   const p = payload?.[0]?.payload as OutcomePoint | undefined;
   if (!active || p === undefined) return null;
-  const row = (value: number, label: string, key: string) => (
-    <div className="flex items-center gap-2">
-      <span aria-hidden="true" className="inline-block h-2 w-2 rounded-sm" style={{ background: key }} />
-      <span className="tabular font-semibold text-ink">{formatInt(value)}</span>
-      <span className="text-ink-3">{label}</span>
-    </div>
-  );
+  const row = (value: number, label: string, key: string) => <TooltipRow value={formatInt(value)} label={label} swatch={key} shape="square" />;
   return (
-    <div className="max-w-80 rounded-md border border-line bg-raised px-3 py-2 text-xs shadow-lg">
-      <p className="mb-1 break-words text-ink-2">{p.label}</p>
+    <ChartTooltip title={p.label}>
       {row(p.passed, "passed", CHART.series1)}
       {row(p.failed, "failed", CHART.critical)}
       {row(p.not_evaluated, "not evaluated (excluded from the pass rate)", UNKNOWN)}
-    </div>
+    </ChartTooltip>
   );
 }
 

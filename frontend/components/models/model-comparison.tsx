@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import type { ModelGroup, ModelsCompare } from "../../lib/api/types";
 import { formatUsd } from "../../lib/decimal";
@@ -200,6 +201,35 @@ function Provenance({ g }: { g: ModelGroup }) {
   );
 }
 
+/** UI-R3: links from a group to its traces and into the side-by-side panel (built by the page). */
+export interface GroupLinks {
+  traces: (g: ModelGroup) => { href: string; caveat: string };
+  pairA: (g: ModelGroup) => string;
+  pairB: (g: ModelGroup) => string;
+}
+
+function GroupActions({ g, links }: { g: ModelGroup; links: GroupLinks }) {
+  const t = links.traces(g);
+  return (
+    <span className="block min-w-[9rem] text-xs">
+      <Link href={t.href} prefetch={false} className="font-medium text-accent underline-offset-2 hover:underline" data-testid="group-traces-link">
+        Traces →
+      </Link>
+      <span className="mt-0.5 block text-ink-3">{t.caveat}</span>
+      <span className="mt-1 block text-ink-2">
+        Compare as{" "}
+        <Link href={links.pairA(g)} prefetch={false} className="underline underline-offset-2 hover:text-ink" data-testid="group-pair-a">
+          A
+        </Link>{" "}
+        ·{" "}
+        <Link href={links.pairB(g)} prefetch={false} className="underline underline-offset-2 hover:text-ink" data-testid="group-pair-b">
+          B
+        </Link>
+      </span>
+    </span>
+  );
+}
+
 const COLUMNS: Column<ModelGroup>[] = [
   { key: "group", header: "Provider · requested → response model · prompt", rowHeader: true, render: (g) => <GroupName g={g} /> },
   { key: "prov", header: "Provenance (attempts)", render: (g) => <Provenance g={g} /> },
@@ -221,7 +251,7 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Below `md`: one card per group with the same values as the table row. */
-function GroupCards({ groups }: { groups: ModelGroup[] }) {
+function GroupCards({ groups, links }: { groups: ModelGroup[]; links?: GroupLinks }) {
   return (
     <ul className="space-y-3 md:hidden" aria-label="Model groups" data-testid="group-cards">
       {groups.map((g) => (
@@ -257,6 +287,11 @@ function GroupCards({ groups }: { groups: ModelGroup[] }) {
                 <Provenance g={g} />
               </Item>
             </div>
+            {links && (
+              <div className="col-span-2">
+                <GroupActions g={g} links={links} />
+              </div>
+            )}
           </dl>
         </li>
       ))}
@@ -312,6 +347,7 @@ function PointsTable({ data, kind }: { data: ModelsCompare; kind: "attempts" | "
           { key: "g", header: "Group", rowHeader: true, render: (g) => <GroupName g={g} /> },
           { key: "p50", header: "p50", align: "right", render: (g) => formatMs(g.latency.p50_ms) ?? "no sample" },
           { key: "p95", header: "p95", align: "right", render: (g) => formatMs(g.latency.p95_ms) ?? "no sample" },
+          { key: "p99", header: "p99", align: "right", render: (g) => formatMs(g.latency.p99_ms) ?? "no sample" },
           { key: "n", header: "n", align: "right", render: (g) => formatInt(g.latency.n) + (g.latency.low_sample.p95 ? " (low)" : "") },
         ];
   return <DataTable caption={kind === "attempts" ? "Attempts per group" : "Latency per group"} captionHidden columns={cols} rows={rows} rowKey={groupKey} />;
@@ -338,8 +374,15 @@ export function ComparisonCharts({ data }: { data: ModelsCompare }) {
       </ChartCard>
       <ChartCard
         id="group-latency"
-        title="p95 attempt latency per group (ms)"
-        description={`From span durations (M06). ▲ = fewer than 20 samples. Groups without a sample have no bar.${more}`}
+        title="Attempt latency per group: p50 · p95 · p99 (ms)"
+        description={`From span durations (M06), one hue in three steps. ▲ = p95 from fewer than 20 samples. Groups without a sample have no bar.${more}`}
+        legend={
+          <span className="flex flex-wrap gap-3">
+            <LegendItem swatchClass="bg-series-1/40" label="p50" />
+            <LegendItem swatchClass="bg-series-1/70" label="p95" />
+            <LegendItem swatchClass="bg-series-1" label="p99" />
+          </span>
+        }
         table={<PointsTable data={data} kind="latency" />}
       >
         <GroupLatencyChart points={points} />
@@ -348,7 +391,8 @@ export function ComparisonCharts({ data }: { data: ModelsCompare }) {
   );
 }
 
-export function ComparisonTable({ data }: { data: ModelsCompare }) {
+export function ComparisonTable({ data, links }: { data: ModelsCompare; links?: GroupLinks }) {
+  const columns = links ? [...COLUMNS, { key: "open", header: "Open", render: (g: ModelGroup) => <GroupActions g={g} links={links} /> }] : COLUMNS;
   return (
     <section aria-labelledby="compare-table-heading" className="min-w-0">
       <SectionHeading
@@ -357,9 +401,9 @@ export function ComparisonTable({ data }: { data: ModelsCompare }) {
         description="One row per provider, requested model, response model and prompt version (M15). Exact backend values; unknown stays unknown."
       />
       <div className="hidden md:block">
-        <DataTable caption="Model and provider groups (GET /api/v1/models/compare)" captionHidden columns={COLUMNS} rows={data.groups} rowKey={groupKey} testId="compare-table" />
+        <DataTable caption="Model and provider groups (GET /api/v1/models/compare)" captionHidden columns={columns} rows={data.groups} rowKey={groupKey} testId="compare-table" />
       </div>
-      <GroupCards groups={data.groups} />
+      <GroupCards groups={data.groups} {...(links ? { links } : {})} />
       {data.groups_truncated && (
         <p className="mt-2 text-xs text-ink-3" data-testid="groups-truncated">
           <Flag tone="neutral">Top {data.limit}</Flag> More groups exist than are shown; raise the group limit to see more.

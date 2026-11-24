@@ -89,7 +89,18 @@ export interface SpanView {
   inference: InferenceView | null;
   /** Phase 10A (ADR-54): the backend's step classification of this span. */
   step: GenAiStep;
+  /**
+   * UI-R2: the span's own streaming attributes, as stored (never estimated). `requested` is
+   * `gen_ai.request.stream` (null when not recorded); `ttftMs` is `gen_ai.response.time_to_first_chunk`
+   * (seconds on the wire) in milliseconds, null when not recorded.
+   */
+  streaming: { requested: boolean | null; ttftMs: number | null };
+  /** UI-R2: 1–3 for the three longest non-root spans with a positive duration (a ranking, not a judgement); else null. */
+  slowRank: number | null;
 }
+
+/** UI-R2: how many of the longest spans the waterfall marks. */
+export const SLOWEST_MARKED = 3;
 
 export type CallOutcome = "no_failure" | "recovered" | "all_failed" | "last_failed" | "status_unavailable";
 
@@ -188,6 +199,16 @@ function inferenceView(u: UsageRecord): InferenceView {
   };
 }
 
+/** UI-R2: stored streaming attributes only; a value outside its type is treated as not recorded. */
+function streamingOf(attrs: Record<string, AttributeValue>): SpanView["streaming"] {
+  const stream = attrs["gen_ai.request.stream"];
+  const ttft = attrs["gen_ai.response.time_to_first_chunk"];
+  return {
+    requested: typeof stream === "boolean" ? stream : null,
+    ttftMs: typeof ttft === "number" && Number.isFinite(ttft) && ttft >= 0 ? ttft * 1000 : null,
+  };
+}
+
 // ---------------------------------------------------------------- tree
 
 function compareSpans(a: SpanRecord, b: SpanRecord): number {
@@ -256,6 +277,8 @@ export function buildTraceView(detail: TraceDetail): TraceView {
       resourceAttributes: attributeList(s.resource_attributes),
       inference: usage ? inferenceView(usage) : null,
       step: s.genai_step,
+      streaming: streamingOf(s.attributes),
+      slowRank: null,
     };
   };
 
@@ -282,6 +305,19 @@ export function buildTraceView(detail: TraceDetail): TraceView {
     else if (!byId.has(s.parent_span_id)) walk(s, "parent_not_returned");
   }
   for (const s of byId.values()) if (!visited.has(s.span_id)) walk(s, "unreachable");
+
+  // UI-R2: rank the longest non-root spans (ties by start order, then span id: stable).
+  const ranked = rows
+    .filter((r) => r.parentSpanId !== null && BigInt(r.durationNs) > 0n)
+    .sort((a, b) => {
+      const da = BigInt(a.durationNs);
+      const db = BigInt(b.durationNs);
+      return da !== db ? (da > db ? -1 : 1) : 0;
+    })
+    .slice(0, SLOWEST_MARKED);
+  ranked.forEach((r, i) => {
+    r.slowRank = i + 1;
+  });
 
   // ------------------------------------------------------------ counts and logical calls
   let errorSpans = 0;

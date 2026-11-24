@@ -49,3 +49,13 @@ export function u(pathAndQuery: string, project: string = PROJECT): string {
   const [p, q] = pathAndQuery.split("?", 2);
   return q ? `${p}?project=${project}&${q}` : `${p}?project=${project}`;
 }
+
+/**
+ * Final stabilization: wait until React has hydrated the page (the auto-refresh control marks it).
+ * Before that, React holds discrete events (clicks) on not-yet-hydrated Suspense content and
+ * replays them later, so a native default such as opening a <details> never happens. Measured
+ * on /models: 0.4–1.9 s after "load". Use before interacting with page content right after a goto.
+ */
+export async function waitForHydration(page: import("@playwright/test").Page): Promise<void> {
+  await page.locator('[data-testid="auto-refresh"][data-hydrated="true"]').first().waitFor({ state: "attached", timeout: 20_000 });
+}

@@ -16,6 +16,8 @@ import { loadFilterOptions, requireScope, requireTraceScope } from "./filter-opt
 
 export const COMPARE_LIMIT = "10";
 export const ERROR_PATTERN_LIMIT = "10";
+/** UI-R1: recent traces on the overview (the newest is summarised, the rest listed). */
+export const RECENT_TRACES_LIMIT = "5";
 
 export interface OverviewPageData extends ProjectContext {
   fetchedAt: Date;
@@ -23,7 +25,7 @@ export interface OverviewPageData extends ProjectContext {
   settledAt: number;
   overview: ApiResult<Overview>;
   compare: ApiResult<ModelsCompare>;
-  /** Phase 6C-C: the newest stored trace of the same window and filters (`limit=1`). */
+  /** Phase 6C-C / UI-R1: the newest stored traces of the same window and filters (`limit=5`). */
   latest: ApiResult<TraceList> | null;
   /** Phase 6C-C: providers and models observed in the window (filter suggestions). */
   options: ApiResult<FilterOptions> | null;
@@ -48,7 +50,7 @@ export async function loadOverview(query: OverviewQuery, now: Date = new Date(),
   const [overview, compare, latest, options, projects, errorPatterns, alerts] = await Promise.all([
     getJson(config, "/api/v1/overview", s, params, overviewDecoder, deps),
     getJson(config, "/api/v1/models/compare", s, { ...params, limit: COMPARE_LIMIT }, modelsCompareDecoder, deps),
-    getJson(config, "/api/v1/traces", s, { ...params, limit: "1" }, traceListDecoder, deps),
+    getJson(config, "/api/v1/traces", s, { ...params, limit: RECENT_TRACES_LIMIT }, traceListDecoder, deps),
     loadFilterOptions(config, projectId, { from: params.from ?? "", to: params.to ?? "" }, deps),
     loadProjects(config, deps),
     getJson(config, "/api/v1/error-patterns", s, { ...window, limit: ERROR_PATTERN_LIMIT }, errorPatternsDecoder, deps),

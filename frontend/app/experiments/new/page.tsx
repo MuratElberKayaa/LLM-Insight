@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Breadcrumbs } from "../../../components/breadcrumbs";
 import { connection } from "next/server";
 import { ExperimentForm } from "../../../components/experiments/experiment-form";
 import { NavigationTransition, PendingRegion } from "../../../components/navigation-transition";
@@ -29,10 +30,12 @@ export default async function NewExperimentPage({ searchParams }: PageProps) {
   const { projectId, datasets, options } = ctx;
   return (
     <NavigationTransition>
+      <Breadcrumbs items={[{ label: "Evaluate" }, { label: "Experiments", href: projectHref("/experiments", projectLinkValue(project)) }, { label: "New mock experiment" }]} />
       <Link href={projectHref("/experiments", projectLinkValue(project))} className="mb-4 inline-flex items-center gap-1 text-sm text-ink-2 hover:text-ink">
         <span aria-hidden="true">←</span> All experiments
       </Link>
       <PageHeader
+        eyebrow="Evaluate · Synthetic / Offline Mock"
         title="New mock experiment"
         description="Run every test case of one dataset under prompt versions A and B and evaluate each output with its deterministic rule. Opening this page runs nothing."
       />

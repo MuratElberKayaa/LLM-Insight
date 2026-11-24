@@ -90,7 +90,7 @@ const COLUMNS: Column<ModelGroup>[] = [
 /** Top model groups (M15). A failed compare request degrades this section only. */
 export function ModelGroups({ result }: { result: ApiResult<ModelsCompare> }) {
   return (
-    <section aria-labelledby="models-heading" className="mt-8 min-w-0">
+    <section aria-labelledby="models-heading" className="min-w-0 rounded-xl border border-line bg-surface p-5">
       <SectionHeading
         id="models-heading"
         title="Model and provider activity"

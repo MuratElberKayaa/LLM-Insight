@@ -46,7 +46,7 @@ export function ErrorPatternsSection({ result, project, filtered }: { result: Ap
     },
   ];
   return (
-    <section aria-labelledby="patterns-heading" className="mt-8 min-w-0" data-testid="error-patterns">
+    <section aria-labelledby="patterns-heading" className="min-w-0 rounded-xl border border-line bg-surface p-5" data-testid="error-patterns">
       <SectionHeading
         id="patterns-heading"
         title="Error patterns"

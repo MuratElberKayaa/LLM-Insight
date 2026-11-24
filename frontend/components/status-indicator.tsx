@@ -13,7 +13,7 @@ export function StatusIndicator({ tone, label, detail }: { tone: StatusTone; lab
   return (
     <span className="inline-flex items-center gap-2 text-sm text-ink-2" title={detail}>
       <span aria-hidden="true" className={`swatch inline-block h-2 w-2 rounded-full ${t.dot}`} />
-      <span>
+      <span className="status-label">
         <span className="sr-only">{t.glyph} </span>
         {label}
       </span>

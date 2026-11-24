@@ -21,7 +21,7 @@ export function ChartCard({
   table: ReactNode;
 }) {
   return (
-    <section aria-labelledby={`${id}-title`} className="min-w-0 rounded-lg border border-line bg-surface p-4" data-chart={id}>
+    <section aria-labelledby={`${id}-title`} className="min-w-0 rounded-xl border border-line bg-surface p-5" data-chart={id}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 id={`${id}-title`} className="text-sm font-semibold text-ink">

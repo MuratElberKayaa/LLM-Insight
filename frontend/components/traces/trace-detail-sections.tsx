@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { REPEATED_TOOL_CALLS, STEP_FAMILY_LABEL, findingAnchor, type AgentAnalysis, type StepFamily } from "../../lib/agent-analysis";
 import type { AgentSummary, TraceDetail, TraceSummary } from "../../lib/api/trace-types";
 import type { TraceProvenance } from "../../lib/api/types";
 import { formatInt } from "../../lib/format";
@@ -9,7 +10,56 @@ import { DataTable, NullValue, type Column } from "../data-table";
 import { SectionHeading } from "../page-header";
 import { ProvenanceBadge } from "../provenance-badge";
 import { Notice } from "../states";
+import { FamilyBadge } from "./step-badge";
 import { Ident, SpanStatusLabel, TokenSummary, Tokens, TraceCost, TraceStatusLabel } from "./trace-values";
+
+const FAMILIES: StepFamily[] = ["agent", "llm", "tool", "retrieval", "mcp"];
+
+/** UI-R2: how many returned spans fall in each step family; zero families stay visible as 0. */
+function FamilyCounts({ families }: { families: AgentAnalysis["families"] }) {
+  return (
+    <ul className="mb-3 flex flex-wrap gap-2" aria-label="Spans by step type" data-testid="agent-families">
+      {FAMILIES.map((f) => (
+        <li key={f} className="inline-flex items-center gap-1.5 rounded-md border border-line bg-raised/40 px-2 py-1 text-xs text-ink-2" data-family={f} data-count={families[f]}>
+          <FamilyBadge family={f} />
+          {STEP_FAMILY_LABEL[f]}
+          <span className="tabular font-semibold text-ink">{formatInt(families[f])}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * UI-R2: the diagnostics rule's possible loop, stated as a hypothesis. The threshold is the
+ * backend's (ADR-54); nothing about what the tool was asked or returned is known.
+ */
+function LoopNotice({ tools, findingId }: { tools: string[]; findingId: string | null }) {
+  return (
+    <div role="note" className="mb-3 rounded-lg border border-warning/50 bg-warning/5 px-4 py-3 text-sm" data-testid="agent-loop-notice" data-tools={tools.length}>
+      <p className="font-semibold text-ink">
+        <span aria-hidden="true" className="text-warning-ink">
+          ▲{" "}
+        </span>
+        Possible loop (hypothesis, not verified)
+      </p>
+      <p className="mt-1 text-ink-2">
+        {tools.length === 1 ? "Tool " : "Tools "}
+        {tools.map((t, i) => (
+          <span key={t}>
+            {i > 0 ? ", " : ""}
+            <code className="font-mono text-xs text-ink">{t}</code>
+          </span>
+        ))}{" "}
+        ran {REPEATED_TOOL_CALLS} or more times in this trace. The repetitions may be intended (for example one call per item); tool arguments and results are not stored, so
+        whether the agent made progress cannot be read here.{" "}
+        <a href={findingId ? `#${findingAnchor(findingId)}` : "#diagnostics-heading"} className="underline underline-offset-2 hover:text-ink">
+          {findingId ? "See the diagnostics finding" : "See diagnostics"}
+        </a>
+      </p>
+    </div>
+  );
+}
 
 /** Rows of the accessible span table rendered at once; the waterfall pages through the rest. */
 export const SPAN_TABLE_LIMIT = 500;
@@ -135,20 +185,39 @@ export function StatusBreakdown({ trace, view }: { trace: TraceSummary; view: Tr
 const outcomeTone = (o: CallView["outcome"]) => (o === "recovered" ? "text-ink" : o === "all_failed" || o === "last_failed" ? "text-critical-ink" : "text-ink-2");
 
 /** Phase 10A (ADR-54): agent, tool, retrieval and MCP steps of the returned spans. */
-export function AgentSteps({ summary, spansTruncated }: { summary: AgentSummary; spansTruncated: boolean }) {
+export function AgentSteps({ summary, spansTruncated, analysis }: { summary: AgentSummary; spansTruncated: boolean; analysis?: AgentAnalysis }) {
   if (summary.agent_steps + summary.tool_calls + summary.retrievals + summary.mcp_calls === 0) return null;
   const columns: Column<AgentSummary["tools"][number]>[] = [
     { key: "tool", header: "Tool", rowHeader: true, render: (t) => (t.name === null ? <NullValue label="no gen_ai.tool.name recorded">unnamed tool</NullValue> : <code className="font-mono text-xs">{t.name}</code>) },
     { key: "calls", header: "Executions", align: "right", render: (t) => formatInt(t.calls) },
     { key: "errors", header: "Failed", align: "right", render: (t) => <span className={t.errors > 0 ? "text-critical-ink" : undefined}>{formatInt(t.errors)}</span> },
+    // UI-R2: repeats and the rule's signal; the signal is a hypothesis, never a cause.
+    { key: "repeats", header: "Repeats", align: "right", render: (t) => (t.calls > 1 ? <span data-testid="tool-repeats">×{formatInt(t.calls)}</span> : <span className="text-ink-3">—</span>) },
+    {
+      key: "signal",
+      header: "Signal",
+      render: (t) =>
+        t.name !== null && t.calls >= REPEATED_TOOL_CALLS ? (
+          <span className="inline-flex items-center gap-1 rounded border border-warning/50 px-1.5 text-xs text-ink-2" data-testid="tool-loop-flag">
+            <span aria-hidden="true" className="text-warning-ink">
+              ▲
+            </span>
+            Possible loop
+          </span>
+        ) : (
+          <span className="text-ink-3">—</span>
+        ),
+    },
   ];
   return (
-    <section aria-labelledby="agent-heading" className="mt-8 min-w-0" data-testid="agent-steps">
+    <section aria-labelledby="agent-heading" className="min-w-0 rounded-xl border border-line bg-surface p-5" data-testid="agent-steps">
       <SectionHeading
         id="agent-heading"
         title="Agent steps"
         description="From the agent, tool, retrieval and MCP spans the instrumentation recorded (OTel GenAI agent conventions). Tool arguments and results are never stored."
       />
+      {analysis && <FamilyCounts families={analysis.families} />}
+      {analysis && analysis.loopTools.length > 0 && <LoopNotice tools={analysis.loopTools} findingId={analysis.loopFindingId} />}
       <p className="mb-3 text-sm text-ink-2" data-testid="agent-counts">
         {`${formatInt(summary.agent_steps)} agent step(s) · ${formatInt(summary.inference_calls)} inference attempt(s) · ${formatInt(summary.tool_calls)} tool execution(s), ${formatInt(summary.tool_errors)} failed · ${formatInt(summary.retrievals)} retrieval(s) · ${formatInt(summary.mcp_calls)} MCP call(s)${spansTruncated ? " — counted over the returned spans only." : ""}`}
       </p>

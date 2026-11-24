@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { STEP_FAMILY_LABEL, stepFamily, type SpanFinding, type StepFamily } from "../../lib/agent-analysis";
 import type { GenAiStep, GenAiStepKind } from "../../lib/api/trace-types";
+import { formatMs } from "../../lib/format";
 import { COST_REASON_LABEL, PLACEMENT_LABEL, formatDigits, type SpanView, type TraceView } from "../../lib/span-tree";
 import { ProvenanceBadge } from "../provenance-badge";
 import { StatusIndicator } from "../status-indicator";
+import { FamilyBadge } from "./step-badge";
 
 /**
  * Span hierarchy with a relative-time waterfall (WAI-ARIA tree pattern) and the selected
@@ -19,9 +22,21 @@ const MAX_INDENT = 12;
 /** Timeline draws bars on the trace axis; Tree replaces them with the start offset as text. */
 export type WaterfallMode = "timeline" | "tree";
 
-// Columns: span · bars (or offset) · then, from `lg`, duration, tokens and cost per row, so
-// values compare down the column without opening each span (the Sentry/Phoenix pattern).
-const GRID = "sm:grid-cols-[minmax(10rem,38%)_minmax(0,1fr)] lg:grid-cols-[minmax(11rem,32%)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem]";
+// Columns: span · bars (or offset) · then, when the panel is wide enough, duration, tokens and
+// cost per row, so values compare down the column without opening each span. UI-R2: the
+// breakpoints are container queries on the waterfall panel, because in the three-panel
+// explorer its width no longer follows the viewport.
+const GRID = "@sm:grid-cols-[minmax(10rem,46%)_minmax(0,1fr)] @2xl:grid-cols-[minmax(11rem,32%)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem]";
+
+/** UI-R2: bar color by step family: LLM blue (slot 1), tool-like steps aqua (slot 3), others neutral; ERROR wins. */
+const FAMILY_BAR: Record<StepFamily, string> = {
+  llm: "bg-series-1",
+  tool: "bg-series-3",
+  retrieval: "bg-series-3",
+  mcp: "bg-series-3",
+  agent: "bg-unknown",
+  app: "bg-unknown",
+};
 
 function TokensCell({ row }: { row: SpanView }) {
   const inf = row.inference;
@@ -82,7 +97,7 @@ const KIND_SHORT: Record<SpanView["kind"], string> = {
 
 function barClass(row: SpanView): string {
   if (row.status === "ERROR") return "bg-critical";
-  return row.inference ? "bg-series-1" : "bg-unknown";
+  return FAMILY_BAR[stepFamily(row)];
 }
 
 /** Rows hidden under a collapsed ancestor are skipped (rows arrive in depth-first order). */
@@ -110,8 +125,9 @@ function Legend() {
   );
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2" aria-label="Legend" data-testid="waterfall-legend">
-      {item("bg-unknown", "Application span")}
+      {item("bg-unknown", "Application or agent span")}
       {item("bg-series-1", "Inference attempt (one physical provider call)")}
+      {item("bg-series-3", "Tool, retrieval or MCP step")}
       {item("bg-critical", "Span with status ERROR", "✕")}
     </ul>
   );
@@ -154,10 +170,76 @@ function AttrList({ title, items, testId }: { title: string; items: [string, str
   );
 }
 
-function SpanDetails({ row }: { row: SpanView }) {
+/** UI-R2: the span's own time to first chunk, exactly as stored; never estimated from duration or tokens. */
+function TtftValue({ row }: { row: SpanView }) {
+  const { requested, ttftMs } = row.streaming;
+  if (ttftMs !== null) {
+    return (
+      <span className="tabular" data-testid="span-ttft" data-ttft-state="recorded">
+        {formatMs(ttftMs)}
+      </span>
+    );
+  }
+  const [state, text] =
+    requested === true
+      ? ["not_recorded", "not recorded (streaming request, no first chunk time stored)"]
+      : requested === false
+        ? ["not_streaming", "not a streaming request"]
+        : ["unknown", "unknown (streaming flag not recorded)"];
+  return (
+    <span className="text-ink-3" data-testid="span-ttft" data-ttft-state={state}>
+      {text}
+    </span>
+  );
+}
+
+/** UI-R2: diagnostics that name this span as evidence, and human reviews anchored on it. */
+function SpanLinks({ findings, reviews, reviewsTotal }: { findings: SpanFinding[]; reviews: number; reviewsTotal: number }) {
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-3 rounded-md border border-line px-3 py-3 text-sm" data-testid="span-links">
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Diagnostics on this span</h4>
+        {findings.length === 0 ? (
+          <p className="mt-1 text-xs text-ink-3" data-testid="span-findings" data-count="0">
+            No automatic finding names this span as evidence.
+          </p>
+        ) : (
+          <ul className="mt-1 space-y-1" data-testid="span-findings" data-count={findings.length}>
+            {findings.map((f) => (
+              <li key={f.anchor} className="flex flex-wrap items-center gap-2 text-xs">
+                <a href={`#${f.anchor}`} className="text-ink-2 underline underline-offset-2 hover:text-ink">
+                  {f.category.replaceAll("_", " ")}
+                </a>
+                <span className="rounded border border-line px-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">Unverified hypothesis</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Human review</h4>
+        <p className="mt-1 text-xs text-ink-2" data-testid="span-reviews" data-count={reviews}>
+          {reviews === 0 ? "No review is anchored on this span" : `${reviews} review(s) anchored on this span`}
+          {` · ${reviewsTotal} on the trace. `}
+          <a href="#reviews-heading" className="underline underline-offset-2 hover:text-ink">
+            {reviewsTotal === 0 ? "Review this trace" : "Open reviews"}
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SpanDetails({ row, findings = [], reviews = 0, reviewsTotal = 0 }: { row: SpanView; findings?: SpanFinding[]; reviews?: number; reviewsTotal?: number }) {
   const inf = row.inference;
+  const family = stepFamily(row);
   return (
     <div data-testid="span-details" data-span-id={row.spanId}>
+      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-3" data-testid="span-details-family" data-family={family}>
+        <FamilyBadge family={family} />
+        {STEP_FAMILY_LABEL[family]}
+        {stepLabel(row.step) !== null && <span className="font-normal normal-case tracking-normal text-ink-2">· {stepLabel(row.step)}</span>}
+      </p>
       <h3 className="break-words text-base font-semibold text-ink" data-testid="span-details-name">
         {row.name}
       </h3>
@@ -229,6 +311,11 @@ function SpanDetails({ row }: { row: SpanView }) {
             <Field label="Cache write (subset)">{tokens(inf.cacheWriteInputTokens)}</Field>
             <Field label="Reasoning output (subset)">{tokens(inf.reasoningOutputTokens)}</Field>
             <Field label="Usage source">{inf.usageSource.replace("_", " ")}</Field>
+            <div className="col-span-2">
+              <Field label="Time to first chunk (M20, this attempt)">
+                <TtftValue row={row} />
+              </Field>
+            </div>
             <Field label="Cost">
               {inf.cost.kind === "computed" ? (
                 <span title={`Exact: ${inf.cost.exact}`} data-testid="span-cost" data-cost-state="computed">
@@ -251,6 +338,7 @@ function SpanDetails({ row }: { row: SpanView }) {
         <p className="mt-4 text-xs text-ink-3">Not an inference span: no usage row. Provenance applies to inference spans only.</p>
       )}
 
+      <SpanLinks findings={findings} reviews={reviews} reviewsTotal={reviewsTotal} />
       <AttrList title="Span attributes (allowlisted)" items={row.attributes} testId="span-attributes" />
       <AttrList title="Resource attributes (allowlisted)" items={row.resourceAttributes} testId="span-resource" />
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2">
@@ -285,9 +373,27 @@ export function stepLabel(step: GenAiStep): string | null {
   return parts.join(" · ");
 }
 
-export function Waterfall({ view, initialSelected, initialMode = "timeline" }: { view: TraceView; initialSelected: string | null; initialMode?: WaterfallMode }) {
+export function Waterfall({
+  view,
+  initialSelected,
+  initialMode = "timeline",
+  findingsBySpan = {},
+  reviewsBySpan = {},
+  reviewsTotal = 0,
+}: {
+  view: TraceView;
+  initialSelected: string | null;
+  initialMode?: WaterfallMode;
+  /** UI-R2: diagnostics findings per evidence span id (server-computed). */
+  findingsBySpan?: Record<string, SpanFinding[]>;
+  /** UI-R2: human reviews anchored on a span, per span id. */
+  reviewsBySpan?: Record<string, number>;
+  reviewsTotal?: number;
+}) {
   const { rows, axis } = view;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  // UI-R2: below `xl` the tree and the inspector share one column; this picks the visible one.
+  const [panel, setPanel] = useState<"spans" | "details">("spans");
   const [selected, setSelected] = useState<string | null>(() => (initialSelected !== null && rows.some((r) => r.spanId === initialSelected) ? initialSelected : (rows[0]?.spanId ?? null)));
   const [limit, setLimit] = useState(ROW_BATCH);
   const [mode, setMode] = useState<WaterfallMode>(initialMode);
@@ -373,29 +479,64 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
     }
   };
 
+  const parents = rows.filter((r) => r.childIds.length > 0).map((r) => r.spanId);
+  const collapseAll = () => setCollapsed(new Set(parents));
+  const expandAll = () => setCollapsed(new Set());
+
   if (rows.length === 0) {
     return <p className="text-sm text-ink-3">The backend returned no spans for this trace.</p>;
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-      <div className="min-w-0">
-        <div className="overflow-hidden rounded-xl border border-line bg-surface">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
+      <div role="group" aria-label="Explorer panel" className="inline-flex w-fit gap-0.5 rounded-lg border border-line bg-canvas p-0.5 xl:hidden" data-testid="explorer-panel-switch">
+        {(
+          [
+            ["spans", "Spans"],
+            ["details", "Selected span"],
+          ] as const
+        ).map(([p, label]) => (
+          <button
+            key={p}
+            type="button"
+            aria-pressed={panel === p}
+            onClick={() => setPanel(p)}
+            data-panel={p}
+            className="h-8 rounded-md px-3 text-sm font-medium text-ink-2 hover:text-ink aria-pressed:bg-raised aria-pressed:text-ink aria-pressed:shadow-[0_0_0_1px_var(--color-line)]"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className={`min-w-0 xl:block ${panel === "spans" ? "" : "hidden"}`} data-testid="explorer-spans-panel">
+        <div className="@container overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-3 py-2.5">
-            <ModeToggle mode={mode} onChange={setMode} />
+            <div className="flex flex-wrap items-center gap-2">
+              <ModeToggle mode={mode} onChange={setMode} />
+              {parents.length > 0 && (
+                <div className="inline-flex gap-1" data-testid="waterfall-expand">
+                  <button type="button" onClick={expandAll} className="h-7 rounded-md border border-line px-2 text-xs text-ink-2 hover:bg-raised hover:text-ink" data-action="expand-all">
+                    Expand all
+                  </button>
+                  <button type="button" onClick={collapseAll} className="h-7 rounded-md border border-line px-2 text-xs text-ink-2 hover:bg-raised hover:text-ink" data-action="collapse-all">
+                    Collapse all
+                  </button>
+                </div>
+              )}
+            </div>
             <Legend />
           </div>
           {/* Time axis: the trace's stored start to end (Tree mode: the offset column). */}
-          <div className={`grid grid-cols-1 border-b border-line px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-ink-3 sm:gap-3 ${GRID}`}>
-            <span className="hidden sm:block">Span</span>
+          <div className={`grid grid-cols-1 border-b border-line px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-ink-3 @sm:gap-3 ${GRID}`}>
+            <span className="hidden @sm:block">Span</span>
             {mode === "timeline" ? (
               <div className="relative h-4 normal-case tracking-normal" aria-hidden="true">
                 {axis.ticks.map((t) => (
                   <span
                     key={t.pct}
-                    // Labels only where they fit: from `lg` the row columns narrow the axis, so the
-                    // middle and quarter labels return only when it is wide again (gridlines stay).
-                    className={`tabular absolute top-0 whitespace-nowrap ${t.pct === 25 || t.pct === 75 ? "hidden md:inline lg:hidden" : t.pct === 50 ? "hidden sm:inline lg:hidden 2xl:inline" : ""}`}
+                    // Labels only where they fit: once the row columns appear they narrow the axis,
+                    // so the middle and quarter labels return only when it is wide again (gridlines stay).
+                    className={`tabular absolute top-0 whitespace-nowrap ${t.pct === 25 || t.pct === 75 ? "hidden @xl:inline @2xl:hidden @6xl:inline" : t.pct === 50 ? "hidden @md:inline @2xl:hidden @4xl:inline" : ""}`}
                     style={t.pct === 100 ? { right: 0 } : t.pct === 0 ? { left: 0 } : { left: `${t.pct}%`, transform: "translateX(-50%)" }}
                   >
                     {t.label}
@@ -403,11 +544,11 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
                 ))}
               </div>
             ) : (
-              <span className="hidden sm:block">Start offset</span>
+              <span className="hidden @sm:block">Start offset</span>
             )}
-            <span className="hidden text-right lg:block">Duration</span>
-            <span className="hidden text-right lg:block">Tokens in / out</span>
-            <span className="hidden text-right lg:block">Cost</span>
+            <span className="hidden text-right @2xl:block">Duration</span>
+            <span className="hidden text-right @2xl:block">Tokens in / out</span>
+            <span className="hidden text-right @2xl:block">Cost</span>
           </div>
           <div role="tree" aria-label="Span hierarchy and timeline" data-testid="span-tree" className="py-1">
             {shown.map((row) => {
@@ -429,12 +570,17 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
                   aria-setsize={pos?.size}
                   aria-posinset={pos?.index}
                   tabIndex={row.spanId === tabStop ? 0 : -1}
-                  onClick={() => select(row.spanId, false)}
+                  onClick={() => {
+                    select(row.spanId, false);
+                    setPanel("details");
+                  }}
                   onKeyDown={(e) => onKeyDown(e, row)}
                   data-span-id={row.spanId}
                   data-depth={row.depth}
                   data-placement={row.placement}
-                  className={`grid min-h-11 cursor-pointer grid-cols-1 gap-1 px-3 py-1.5 outline-offset-[-2px] hover:bg-raised/60 aria-selected:bg-series-1/10 aria-selected:shadow-[inset_2px_0_0_var(--color-series-1)] sm:items-center sm:gap-3 ${GRID}`}
+                  data-family={stepFamily(row)}
+                  data-slow-rank={row.slowRank ?? undefined}
+                  className={`grid min-h-11 cursor-pointer grid-cols-1 gap-1 px-3 py-1.5 outline-offset-[-2px] hover:bg-raised/60 aria-selected:bg-accent/12 aria-selected:shadow-[inset_3px_0_0_var(--color-accent)] @sm:items-center @sm:gap-3 ${row.status === "ERROR" ? "bg-critical/[0.06]" : ""} ${GRID}`}
                 >
                   <div className="flex min-w-0 items-center gap-1.5 text-sm" style={{ paddingLeft: `${Math.min(row.depth, MAX_INDENT) * 0.875}rem` }}>
                     {hasKids ? (
@@ -453,10 +599,8 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
                     ) : (
                       <span aria-hidden="true" className="inline-block w-5 shrink-0" />
                     )}
-                    <span
-                      className={`shrink-0 rounded border px-1 font-mono text-[10px] ${row.inference ? "border-series-1/50 text-series-1" : "border-line text-ink-3"}`}
-                      title={row.kind}
-                    >
+                    <FamilyBadge family={stepFamily(row)} />
+                    <span className="hidden shrink-0 rounded border border-line px-1 font-mono text-[10px] text-ink-3 @xl:inline" title={row.kind}>
                       {KIND_SHORT[row.kind]}
                       <span className="sr-only"> {row.kind}</span>
                     </span>
@@ -470,19 +614,24 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
                       <span className="min-w-0 truncate text-ink" title={row.name} data-testid="span-name">
                         {row.name}
                       </span>
-                      {(row.inference || stepLabel(row.step) !== null || (row.placement !== "root" && row.placement !== "child")) && (
+                      {(row.inference || stepLabel(row.step) !== null || row.slowRank !== null || (row.placement !== "root" && row.placement !== "child")) && (
                         <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] leading-4">
                           {stepLabel(row.step) !== null && (
-                            <span className="rounded bg-series-2/15 px-1 font-medium text-ink-2" data-testid="span-step" data-step={row.step.kind ?? ""}>
+                            <span className="max-w-full truncate whitespace-nowrap rounded bg-raised px-1 font-medium text-ink-2" data-testid="span-step" data-step={row.step.kind ?? ""}>
                               {stepLabel(row.step)}
                             </span>
                           )}
                           {row.inference && (
-                            <span className="rounded bg-series-1/15 px-1 font-medium text-ink-2">
+                            <span className="whitespace-nowrap rounded bg-series-1/15 px-1 font-medium text-ink-2">
                               LLM{row.inference.attemptId !== null ? ` · attempt ${row.inference.attemptId}` : ""}
                             </span>
                           )}
                           {row.inference && row.provenance === "synthetic" && <span className="font-semibold uppercase tracking-wide text-ink-3">synthetic</span>}
+                          {row.slowRank !== null && (
+                            <span className="whitespace-nowrap rounded border border-warning/50 px-1 text-ink-2" title="One of the three longest spans of this trace (by duration); a ranking, not a judgement" data-testid="span-slow">
+                              ◷ longest #{row.slowRank}
+                            </span>
+                          )}
                           {row.placement !== "root" && row.placement !== "child" && (
                             <span className="rounded border border-warning/50 px-1 text-ink-2" title={PLACEMENT_LABEL[row.placement]}>
                               {row.placement === "orphan" ? "orphan" : row.placement === "unreachable" ? "no root" : "parent cut"}
@@ -514,7 +663,7 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
                     <div className="tabular text-xs text-ink-2" data-testid="span-offset-cell">
                       {/* offsetLabel is already signed ("+16.21 ms"). */}
                       <span aria-hidden="true">{row.offsetLabel}</span>
-                      <span className="lg:hidden" aria-hidden="true">
+                      <span className="@2xl:hidden" aria-hidden="true">
                         {" "}
                         · {row.durationLabel}
                       </span>
@@ -524,13 +673,13 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
                       </span>
                     </div>
                   )}
-                  <span aria-hidden="true" className="tabular hidden text-right text-xs text-ink-2 lg:block" title={row.durationExact}>
+                  <span aria-hidden="true" className="tabular hidden text-right text-xs text-ink-2 @2xl:block" title={row.durationExact}>
                     {row.durationLabel}
                   </span>
-                  <span className="hidden text-right text-xs text-ink-2 lg:block">
+                  <span className="hidden text-right text-xs text-ink-2 @2xl:block">
                     <TokensCell row={row} />
                   </span>
-                  <span className="hidden text-right text-xs lg:block">
+                  <span className="hidden text-right text-xs @2xl:block">
                     <CostCell row={row} />
                   </span>
                 </div>
@@ -554,12 +703,20 @@ export function Waterfall({ view, initialSelected, initialMode = "timeline" }: {
           )}
         </div>
         <p className="mt-2 text-xs text-ink-3">
-          Axis: trace start to trace end ({axis.durationLabel}). Bars use exact nanosecond offsets; a bar of zero length is drawn 2 px wide. ↑ ↓ move · → ← expand /
-          collapse · Enter toggles.
+          Axis: trace start to trace end ({axis.durationLabel}). Bars use exact nanosecond offsets; a bar of zero length is drawn 2 px wide. ◷ marks the three longest
+          spans. ↑ ↓ move · → ← expand / collapse · Enter toggles.
         </p>
       </div>
-      <aside aria-label="Selected span" className="min-w-0 rounded-xl border border-line bg-surface px-5 py-5 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] xl:self-start xl:overflow-y-auto">
-        {selectedRow ? <SpanDetails row={selectedRow} /> : <p className="text-sm text-ink-3">Select a span.</p>}
+      <aside
+        aria-label="Selected span"
+        className={`min-w-0 rounded-xl border border-line bg-surface px-5 py-5 xl:sticky xl:top-16 xl:block xl:max-h-[calc(100dvh-5rem)] xl:self-start xl:overflow-y-auto ${panel === "details" ? "" : "hidden"}`}
+        data-testid="span-inspector"
+      >
+        {selectedRow ? (
+          <SpanDetails row={selectedRow} findings={findingsBySpan[selectedRow.spanId] ?? []} reviews={reviewsBySpan[selectedRow.spanId] ?? 0} reviewsTotal={reviewsTotal} />
+        ) : (
+          <p className="text-sm text-ink-3">Select a span.</p>
+        )}
       </aside>
     </div>
   );

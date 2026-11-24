@@ -27,6 +27,10 @@ for the dashboard filters: `openai` (ok and failed), `gcp.gemini` synthetic, `gc
 asserted `real` claim and a response id, a `real` claim without a response id (stored as
 `unknown` by the server's downgrade rule), and a span with no provider, model or claim.
 `--set phase6c-new`: one more SYNTHETIC trace, sent during a browser test.
+`--set ui-r2-agent` (UI-R2, service name `uir2.agent`): one SYNTHETIC agent trace for the trace
+explorer test, sent during that test (see `ui_r2_agent_set`).
+`--set ui-r3-sessions` (UI-R3, service names `uir3.chat-1` … `uir3.chat-6`): six SYNTHETIC
+traces in three conversations, for the sessions test (see `ui_r3_sessions_set`).
 `--set phase8a6` (Phase 8A-6, service names `cmp8a6.*`): one SYNTHETIC multi-provider
 comparison set: OpenAI (priced), Gemini, the three Groq comparison scenarios under a
 `demo.live-compare` root, a SYNTHETIC OpenRouter compatibility row, a root-only
@@ -651,6 +655,141 @@ def phase6c_new_set(b: Builder) -> None:
     )
 
 
+def ui_r2_agent_set(b: Builder) -> None:
+    """UI-R2: one SYNTHETIC agent run with every step family of Phase 10A (ADR-54), metadata
+    only: an agent, one streaming LLM attempt with a recorded time to first chunk, a retrieval,
+    an MCP `tools/list`, `lookup_order` executed exactly 5 times (the diagnostics threshold;
+    the last one fails) and `search_kb` twice. No prompt, completion, tool argument or result
+    is sent; tool spans carry the tool name only."""
+    t = b.trace("uir2.agent", scope="uir2.seed")
+    t.add(
+        "root",
+        "POST /v1/support",
+        "SERVER",
+        0,
+        120 * MS,
+        attrs={"http.route": "/v1/support"},
+    )
+    t.add(
+        "agent",
+        "invoke_agent support-triage",
+        "INTERNAL",
+        1 * MS,
+        118 * MS,
+        parent="root",
+        attrs={
+            "gen_ai.operation.name": "invoke_agent",
+            "gen_ai.agent.name": "support-triage",
+        },
+    )
+    t.add(
+        "llm",
+        "chat gpt-5.4-mini",
+        "CLIENT",
+        2 * MS,
+        40 * MS,
+        parent="agent",
+        attrs=inference(
+            "gpt-5.4-mini",
+            call_id=uuid_from(b, "uir2"),
+            usage=(80, 16),
+            **{
+                "gen_ai.provider.name": "openai",
+                "gen_ai.request.stream": True,
+                "gen_ai.response.time_to_first_chunk": 0.25,
+            },
+        ),
+    )
+    t.add(
+        "retrieval",
+        "retrieval kb-main",
+        "INTERNAL",
+        41 * MS,
+        45 * MS,
+        parent="agent",
+        attrs={
+            "gen_ai.operation.name": "retrieval",
+            "gen_ai.data_source.id": "kb-main",
+        },
+    )
+    t.add(
+        "mcp",
+        "tools/list",
+        "CLIENT",
+        46 * MS,
+        48 * MS,
+        parent="agent",
+        attrs={"mcp.method.name": "tools/list"},
+    )
+    tool = {"gen_ai.operation.name": "execute_tool"}
+    for i in range(5):
+        t.add(
+            f"lookup{i}",
+            "execute_tool lookup_order",
+            "INTERNAL",
+            (50 + i * 10) * MS,
+            (58 + i * 10) * MS,
+            parent="agent",
+            attrs={**tool, "gen_ai.tool.name": "lookup_order"},
+            error="TimeoutError" if i == 4 else None,
+        )
+    for i in range(2):
+        t.add(
+            f"search{i}",
+            "execute_tool search_kb",
+            "INTERNAL",
+            (101 + i * 8) * MS,
+            (107 + i * 8) * MS,
+            parent="agent",
+            attrs={**tool, "gen_ai.tool.name": "search_kb"},
+        )
+
+
+# UI-R3: (service, conversation, start offset s, duration ms, failed). Raw conversation ids go
+# to ingest only; the backend stores a keyed pseudonym (ADR-56), and the test asserts that these
+# raw values never reach a page.
+UI_R3_SESSIONS = (
+    ("uir3.chat-1", "uir3-conv-alpha", 0, 900, False),
+    ("uir3.chat-2", "uir3-conv-alpha", 40, 1400, True),
+    ("uir3.chat-3", "uir3-conv-alpha", 95, 700, False),
+    ("uir3.chat-4", "uir3-conv-beta", 20, 1100, False),
+    ("uir3.chat-5", "uir3-conv-beta", 130, 600, False),
+    ("uir3.chat-6", "uir3-conv-gamma", 60, 500, False),
+)
+
+
+def ui_r3_sessions_set(b: Builder) -> None:
+    """UI-R3: three SYNTHETIC conversations (3, 2 and 1 traces; one failed attempt), each trace
+    a SERVER root and one chat attempt, both carrying `gen_ai.conversation.id`. Metadata only."""
+    for service, conversation, start_s, duration_ms, failed in UI_R3_SESSIONS:
+        t = b.trace(service, scope="uir3.seed")
+        start = start_s * 1_000 * MS
+        session = {"gen_ai.conversation.id": conversation}
+        t.add(
+            "root",
+            "POST /v1/chat",
+            "SERVER",
+            start,
+            start + duration_ms * MS,
+            attrs={"http.route": "/v1/chat", **session},
+        )
+        t.add(
+            "llm",
+            "chat gpt-5.4-mini",
+            "CLIENT",
+            start + 5 * MS,
+            start + (duration_ms - 5) * MS,
+            parent="root",
+            attrs=inference(
+                "gpt-5.4-mini",
+                call_id=uuid_from(b, service),
+                usage=(60, 12),
+                **{"gen_ai.provider.name": "openai", **session},
+            ),
+            error="RateLimitError" if failed else None,
+        )
+
+
 # Phase 8A-6: the three comparison scenarios of Phase 8A-4 (`demo_app/comparison_scenarios.py`,
 # ADR-45), pinned here so the dashboard fixture does not import the demo app. Distinct token
 # counts per scenario make a merged row visible.
@@ -825,7 +964,16 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument(
         "--set",
-        choices=("edge", "isolation", "phase3c", "phase6c", "phase6c-new", "phase8a6"),
+        choices=(
+            "edge",
+            "isolation",
+            "phase3c",
+            "phase6c",
+            "phase6c-new",
+            "phase8a6",
+            "ui-r2-agent",
+            "ui-r3-sessions",
+        ),
         default="edge",
     )
     args = parser.parse_args(argv)
@@ -854,6 +1002,8 @@ def main(argv: list[str]) -> int:
         "phase6c": phase6c_set,
         "phase6c-new": phase6c_new_set,
         "phase8a6": phase8a6_set,
+        "ui-r2-agent": ui_r2_agent_set,
+        "ui-r3-sessions": ui_r3_sessions_set,
     }[args.set](b)
 
     request = b.request()

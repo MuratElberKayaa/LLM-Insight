@@ -1,7 +1,9 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
 import { e2eBrowser } from "./tests/setup/e2e-browser";
 import { backendPython } from "./tests/setup/e2e-global-setup";
+import { decideVisual, parseManifest, type VisualDecision } from "./tests/setup/visual-policy";
 
 /**
  * Browser-to-frontend-to-backend tests against the REAL local stack (no mocked responses):
@@ -24,8 +26,40 @@ import { backendPython } from "./tests/setup/e2e-global-setup";
  * with SYNTHETIC traces at current UTC times (scripts/dev/e2e_fixtures.py); the teardown deletes
  * exactly those projects, even when tests fail. Nothing else in the dev database is touched.
  */
+/**
+ * Visual-regression discovery (tests/setup/visual-policy.ts, manifest tests/e2e/visual-baselines.json).
+ * Locally (msedge on Windows) every visual spec runs. Under LLMI_E2E_CI=1 an accepted spec must run
+ * and a pending one is listed as NOT RUN; a broken acceptance stops the run here, before any test.
+ * LLMI_VISUAL_LINUX=1 is the capture run of .github/workflows/visual-baselines.yml only.
+ */
+function visualSelection(): VisualDecision {
+  const dir = path.join(__dirname, "tests", "e2e");
+  const specs = readdirSync(dir)
+    .filter((f) => f.endsWith("-visual.spec.ts"))
+    .map((spec) => {
+      const snaps = path.join(dir, `${spec}-snapshots`);
+      return { spec, snapshots: existsSync(snaps) ? readdirSync(snaps) : [] };
+    });
+  const manifest = parseManifest(readFileSync(path.join(dir, "visual-baselines.json"), "utf8"));
+  return decideVisual({ ci: process.env.LLMI_E2E_CI === "1", capture: process.env.LLMI_VISUAL_LINUX === "1" }, specs, manifest);
+}
+const VISUAL = visualSelection();
+if (VISUAL.errors.length > 0) {
+  throw new Error(`[visual-regression] refused: ${VISUAL.errors.join("; ")}`);
+}
+for (const { spec, reason } of VISUAL.notRun) {
+  console.warn(`[visual-regression] NOT RUN on this platform: ${spec}: ${reason}. See docs/reports/frontend-final-stabilization.md.`);
+}
+const VISUAL_IGNORE = VISUAL.notRun.map((n) => `**/${n.spec}`);
+
 export default defineConfig({
   testDir: "./tests/e2e",
+  // Visual specs: see visualSelection() above. A pending spec is not discovered in CI (the gate
+  // counts a skipped test as a failure) and the run says so in its log.
+  testIgnore: VISUAL_IGNORE,
+  // CI never writes a missing baseline (a written baseline would "pass" without a comparison).
+  updateSnapshots: process.env.LLMI_E2E_CI === "1" && process.env.LLMI_VISUAL_LINUX !== "1" ? "none" : "missing",
+  expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.015, threshold: 0.2, animations: "disabled", caret: "hide", scale: "css" } },
   globalSetup: "./tests/setup/e2e-global-setup.ts",
   globalTeardown: "./tests/setup/e2e-global-teardown.ts",
   outputDir: "./test-results",

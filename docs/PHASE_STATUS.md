@@ -586,6 +586,44 @@
 - [x] SDK: six live-backend tests pinned `attrmap.v1` or the old M20 shape and were updated with notes (they first failed because the PostgreSQL container had stopped; reproduced after a restart); SDK full suite: see the commit message
 - [ ] GitHub CI (including the new eval-gate step and the Playwright E2E gate): after the owner's push
 
+## Phase UI-R1 — Dark-first shell and overview hierarchy (2026-11-23; evidence: `reports/phase-ui-r1.md`)
+- [x] Frontend only: navy/anthracite tokens with three accent tokens; sidebar groups Observe / Analyze / Evaluate; one scope panel; KPI sections (traffic and reliability, latency with its own M20 card, tokens and cost with a completeness bar); recent traces (limit 5); Alerts card
+- [x] No backend, API, schema or URL contract change; no new dependency; every existing test id kept
+- [x] typecheck, lint, unit 513 passed, build, bundle scan 0; mutants 5/5; Playwright E2E 72 passed against a disposable `_test` database (a pre-existing fixture flake, a run id with 11 digits read as a phone number, failed 5 tests on an earlier run; reported, not fixed here)
+- [ ] Owner review; uncommitted
+
+## Phase UI-R2 — Trace and agent explorer (2026-11-23; evidence: `reports/phase-ui-r2.md`)
+- [x] E2E run-id flake fixed in `scripts/dev/e2e_fixtures.py` (no 10+ digit runs by construction; backend label check unchanged); 8 backend tests
+- [x] Trace page as a three-panel explorer (trace rail with the `list` listing, waterfall with step families and longest-span marks, inspector with TTFT, diagnostics and reviews of the span); narrow screens: rail disclosure and Spans / Selected span switch
+- [x] Agent analysis: step-family counts, tool repeats, possible loop at the backend threshold (5) shown as a hypothesis; no tool content
+- [x] Sticky context bar (Overview, Traces, trace page); Overview → Traces carries project, window, provenance, provider, model
+- [x] Frontend only (plus the dev fixture scripts); no backend, API, schema or URL contract change; no new dependency
+- [x] typecheck, lint, unit 530 passed, build, bundle scan 0; mutants 10/10; backend unit 1391 passed; scripts/qa 256 OK; Playwright E2E 78 passed on a disposable `_test` database; screenshots in `reports/assets/ui-r2/` (secret-checked)
+- [ ] Owner review; uncommitted
+
+## Phase UI-R3 — Model analytics, session explorer, collapsible sidebar (2026-11-23; evidence: `reports/phase-ui-r3.md`)
+- [x] Models: one scope panel, side-by-side pair (`?a=`/`?b=` group keys, dashboard only) with p50/p95/p99, tokens with subsets not added, cost completeness, provenance, stated differences and no ranking or significance claim; p50/p95/p99 chart; group → trace list (provider, model, window only)
+- [x] Sessions: inspected session (`?session=`) with the backend's aggregates and its traces in time order from `GET /api/v1/traces?session=`; cards on phones; no raw id, no invented session metric
+- [x] Collapsible sidebar (state kept across client navigation, nothing stored); explorer three panels by container query: at 1280 px with the sidebar collapsed (rail 240, spans 504, inspector 336 px); list panel can be hidden
+- [x] Shared chart tooltip; auto-refresh select disabled until hydrated (root cause of an intermittent E2E failure)
+- [x] typecheck, lint, unit 552 passed, build, bundle scan 0; mutants 10/10; backend unit 1394 passed; scripts/qa 256 OK; Playwright 91 passed (incl. 6 local visual-regression tests, 12 baselines; not discovered in CI); screenshots in `reports/assets/ui-r3/` (secret-checked)
+- [ ] Owner review; uncommitted
+
+## Phase UI-R4 — Evaluation workspace and frontend finalization (2026-11-24; evidence: `reports/phase-ui-r4.md`)
+- [x] Datasets: facts, workflow strip, breadcrumbs, page-scoped case filters (`?rule=`/`?origin=`/`?expected=`, dashboard only), case index, trace → review → case lineage, previous/next, human-entered input never shown as a captured conversation; no action the API lacks
+- [x] Experiments: mock runs labelled "Synthetic / Offline Mock", imported live reports labelled read-only and kept separate, run → its dataset, the existing report kept; no runner, no real-model path, no winner
+- [x] Whole-frontend pass at 1280 (sidebar open and collapsed) and 390, dark and light: one h1, no horizontal scroll, skip link first, no secret; experiment table tightened
+- [x] Linux visual regression: per-spec selection in CI with an explicit NOT RUN log line and no baseline writing in CI; **no Linux baselines produced** (WSL unreachable, no CI-equivalent image); Windows baselines kept (12 + 9 new)
+- [x] typecheck, lint, unit 565 passed, build, bundle scan 0, audit-policy 116; mutants 10/10; scripts/qa OK; Playwright 104 passed (full suite after the last fixes); screenshots in `reports/assets/ui-r4/` (secret-checked)
+- [ ] Owner review; Linux baselines on an ubuntu-24.04 runner; uncommitted
+
+## Frontend final stabilization (2026-11-24; evidence: `reports/frontend-final-stabilization.md`)
+- [x] Experiments `Started` fits at 1280 px (E2E-measured); focus moves to the chosen test case (index, previous/next, deep link; E2E and unit)
+- [x] Linux visual regression: acceptance manifest + policy (pending → NOT RUN in CI with reason; accepted → must run; missing image → run stops; CI never writes baselines); manual capture workflow `visual-baselines.yml`; `ci.yml` unchanged. **Linux visual tests: NOT RUN** (no CI-equivalent environment locally: WSL is Ubuntu 22.04, no matching image)
+- [x] Root cause of an intermittent E2E failure: clicks before hydration are held by React; the test waits for hydration (`waitForHydration`)
+- [x] typecheck, lint, unit 575, audit-policy 116, build, bundle scan 0, backend unit 1394, ruff (CI commands), scripts/qa OK, docs 865; change-set credential scan 0; Playwright local 104/104 (incl. Windows visual)
+- [ ] Owner: commit (GO), push and PR (conditional GO: state Linux visual NOT RUN), then the Linux baseline capture and acceptance
+
 ## Commands
 
 | Command (run from) | Exists | Purpose |
