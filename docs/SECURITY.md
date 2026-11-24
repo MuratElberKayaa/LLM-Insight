@@ -6,6 +6,11 @@ Scope: a local, single-project demo (ADR-08). Nothing here is a claim of product
 
 - **Metadata only.** Prompts, completions, system instructions, tool definitions and prompt variables are never persisted from telemetry. This holds even when a client sends them.
 - **Allowlist.** Only the attributes listed in `TELEMETRY_CONTRACT.md` §3 are stored. Everything else is dropped before the DB write and only counted. An always-deny list overrides any allowlist mistake.
+- **Sessions are pseudonyms, not anonymous data (Phase 10C, ADR-56).** A conversation ID is replaced at ingest by a keyed, project-scoped HMAC (`TELEMETRY_CONTRACT.md` §3) and never stored, logged or returned.
+  - The hash cannot be reversed without `LLMI_KEY_PEPPER`. Anyone who holds the pepper can still confirm a guessed ID (an email or a counter), so where the ID identifies a person the hash remains personal data under KVKK/GDPR. Retention and deletion rules apply to it as to any personal data.
+  - Rotating the pepper breaks the link between old and new hashes, and it invalidates every ingest key.
+  - User identifiers (`user.*`, `enduser.*`) stay denied. Pseudonymising them needs its own privacy review.
+- **Alerts send nothing (Phase 10F, ADR-59).** Alert rules are evaluated when the API is read. No webhook, Slack or email delivery exists. Adding one needs a destination allowlist, secret handling and a threat review.
 - **No events stored.** Exception messages and stack traces are dropped; only `exception.type` is kept, and only when it is a type identifier.
 - **No status descriptions stored** (Phase 1C, R21). OTLP `Status.message` is never persisted (`spans.status_message` is always `NULL`), and `error.type` / `exception.type` are kept only when they match an identifier pattern (no spaces or control characters). Errors are described by the span status plus that identifier.
 - **Credential keys** are recognised by explicit classification (credential stems, credential words such as singular `token`, and qualified `tokens`/`key`), not by substring. Token *counters* such as `gen_ai.request.max_tokens` are kept (`TELEMETRY_CONTRACT.md` §3).

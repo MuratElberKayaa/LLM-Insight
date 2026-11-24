@@ -37,7 +37,7 @@ export function TrendSection({ data }: { data: Overview }) {
   const key = (p: TrendPoint) => p.start;
   const last = points.at(-1);
   return (
-    <section aria-labelledby="trend-heading" className="mt-8">
+    <section aria-labelledby="trend-heading" className="min-w-0">
       <SectionHeading
         id="trend-heading"
         title="Trends"

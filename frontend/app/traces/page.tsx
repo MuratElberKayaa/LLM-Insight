@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { AutoRefresh } from "../../components/auto-refresh";
+import { ContextBar } from "../../components/context-bar";
 import { LiveRegion } from "../../components/live-region";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../../components/navigation-transition";
 import { PageHeader } from "../../components/page-header";
@@ -11,6 +12,7 @@ import { EmptyState, ErrorState, Notice } from "../../components/states";
 import { TraceFilters } from "../../components/traces/trace-filters";
 import { TraceListView } from "../../components/traces/trace-list";
 import { renderOutcome } from "../../lib/auto-refresh";
+import { scopeEntries } from "../../lib/context-links";
 import { formatUtcMinute, formatUtcTime } from "../../lib/format";
 import { loadTraceList } from "../../lib/server/traces";
 import { WINDOW_PROBLEM_TEXT, windowLabel } from "../../lib/time-range";
@@ -30,9 +32,23 @@ export default async function TracesPage({ searchParams }: PageProps) {
   const filtered = state.status !== "all" || state.provenance !== "all" || state.model !== null || state.provider !== null;
   const outcome = renderOutcome(fetchedAt, ctx.settledAt, [list, ctx.options, ctx.projects]);
 
+  const context = scopeEntries({
+    projectId: ctx.projectId,
+    projects: ctx.projects,
+    window: state.window,
+    shown: data?.window ?? null,
+    provenance: state.provenance,
+    provider: state.provider,
+    model: state.model,
+    status: state.status,
+  }).map((e) => ({ ...e, title: e.value }));
+  if (state.session) context.push({ key: "session", label: "Session", value: "one pseudonymous session", title: "one pseudonymous session" });
+
   return (
     <NavigationTransition outcome={outcome}>
+      <ContextBar items={context} />
       <PageHeader
+        eyebrow="Observe · Trace explorer"
         title="Traces"
         description="Stored traces of one project, newest first. Metadata only: prompts and completions are never captured or stored."
         meta={
@@ -54,12 +70,25 @@ export default async function TracesPage({ searchParams }: PageProps) {
           </>
         }
       />
-      {/* Provider and model are values of one project: a project switch resets them (Phase 6C-C). */}
-      <ProjectSelector context={ctx} action="/traces" hidden={restartFields(state, ["project", "provider", "model"])} />
-      <TraceFilters state={state} options={ctx.options} />
-      <div className="mb-5">
-        <RangeForm action="/traces" hidden={restartFields(state, ["range", "from", "to"])} window={state.window} shown={data?.window ?? null} />
-      </div>
+      {/* UI-R2: every scope control in one panel, as on the overview (UI-R1). */}
+      <section aria-label="Scope and filters" className="mb-6 flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 *:mb-0 sm:p-5" data-testid="scope-panel">
+        {/* Provider and model are values of one project: a project switch resets them (Phase 6C-C). */}
+        <ProjectSelector context={ctx} action="/traces" hidden={restartFields(state, ["project", "provider", "model"])} />
+        <TraceFilters state={state} options={ctx.options} />
+        <div className="border-t border-line pt-3">
+          <RangeForm action="/traces" hidden={restartFields(state, ["range", "from", "to"])} window={state.window} shown={data?.window ?? null} />
+        </div>
+      </section>
+      {state.session ? (
+        <div className="mb-5">
+          <Notice tone="info" title="Filtered by one session" testId="session-notice">
+            Traces with a span of pseudonymous session <code className="font-mono text-xs">{state.session}</code>. The raw conversation id is never stored.{" "}
+            <a className="underline underline-offset-2" href={traceListHref({ ...firstPageState(state), session: null })}>
+              Show all traces
+            </a>
+          </Notice>
+        </div>
+      ) : null}
       {query.ignored.length > 0 && (
         <div className="mb-5">
           <Notice tone="info" title="Unsupported filter value ignored" testId="ignored-notice">

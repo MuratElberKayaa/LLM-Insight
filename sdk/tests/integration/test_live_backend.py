@@ -135,7 +135,9 @@ def test_a_success_persists_trace_spans_and_usage(live_backend, telemetry, clien
     assert (child["name"], child["kind"], child["status"]) == (f"chat {MODEL}", "CLIENT", "UNSET")
     assert child["provenance"] == "synthetic"
     assert child["status_message"] is None
-    assert child["attributes_schema_version"] == "llminsight.attrmap.v1"
+    assert (
+        child["attributes_schema_version"] == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     for row in (root_row, child):
         assert row["server_dropped_attributes_count"] == 0  # SDK output passes every R08 rule
     assert child["resource_attributes"] == {

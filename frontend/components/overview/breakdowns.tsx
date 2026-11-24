@@ -65,7 +65,7 @@ export function ProvenanceTable({ data }: { data: Overview }) {
     { key: "unk", header: "Unknown-cost calls", align: "right", render: (r) => (r.unknownCost === null ? na : formatInt(r.unknownCost)) },
   ];
   return (
-    <section aria-labelledby="prov-heading" className="min-w-0">
+    <section aria-labelledby="prov-heading" className="min-w-0 rounded-xl border border-line bg-surface p-5">
       <SectionHeading
         id="prov-heading"
         title="Provenance breakdown"
@@ -95,7 +95,7 @@ export function CostDetails({ data }: { data: Overview }) {
   const prices = data.inference.price_versions;
   const reasons = (Object.keys(REASON_LABEL) as CostUnknownReason[]).map((r) => ({ r, n: cost.unknown_cost_by_reason[r] }));
   return (
-    <section aria-labelledby="cost-heading" className="min-w-0 space-y-4">
+    <section aria-labelledby="cost-heading" className="min-w-0 rounded-xl border border-line bg-surface p-5 space-y-4">
       <SectionHeading id="cost-heading" title="Cost and usage sources" description="Why a cost is unknown, which price versions priced the known cost, and where token counts came from." />
       <DataTable
         caption="Unknown-cost attempts by reason (M11)"
@@ -138,7 +138,7 @@ export function CostDetails({ data }: { data: Overview }) {
 export function ErrorTypes({ data }: { data: Overview }) {
   const e = data.inference.errors;
   return (
-    <section aria-labelledby="errors-heading" className="min-w-0">
+    <section aria-labelledby="errors-heading" className="min-w-0 rounded-xl border border-line bg-surface p-5">
       <SectionHeading id="errors-heading" title="Failed attempts by error type" description="The instrumentation's error.type identifier; a hypothesis about cause is not implied." />
       <DataTable
         caption="Failed inference attempts by error type (M04)"

@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { formatCompact, formatInt } from "../../lib/format";
 import type { TrendPoint } from "../../lib/trend";
+import { ChartTooltip, TooltipRow } from "./chart-tooltip";
 
 // The CSS tokens of app/globals.css, by reference, so charts follow the light/dark theme with
 // no JavaScript. Recharts writes these as SVG presentation attributes (fill="var(...)"), which
@@ -33,16 +34,9 @@ interface TooltipBodyProps {
 function TooltipBody({ kind, active, payload }: TooltipBodyProps) {
   const point = payload?.[0]?.payload as TrendPoint | undefined;
   if (!active || point === undefined) return null;
-  const row = (value: string, label: string, key?: string) => (
-    <div className="flex items-center gap-2">
-      {key && <span aria-hidden="true" className="inline-block h-0.5 w-3" style={{ background: key }} />}
-      <span className="tabular font-semibold text-ink">{value}</span>
-      <span className="text-ink-3">{label}</span>
-    </div>
-  );
+  const row = (value: string, label: string, key?: string) => <TooltipRow value={value} label={label} {...(key ? { swatch: key, shape: "square" as const } : {})} />;
   return (
-    <div className="rounded-md border border-line bg-raised px-3 py-2 text-xs shadow-lg">
-      <p className="mb-1 text-ink-2">{point.label}</p>
+    <ChartTooltip title={point.label}>
       {kind === "attempts" && (
         <>
           {row(formatInt(point.attempts), "attempts")}
@@ -63,7 +57,7 @@ function TooltipBody({ kind, active, payload }: TooltipBodyProps) {
           {row(formatInt(point.unknownCostCalls), "calls with unknown cost")}
         </>
       )}
-    </div>
+    </ChartTooltip>
   );
 }
 

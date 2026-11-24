@@ -8,7 +8,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import path from "node:path";
 import { formatUsd } from "../../lib/decimal";
 import { formatInt } from "../../lib/format";
-import { API, FOREIGN_PROJECT, HOSTILE_PROJECT, PROJECT, SHOTS, TOKEN, u } from "./e2e-env";
+import { API, FOREIGN_PROJECT, HOSTILE_PROJECT, PROJECT, SHOTS, TOKEN, u, waitForHydration } from "./e2e-env";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Win = { from: string; to: string };
@@ -100,6 +100,8 @@ test("model comparison filters re-query the backend and live in the URL", async 
 
 test("custom UTC range: the form sets the window, invalid ranges are refused with a reason", async ({ page }) => {
   await page.goto(u("/models"));
+  // Final stabilization: a click before hydration is held by React and the <details> never opens.
+  await waitForHydration(page);
   const form = page.getByTestId("range-form");
   await form.locator("summary").click();
   await form.locator('input[name="from_utc"]').fill("2026-10-20T06:30");

@@ -41,7 +41,9 @@ def comparison_attributes(prompt_name: str, prompt_version: str) -> dict:
 def test_the_prompt_identity_and_provenance_are_kept_unchanged(scenario):
     name, version = SCENARIOS[scenario]
     stored = normalized(comparison_attributes(name, version))
-    assert attrmap.SCHEMA_VERSION == "llminsight.attrmap.v1"
+    assert (
+        attrmap.SCHEMA_VERSION == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     assert stored.server_dropped_attributes_count == 0
     assert stored.attributes["gen_ai.prompt.name"] == name
     assert stored.attributes["gen_ai.prompt.version"] == version

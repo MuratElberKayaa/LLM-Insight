@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { AutoRefresh } from "../components/auto-refresh";
+import { ContextBar } from "../components/context-bar";
 import { FilterBar } from "../components/filter-bar";
 import { LiveRegion } from "../components/live-region";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../components/navigation-transition";
 import { CostDetails, ErrorTypes, ProvenanceTable } from "../components/overview/breakdowns";
+import { AlertsCard, firingCount } from "../components/overview/alert-strip";
 import { DataNoticeBanner } from "../components/overview/data-notice";
+import { ErrorPatternsSection } from "../components/overview/error-patterns";
 import { KpiGrid } from "../components/overview/kpi-grid";
 import { LatestTrace } from "../components/overview/latest-trace";
 import { ModelGroups } from "../components/overview/model-groups";
@@ -17,10 +20,12 @@ import { RangeForm } from "../components/range-form";
 import { ScopeFilterForm } from "../components/scope-filter-form";
 import { EmptyState, ErrorState, Notice } from "../components/states";
 import { renderOutcome } from "../lib/auto-refresh";
+import { overviewTraceListState, scopeEntries } from "../lib/context-links";
 import { formatUtcMinute, formatUtcTime } from "../lib/format";
 import { DEFAULT_GROUP_LIMIT, modelHref } from "../lib/model-query";
 import { hiddenFields, projectLinkValue } from "../lib/project";
 import { hasScope } from "../lib/scope-filters";
+import { traceListHref } from "../lib/trace-query";
 import { loadOverview } from "../lib/server/overview";
 import { WINDOW_PROBLEM_TEXT, overviewHref, overviewSearch, parseOverviewQuery, windowLabel, type OverviewState } from "../lib/time-range";
 
@@ -42,9 +47,24 @@ export default async function OverviewPage({ searchParams }: PageProps) {
   const filtered = scoped || query.provenance !== "all";
   const outcome = renderOutcome(fetchedAt, ctx.settledAt, [overview, compare, ctx.latest, ctx.options, ctx.projects]);
 
+  // UI-R2: the same scope as a trace-list state (project, window, provenance, provider, model).
+  const traceList = overviewTraceListState(state);
+  const kpiLinks = { traces: traceListHref(traceList), errors: traceListHref(overviewTraceListState(state, "error")) };
+  const context = scopeEntries({
+    projectId: ctx.projectId,
+    projects: ctx.projects,
+    window: state.window,
+    shown: data?.window ?? null,
+    provenance: state.provenance,
+    provider: state.provider,
+    model: state.model,
+  }).map((e) => ({ ...e, title: e.value }));
+
   return (
     <NavigationTransition outcome={outcome}>
+      <ContextBar items={context} />
       <PageHeader
+        eyebrow="Observe"
         title="Overview"
         description="Inference attempts, traces, latency, tokens and estimated cost for one project, computed by the backend (M01–M14)."
         meta={
@@ -66,10 +86,12 @@ export default async function OverviewPage({ searchParams }: PageProps) {
           </>
         }
       />
+      {/* UI-R1: every scope control (project, window, provenance, provider/model, custom range) in one panel. */}
+      <section aria-label="Scope and filters" className="mb-6 flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 *:mb-0 sm:p-5" data-testid="scope-panel">
       {/* A project switch keeps the window and provenance; provider and model are values of one project, so they are reset. */}
       <ProjectSelector context={ctx} action="/" hidden={hiddenFields(search, ["project", "provider", "model"])} />
       <FilterBar state={state} />
-      <div className="mb-3">
+      <div>
         <ScopeFilterForm
           action="/"
           hidden={hiddenFields(overviewSearch(unscoped), ["provider", "model"])}
@@ -79,9 +101,10 @@ export default async function OverviewPage({ searchParams }: PageProps) {
           idPrefix="overview"
         />
       </div>
-      <div className="mb-5">
+      <div className="border-t border-line pt-3">
         <RangeForm action="/" hidden={hiddenFields(search, ["range", "from", "to"])} window={state.window} shown={data?.window ?? null} />
       </div>
+      </section>
       {query.ignored.length > 0 && (
         <div className="mb-5">
           <Notice tone="info" title="Unsupported filter value ignored" testId="ignored-notice">
@@ -124,28 +147,41 @@ export default async function OverviewPage({ searchParams }: PageProps) {
                   </p>
                 </EmptyState>
               ) : (
-                <>
-                  <LatestTrace result={ctx.latest} fetchedAt={fetchedAt} project={state.project} filtered={filtered} />
-                  <KpiGrid data={data} />
+                <div className="space-y-8">
+                  {firingCount(ctx.alerts) > 0 && (
+                    <p className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/50 bg-surface px-4 py-2.5 text-sm text-warning-ink" data-testid="alerts-pointer">
+                      <span aria-hidden="true">▲</span>
+                      {firingCount(ctx.alerts)} alert rule(s) firing in this window.
+                      <a href="#alerts-heading" className="font-medium underline underline-offset-2">
+                        See alerts
+                      </a>
+                    </p>
+                  )}
+                  <KpiGrid data={data} links={kpiLinks} />
                   <TrendSection data={data} />
-                  <div className="mt-8 grid grid-cols-1 gap-8 2xl:grid-cols-2">
+                  <div className="space-y-2">
+                    <ModelGroups result={compare} />
+                    <p className="text-sm">
+                      <Link
+                        href={modelHref({ project: state.project, window: state.window, provenance: state.provenance, status: "all", limit: DEFAULT_GROUP_LIMIT, provider: query.provider, model: query.model })}
+                        className="font-medium text-accent underline-offset-2 hover:underline"
+                        data-testid="to-models"
+                      >
+                        Open the model comparison for this window →
+                      </Link>
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                    <ErrorPatternsSection result={ctx.errorPatterns} project={state.project} filtered={filtered} />
+                    <AlertsCard result={ctx.alerts} />
+                  </div>
+                  <LatestTrace result={ctx.latest} fetchedAt={fetchedAt} project={state.project} filtered={filtered} listState={traceList} />
+                  <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
                     <ProvenanceTable data={data} />
                     <ErrorTypes data={data} />
                   </div>
-                  <ModelGroups result={compare} />
-                  <p className="mt-2 text-sm">
-                    <Link
-                      href={modelHref({ project: state.project, window: state.window, provenance: state.provenance, status: "all", limit: DEFAULT_GROUP_LIMIT, provider: query.provider, model: query.model })}
-                      className="text-ink-2 underline underline-offset-2 hover:text-ink"
-                      data-testid="to-models"
-                    >
-                      Open the model comparison for this window
-                    </Link>
-                  </p>
-                  <div className="mt-8">
-                    <CostDetails data={data} />
-                  </div>
-                </>
+                  <CostDetails data={data} />
+                </div>
               )}
             </>
           ) : null}

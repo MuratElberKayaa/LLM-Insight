@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
+import { Breadcrumbs } from "../../../../../components/breadcrumbs";
 import { jsonText } from "../../../../../components/datasets/case-list";
 import { codeLabel, Count, Ms, OutcomeLabel, SyntheticBanner, Usd } from "../../../../../components/experiments/values";
 import { NavigationTransition, PendingRegion } from "../../../../../components/navigation-transition";
@@ -93,10 +94,18 @@ export default async function ExperimentCasePage({ params, searchParams }: PageP
 
   return (
     <NavigationTransition>
+      <Breadcrumbs
+        items={[
+          { label: "Evaluate" },
+          { label: "Experiments", href: projectHref("/experiments", projectLinkValue(project)) },
+          ...(valid ? [{ label: `#${experimentId}`, href: back }] : []),
+          { label: valid ? `Case #${caseId}` : "Test case result" },
+        ]}
+      />
       <Link href={back} className="mb-4 inline-flex items-center gap-1 text-sm text-ink-2 hover:text-ink">
         <span aria-hidden="true">←</span> Back to the experiment
       </Link>
-      <PageHeader title={valid ? `Test case #${caseId} in experiment #${experimentId}` : "Test case result"} description="Recorded outcomes under both prompt versions, with the case's stored metadata." />
+      <PageHeader eyebrow="Evaluate · Experiment case" title={valid ? `Test case #${caseId} in experiment #${experimentId}` : "Test case result"} description="Recorded outcomes under both prompt versions, with the case's stored metadata." />
       <PendingRegion>
         {ctx === null ? (
           <ErrorState error={{ kind: "invalid_request", fields: ["experiment_id", "test_case_id"] }} resource="this result" />

@@ -3,6 +3,7 @@ import type { Diagnostics, EvidenceSpan, Finding } from "../../lib/api/diagnosti
 import type { ApiResult } from "../../lib/api/result";
 import type { JsonValue } from "../../lib/api/review-types";
 import { LosslessInt } from "../../lib/json";
+import { findingAnchor } from "../../lib/agent-analysis";
 import { formatDurationNs } from "../../lib/nanos";
 import { ErrorState } from "../states";
 import { Ident } from "../traces/trace-values";
@@ -33,7 +34,7 @@ function EvidenceRow({ e, spanHref }: { e: EvidenceSpan; spanHref: (spanId: stri
 
 function FindingItem({ f, spanHref }: { f: Finding; spanHref: (spanId: string) => string }) {
   return (
-    <li className="rounded-md border border-dashed border-line bg-surface px-3 py-2" data-testid="diagnostic-finding" data-category={f.category}>
+    <li id={findingAnchor(f.id)} className="scroll-mt-20 rounded-md border border-dashed border-line bg-surface px-3 py-2" data-testid="diagnostic-finding" data-category={f.category}>
       <details>
         <summary className="cursor-pointer text-sm text-ink">
           <span className="font-medium">{humanize(f.category)}</span> <span className="text-xs text-ink-3">({f.group}, about the {humanize(f.subject.type)})</span>{" "}

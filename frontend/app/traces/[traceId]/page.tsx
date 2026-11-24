@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
+import { ContextBar } from "../../../components/context-bar";
 import { NavigationTransition, PendingRegion, RefreshButton } from "../../../components/navigation-transition";
 import { PageHeader, SectionHeading } from "../../../components/page-header";
 import { ProjectSelector } from "../../../components/project-selector";
@@ -9,6 +10,7 @@ import { DiagnosticsPanel } from "../../../components/reviews/diagnostics-panel"
 import { ReviewSection } from "../../../components/reviews/review-section";
 import { ErrorState } from "../../../components/states";
 import {
+  AgentSteps,
   AttemptsTable,
   LogicalCalls,
   ProvenanceNotice,
@@ -17,13 +19,16 @@ import {
   TraceFacts,
   TruncationNotice,
 } from "../../../components/traces/trace-detail-sections";
+import { TraceRail } from "../../../components/traces/trace-rail";
 import { Ident } from "../../../components/traces/trace-values";
 import { Waterfall } from "../../../components/traces/waterfall";
+import { analyseAgent, findingsBySpan } from "../../../lib/agent-analysis";
+import { projectContext, windowContext } from "../../../lib/context-links";
 import { formatUtcTime } from "../../../lib/format";
 import { parseProjectParam, projectLinkValue } from "../../../lib/project";
 import type { FailureReview } from "../../../lib/api/review-types";
 import { loadTraceDiagnostics } from "../../../lib/server/review-page";
-import { loadTraceDetail } from "../../../lib/server/traces";
+import { loadTraceDetail, loadTraceRail } from "../../../lib/server/traces";
 import { buildTraceView } from "../../../lib/span-tree";
 import { listStateFromBackParam, restartFields, traceDetailHref, traceListHref } from "../../../lib/trace-query";
 
@@ -92,16 +97,38 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
   }
 
   // The diagnostics read runs in parallel and degrades only its own panel when it fails.
-  const [ctx, diagnostics] = await Promise.all([loadTraceDetail(traceId, project), loadTraceDiagnostics(traceId, project)]);
+  // UI-R2: the rail is one more read of the listing (its own panel degrades when it fails).
+  const [ctx, diagnostics, rail] = await Promise.all([
+    loadTraceDetail(traceId, project),
+    loadTraceDiagnostics(traceId, project),
+    loadTraceRail({ ...backState, project, session: backState.session ?? null, ignored: [], windowProblem: null }),
+  ]);
   const { projectId, fetchedAt, detail } = ctx;
   const rawSpan = typeof sp.span === "string" && SPAN_ID_RE.test(sp.span) ? sp.span : null;
   const selfHref = traceDetailHref(traceId, backState);
   const spanHref = (spanId: string) => `${selfHref}${selfHref.includes("?") ? "&" : "?"}span=${spanId}#waterfall-heading`;
 
+  const diag = diagnostics?.ok ? diagnostics.data : null;
+  const filters = [
+    backState.status !== "all" ? `status ${backState.status}` : null,
+    backState.provenance !== "all" ? `provenance ${backState.provenance}` : null,
+    backState.provider ? `provider ${backState.provider}` : null,
+    backState.model ? `model ${backState.model}` : null,
+    backState.session ? "one session" : null,
+  ].filter((x): x is string => x !== null);
+  const contextItems = [
+    { key: "project", label: "Project", value: projectContext(projectId, ctx.projects) },
+    { key: "trace", label: "Trace", value: <span className="font-mono">{traceId.slice(0, 12)}…</span>, title: traceId },
+    { key: "list", label: "List", value: windowContext(backState.window, rail.ok ? rail.data.window : null) },
+    ...(filters.length > 0 ? [{ key: "filters", label: "Filters", value: filters.join(" · ") }] : []),
+  ];
+
   return (
     <NavigationTransition>
+      <ContextBar items={contextItems} />
       <BackLink href={back} />
       <PageHeader
+        eyebrow="Observe · Trace explorer"
         title="Trace"
         description={<Ident value={traceId} className="text-sm text-ink-2" />}
         meta={
@@ -115,6 +142,11 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
       {/* A trace belongs to one project: switching opens the chosen project's list, first page. */}
       <ProjectSelector context={ctx} action="/traces" hidden={restartFields(backState, ["project"])} />
       <PendingRegion>
+        {/* UI-R3: three panels when the explorer itself is >= 64rem wide (so a collapsed sidebar counts), not at a viewport width. */}
+        <div className="@container/explorer">
+        <div className="grid grid-cols-1 gap-6 @[64rem]/explorer:grid-cols-[15rem_minmax(0,1fr)] @[64rem]/explorer:has-[[data-rail=hidden]]:grid-cols-1">
+        <TraceRail result={rail} currentId={traceId} state={backState} />
+        <div className="min-w-0">
         {!detail.ok ? (
           detail.error.kind === "not_found" ? (
             <Problem title="Trace not found">
@@ -130,6 +162,9 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
           (() => {
             const data = detail.data;
             const view = buildTraceView(data);
+            const analysis = analyseAgent(view.rows, data.agent_summary, diag);
+            const reviewsBySpan: Record<string, number> = {};
+            for (const r of data.reviews) if (r.span_id !== null) reviewsBySpan[r.span_id] = (reviewsBySpan[r.span_id] ?? 0) + 1;
             return (
               <>
                 <ProvenanceNotice provenance={data.trace.provenance} />
@@ -137,14 +172,26 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
                 <TraceFacts trace={data.trace} returnedSpans={data.spans.length} spansTruncated={data.spans_truncated} />
                 <ReviewStateLine reviews={data.reviews} />
                 <StatusBreakdown trace={data.trace} view={view} />
-                <section aria-labelledby="waterfall-heading" className="min-w-0">
+                {analysis.hasAgentSteps && (
+                  <div className="mb-8">
+                    <AgentSteps summary={data.agent_summary} spansTruncated={data.spans_truncated} analysis={analysis} />
+                  </div>
+                )}
+                <section aria-labelledby="waterfall-heading" className="min-w-0 scroll-mt-16">
                   <SectionHeading
                     id="waterfall-heading"
                     title="Span tree and timeline"
-                    description="Parent-child hierarchy in start order with a relative-time waterfall. Each inference row is one physical attempt; retries are separate rows."
+                    description="Parent-child hierarchy in start order with a relative-time waterfall. Each inference row is one physical attempt; retries are separate rows. Select a span to inspect it."
                   />
                   {/* Keyed by the selected span so an evidence link re-selects in the waterfall. */}
-                  <Waterfall key={rawSpan ?? "none"} view={view} initialSelected={rawSpan} />
+                  <Waterfall
+                    key={rawSpan ?? "none"}
+                    view={view}
+                    initialSelected={rawSpan}
+                    findingsBySpan={findingsBySpan(diag)}
+                    reviewsBySpan={reviewsBySpan}
+                    reviewsTotal={data.reviews.length}
+                  />
                 </section>
                 <LogicalCalls view={view} />
                 <AttemptsTable view={view} usageTruncated={data.usage_truncated} />
@@ -165,6 +212,9 @@ export default async function TraceDetailPage({ params, searchParams }: PageProp
             );
           })()
         )}
+        </div>
+        </div>
+        </div>
       </PendingRegion>
     </NavigationTransition>
   );

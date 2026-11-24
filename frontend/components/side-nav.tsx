@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { parseProjectParam, projectHref, projectLinkValue } from "../lib/project";
-import { DatasetsIcon, ExperimentsIcon, ModelsIcon, OverviewIcon, TracesIcon } from "./icons";
+import { DatasetsIcon, ExperimentsIcon, ModelsIcon, OverviewIcon, SessionsIcon, TracesIcon } from "./icons";
 
 interface NavItem {
   label: string;
@@ -27,8 +27,14 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Overview", href: "/", icon: <OverviewIcon /> },
       { label: "Traces", href: "/traces", icon: <TracesIcon /> },
-      { label: "Models", href: "/models", icon: <ModelsIcon /> },
+      // Phase 10C: pseudonymous conversation sessions.
+      { label: "Sessions", href: "/sessions", icon: <SessionsIcon /> },
     ],
+  },
+  {
+    // UI-R1: comparison is analysis of what was observed.
+    label: "Analyze",
+    items: [{ label: "Models", href: "/models", icon: <ModelsIcon /> }],
   },
   {
     label: "Evaluate",
@@ -47,15 +53,17 @@ function isCurrent(href: string, pathname: string): boolean {
 }
 
 const LINK =
-  "group flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium text-ink-2 hover:bg-raised/60 hover:text-ink aria-[current=page]:bg-raised aria-[current=page]:text-ink";
+  "group relative flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium text-ink-2 transition-colors hover:bg-raised/70 hover:text-ink aria-[current=page]:bg-accent/12 aria-[current=page]:text-ink lg:aria-[current=page]:before:absolute lg:aria-[current=page]:before:-left-3 lg:aria-[current=page]:before:top-2 lg:aria-[current=page]:before:h-5 lg:aria-[current=page]:before:w-[3px] lg:aria-[current=page]:before:rounded-r-full lg:aria-[current=page]:before:bg-accent";
 
 function NavLinks({ project }: { project: string | null }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Primary" className="flex gap-1 overflow-x-auto px-3 py-2 lg:flex-col lg:gap-0 lg:overflow-visible lg:py-2">
+    <nav aria-label="Primary" className="sb-nav flex gap-1 overflow-x-auto px-3 py-2 lg:flex-col lg:gap-0 lg:overflow-visible lg:py-2">
       {NAV_GROUPS.map((group) => (
         <div key={group.label} className="contents lg:flex lg:flex-col lg:gap-0.5">
-          <p className="hidden px-2.5 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-3 lg:block">{group.label}</p>
+          <p className="sb-hide hidden px-2.5 pb-1.5 pt-5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-3 lg:block">{group.label}</p>
+          {/* UI-R3: a hairline between groups when the sidebar is collapsed. */}
+          <span aria-hidden="true" className="sb-rule hidden" />
           {group.items.map((item) =>
             item.href ? (
               <Link
@@ -65,8 +73,12 @@ function NavLinks({ project }: { project: string | null }) {
                 aria-current={isCurrent(item.href, pathname) ? "page" : undefined}
                 className={LINK}
               >
-                <span className="text-ink-3 group-hover:text-ink-2 group-aria-[current=page]:text-series-1">{item.icon}</span>
-                {item.label}
+                <span className="text-ink-3 group-hover:text-ink-2 group-aria-[current=page]:text-accent">{item.icon}</span>
+                <span className="sb-label">{item.label}</span>
+                {/* UI-R3: shown on hover and keyboard focus when the sidebar is collapsed; the label above stays the accessible name. */}
+                <span aria-hidden="true" className="sb-tip">
+                  {item.label}
+                </span>
               </Link>
             ) : (
               <span key={item.label} aria-disabled="true" className="flex h-9 shrink-0 cursor-not-allowed items-center justify-between gap-3 rounded-lg px-2.5 text-sm text-ink-3">

@@ -14,11 +14,13 @@ const ROOT = path.resolve(__dirname, "..", "..", "..");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8").replaceAll("\r\n", "\n");
 
 describe("navigation groups", () => {
-  it("lists every built page once, grouped Observe then Evaluate", () => {
+  it("lists every built page once, grouped Observe, Analyze, Evaluate", () => {
     assert.deepEqual(
       NAV_GROUPS.map((g) => [g.label, g.items.map((i) => [i.label, i.href])]),
       [
-        ["Observe", [["Overview", "/"], ["Traces", "/traces"], ["Models", "/models"]]],
+        // UI-R1: Models moved to its own Analyze group; Sessions (Phase 10C) stays under Observe.
+        ["Observe", [["Overview", "/"], ["Traces", "/traces"], ["Sessions", "/sessions"]]],
+        ["Analyze", [["Models", "/models"]]],
         ["Evaluate", [["Datasets", "/datasets"], ["Experiments", "/experiments"]]],
       ],
     );
@@ -44,7 +46,8 @@ describe("icons", () => {
 });
 
 describe("app shell source", () => {
-  const src = read("components/app-shell.tsx");
+  // UI-R3: the skip link and the main landmark moved into the client ShellFrame (collapsible sidebar).
+  const src = read("components/app-shell.tsx") + read("components/shell-frame.tsx");
 
   it("keeps the skip link, the main landmark and the primary navigation", () => {
     assert.match(src, /href="#main"[\s\S]*Skip to content/);

@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useId } from "react";
+import { useEffect, useId, useSyncExternalStore } from "react";
 import { AUTO_REFRESH_INTERVALS_S, AUTO_REFRESH_MAX_MS, STOP_REASON, backoffMs, intervalLabel, parseInterval, type LiveSnapshot } from "../lib/auto-refresh";
 import { formatUtcTime } from "../lib/format";
 import { useLiveSnapshot, useNavigationState } from "./navigation-transition";
 
 const MAX_MIN = AUTO_REFRESH_MAX_MS / 60_000;
+
+// UI-R3: false on the server and during hydration, true once React owns the control. Until then a
+// change of the select would reach no handler and silently do nothing, so it stays disabled.
+const noop = () => () => {};
+const useHydrated = () => useSyncExternalStore(noop, () => true, () => false);
 
 /** The one-line state of the control (fixed copy; the failure kind only, never a body). */
 export function autoRefreshStatus(snap: LiveSnapshot, disabledReason?: string): string {
@@ -36,19 +41,20 @@ export function AutoRefresh({ disabledReason }: { disabledReason?: string | unde
   const controller = nav?.controller;
   const snap = useLiveSnapshot(controller);
   const id = useId();
+  const hydrated = useHydrated();
 
   useEffect(() => {
     if (disabledReason !== undefined) controller?.disable();
   }, [controller, disabledReason]);
 
   return (
-    <div className="flex flex-col items-start gap-1" data-testid="auto-refresh" data-interval={snap.intervalS ?? "off"} data-stopped={snap.stopped ?? undefined}>
+    <div className="flex flex-col items-start gap-1" data-testid="auto-refresh" data-interval={snap.intervalS ?? "off"} data-stopped={snap.stopped ?? undefined} data-hydrated={hydrated ? "true" : "false"}>
       <label htmlFor={id} className="flex items-center gap-2 text-xs font-medium text-ink-2">
         Auto-refresh
         <select
           id={id}
           value={snap.intervalS === null ? "off" : String(snap.intervalS)}
-          disabled={disabledReason !== undefined || controller === undefined}
+          disabled={!hydrated || disabledReason !== undefined || controller === undefined}
           aria-describedby={`${id}-status`}
           onChange={(e) => {
             const next = parseInterval(e.target.value);

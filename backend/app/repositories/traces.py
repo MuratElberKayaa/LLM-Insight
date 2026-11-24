@@ -37,6 +37,7 @@ class TraceFilter:
     provenance: str | None = None
     model: str | None = None
     provider: str | None = None  # Phase 6C-C: exact `usage_records.provider`
+    session: str | None = None  # Phase 10C: a pseudonymous `llminsight.session.hash`
 
 
 class UsageMatch(Protocol):
@@ -141,6 +142,15 @@ def list_traces_stmt(f: TraceFilter, cursor: Cursor | None, limit: int) -> Selec
     match = usage_match(f)
     if match is not None:
         stmt = stmt.where(match)
+    if f.session is not None:
+        s = aliased(Span)
+        stmt = stmt.where(
+            exists().where(
+                s.project_id == Trace.project_id,
+                s.trace_id == Trace.trace_id,
+                s.attributes["llminsight.session.hash"].astext == f.session,
+            )
+        )
     if cursor is not None:
         # Row comparison (started_at, trace_id) < cursor, written so the started_at bound
         # is an index condition.

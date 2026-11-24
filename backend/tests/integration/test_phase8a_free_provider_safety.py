@@ -102,7 +102,9 @@ def test_a_groq_key_never_reaches_the_database_the_api_or_the_logs(
 
     (stored,) = rows(db, "SELECT * FROM spans WHERE span_id = :s", s=SPAN_ID)
     assert stored["name"] == "redacted_span"
-    assert stored["attributes_schema_version"] == "llminsight.attrmap.v1"
+    assert (
+        stored["attributes_schema_version"] == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     assert stored["server_dropped_attributes_count"] == 4  # three attributes and the name
 
     listing = api_client.get(

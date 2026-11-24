@@ -33,6 +33,7 @@ describe("parseTraceListQuery", () => {
       provenance: "all",
       model: null,
       provider: null,
+      session: null, // Phase 10C
       limit: 25,
       cursor: null,
       page: 1,

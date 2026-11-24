@@ -208,7 +208,9 @@ def test_trace_without_inference_has_null_logical_calls_and_no_findings():
 def test_result_header_states_method_versions_and_unverified_provenance():
     r = run([root()])
     assert r["contract_version"] == "llminsight.diagnostics.v1"
-    assert r["ruleset_version"] == "llminsight.diagnostics.rules.v1"
+    assert (
+        r["ruleset_version"] == "llminsight.diagnostics.rules.v2"
+    )  # v2: repeated_tool_calls (ADR-54)
     assert r["method"] == {
         "kind": "deterministic_rules",
         "language_model_used": False,
@@ -910,6 +912,7 @@ def test_catalogue_is_complete_and_consistent():
             "usage_and_cost",
             "trace_structure",
             "metadata_integrity",
+            "agent_behaviour",  # ADR-54
         }
         for statement in c.hypotheses.values():
             assert statement.startswith("Possible explanation (not verified)"), name

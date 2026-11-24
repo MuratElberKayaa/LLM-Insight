@@ -104,3 +104,31 @@ export function ErrorTypeChips({ items, truncated, max = 3 }: { items: { error_t
     </ul>
   );
 }
+
+/**
+ * UI-R1: share of attempts with a computed cost vs. unknown cost, as two labelled segments.
+ * The unknown segment is a count of attempts, never a dollar amount.
+ */
+export function CompletenessBar({ priced, unknown, testId }: { priced: number; unknown: number; testId: string }) {
+  const n = priced + unknown;
+  if (n === 0) return null;
+  const pricedPct = (priced / n) * 100;
+  return (
+    <div data-testid={testId} data-priced={priced} data-unknown={unknown}>
+      <div className="flex h-2 w-full overflow-hidden rounded-full bg-raised" role="img" aria-label={`${priced} of ${n} attempts priced, ${unknown} with unknown cost`}>
+        <span className="h-full bg-good" style={{ width: `${pricedPct}%` }} />
+        <span className="h-full bg-unknown/70" style={{ width: `${100 - pricedPct}%` }} />
+      </div>
+      <div className="mt-1.5 flex flex-wrap justify-between gap-x-3 text-[11px] text-ink-3">
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-sm bg-good" />
+          Priced <span className="tabular text-ink-2">{priced}</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-sm bg-unknown/70" />
+          Unknown cost <span className="tabular text-ink-2">{unknown}</span>
+        </span>
+      </div>
+    </div>
+  );
+}

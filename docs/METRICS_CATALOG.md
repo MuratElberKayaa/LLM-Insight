@@ -63,15 +63,15 @@ Implemented in `backend/app/repositories/metrics.py` (SQL) and `backend/app/serv
 - **Filters** apply at each metric's own level (trace columns for trace-level metrics, the usage row and its span for usage-level metrics). `provenance=mixed` selects mixed traces; no usage row is mixed, so usage-level metrics are then empty.
 - **Rates** are JSON numbers rounded to 6 places next to their numerator and denominator; money is never a float.
 - **Trend** = the same counts and sums per UTC hour (windows ≤ 2 days) or day.
-- **Not recorded, reported as unavailable:** client time-to-first-chunk (M20, P1). The MVP has no streaming and `llminsight.attrmap.v1` does not allowlist the attribute; the API returns `{"available": false, "reason": "not_recorded"}`, never an estimate.
+- **M20 client time to first chunk (Phase 10B, ADR-55; was "not recorded" until then):** p50 and p95 in ms of `gen_ai.response.time_to_first_chunk` over inference attempts that recorded it, with `n`, `streaming_attempts` (attempts with `gen_ai.request.stream` true) and a low-sample flag below 20 values. It is reported per provenance bucket in the overview and per group in Compare. With no recorded value it is `available: false` with the reason `no_streaming_attempts` or `not_recorded`, never an estimate or `0`.
 - **T24 cross-check:** NumPy is not a project dependency. The tests compare `percentile_cont` with an exact implementation of NumPy's documented `linear` method (Hyndman–Fan type 7) and with hand-computed values (`backend/tests/integration/test_metrics_api.py`).
 
 ## P1 metrics (only if P0 is complete)
 
 | ID | Metric | Note |
 |---|---|---|
-| M20 | Client time-to-first-chunk | Streaming. Semconv `gen_ai.response.time_to_first_chunk` and metric `gen_ai.client.inference.time_to_first_chunk` (Development) |
-| M21 | Threshold alerts (cost / error / latency) | Simple static thresholds |
+| M20 | Client time-to-first-chunk | Streaming. Semconv `gen_ai.response.time_to_first_chunk` and metric `gen_ai.client.inference.time_to_first_chunk` (Development). **Implemented in Phase 10B** (span attribute; the metric instrument is not used) |
+| M21 | Threshold alerts (cost / error / latency) | Simple static thresholds. **Implemented in Phase 10F** (ADR-59): rules evaluated at read time on M04, M06, M10 and M20; no outbound delivery |
 | M22 | Retry amplification | attempts ÷ logical calls (M02 ÷ M03) |
 
 ## P2 (post-MVP placeholders)

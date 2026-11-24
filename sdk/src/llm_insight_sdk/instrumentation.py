@@ -45,6 +45,7 @@ MAX_ATTEMPTS = 10
 INT32_MAX = 2**31 - 1  # usage_records.attempt_id is INT
 MAX_FINISH_REASONS = 16
 OTHER_ERROR = "_OTHER"  # semconv fallback for an unclassifiable error
+MAX_TTFC_SECONDS = 3600  # the backend's attrmap v2 bound for gen_ai.response.time_to_first_chunk
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,9 @@ class RequestParams:
     temperature: float | None = None
     top_p: float | None = None
     seed: int | None = None
+    # Phase 10B (ADR-55): emitted as `gen_ai.request.stream` only when True (semconv: "if and
+    # only if the request is streaming; if unset, the request is assumed to be non-streaming").
+    stream: bool | None = None
 
 
 def new_call_id() -> str:
@@ -112,6 +116,26 @@ class InferenceRecorder:
         self._classify = classify
         self._usage_complete = False
         self._failure: str | None = None
+        self._started = time.monotonic()  # the attempt's start (Phase 10B, ADR-55)
+        self._first_chunk_recorded = False
+
+    def record_first_chunk(self) -> None:
+        """Call once, when the first stream event with new, non-empty output (text, reasoning,
+        a tool-call name or arguments) has been received, before the application processes it.
+        Sets `gen_ai.response.time_to_first_chunk` in seconds from this attempt's start; later
+        calls are ignored. Never call it when no chunk arrived (semconv: MUST NOT be set).
+        The chunk itself is never recorded."""
+        if self._first_chunk_recorded:
+            return
+        self._first_chunk_recorded = True
+        try:
+            seconds = time.monotonic() - self._started
+            if 0 <= seconds <= MAX_TTFC_SECONDS:
+                self._span.set_attribute("gen_ai.response.time_to_first_chunk", seconds)
+            else:
+                self._on_withheld("gen_ai.response.time_to_first_chunk")
+        except Exception:  # telemetry must never break the call
+            logger.debug("llm_insight_sdk: recording the first chunk failed", exc_info=False)
 
     def _set(self, key: str, value: object, rule: _guards.Rule | None = None) -> None:
         if rule is not None:
@@ -261,6 +285,8 @@ def inference_span(
         if params.seed is not None:
             seed_ok = isinstance(params.seed, int) and not isinstance(params.seed, bool)
             put("gen_ai.request.seed", params.seed if seed_ok else None)
+        if params.stream is True:
+            attributes["gen_ai.request.stream"] = True
     for key in withheld:
         on_withheld(key)
 
@@ -280,6 +306,149 @@ def inference_span(
             recorder._finish(exc)
             raise
         recorder._finish(None)
+
+
+# ---------------------------------------------------------------- agent and tool steps
+AGENT_OPERATIONS = frozenset({"invoke_agent", "create_agent"})
+
+
+class StepRecorder:
+    """Handle of an agent or tool span (Phase 10A, ADR-54). It carries no content: tool
+    arguments and results, agent instructions and MCP session IDs have no setter and are
+    denied by the backend anyway."""
+
+    def __init__(self, span: Span, classify: Callable[[BaseException], str]) -> None:
+        self._span = span
+        self._classify = classify
+        self._failure: str | None = None
+
+    def mark_failed(self, error_type: str) -> None:
+        """The step returned normally but failed (for example a tool reported an error)."""
+        self._failure = error_type
+
+    def _finish(self, exc: BaseException | None) -> None:
+        try:
+            error_type = self._classify(exc) if exc is not None else self._failure
+            if error_type is not None:
+                if _guards.check(error_type, _guards.ERROR_TYPE) != error_type:
+                    error_type = OTHER_ERROR
+                self._span.set_attribute("error.type", error_type)
+                self._span.set_status(Status(StatusCode.ERROR))  # no description (R21)
+        except Exception:
+            logger.debug("llm_insight_sdk: finishing a step span failed", exc_info=False)
+
+
+@contextmanager
+def _step_span(
+    tracer: Tracer,
+    name: str,
+    attributes: dict[str, str | int | float],
+    classify: Callable[[BaseException], str],
+) -> Iterator[StepRecorder]:
+    with tracer.start_as_current_span(
+        name,
+        kind=SpanKind.INTERNAL,
+        attributes=attributes,
+        record_exception=False,  # an exception message can quote content
+        set_status_on_exception=False,
+    ) as span:
+        recorder = StepRecorder(span, classify)
+        try:
+            yield recorder
+        except BaseException as exc:
+            recorder._finish(exc)
+            raise
+        recorder._finish(None)
+
+
+def _put_all(
+    pairs: Sequence[tuple[str, object, _guards.Rule]], on_withheld: Callable[[str], None]
+) -> dict[str, str | int | float]:
+    attributes: dict[str, str | int | float] = {}
+    for key, value, rule in pairs:
+        if value is None:
+            continue
+        checked = _guards.check(value, rule)
+        if checked is None:
+            on_withheld(key)
+        else:
+            attributes[key] = checked
+    return attributes
+
+
+def _check_provenance(provenance: str) -> None:
+    if provenance not in ("real", "synthetic"):
+        raise ValueError("provenance must be 'real' or 'synthetic'")
+
+
+@contextmanager
+def agent_span(
+    tracer: Tracer,
+    *,
+    on_withheld: Callable[[str], None],
+    provenance: Literal["real", "synthetic"],
+    agent_name: str,
+    operation: str = "invoke_agent",
+    agent_id: str | None = None,
+    agent_version: str | None = None,
+    provider: str | None = None,
+    classify: Callable[[BaseException], str] = classify_error,
+) -> Iterator[StepRecorder]:
+    """An INTERNAL `invoke_agent {agent_name}` (or `create_agent`) span (OTel GenAI agent
+    spans). Inference and tool spans opened inside it become its children."""
+    if operation not in AGENT_OPERATIONS:
+        raise ValueError("operation must be 'invoke_agent' or 'create_agent'")
+    _check_provenance(provenance)
+    attributes = _put_all(
+        [
+            ("gen_ai.agent.name", agent_name, _guards.AGENT_NAME),
+            ("gen_ai.agent.id", agent_id, _guards.OPAQUE_ID),
+            ("gen_ai.agent.version", agent_version, _guards.AGENT_VERSION),
+            ("gen_ai.provider.name", provider, _guards.PROVIDER),
+        ],
+        on_withheld,
+    )
+    attributes["gen_ai.operation.name"] = operation
+    attributes["llminsight.provenance"] = provenance
+    name = attributes.get("gen_ai.agent.name")
+    span_name = f"{operation} {name}" if name else operation
+    with _step_span(tracer, span_name, attributes, classify) as recorder:
+        yield recorder
+
+
+@contextmanager
+def tool_span(
+    tracer: Tracer,
+    *,
+    on_withheld: Callable[[str], None],
+    provenance: Literal["real", "synthetic"],
+    tool_name: str,
+    tool_call_id: str | None = None,
+    tool_type: str | None = None,
+    mcp_method: str | None = None,
+    mcp_protocol_version: str | None = None,
+    classify: Callable[[BaseException], str] = classify_error,
+) -> Iterator[StepRecorder]:
+    """An INTERNAL `execute_tool {tool_name}` span. `tool_call_id` links it to the tool call
+    the model emitted; `mcp_method` (for example `tools/call`) marks a tool reached through
+    MCP. The tool's arguments and result are never accepted."""
+    _check_provenance(provenance)
+    attributes = _put_all(
+        [
+            ("gen_ai.tool.name", tool_name, _guards.TOOL_NAME),
+            ("gen_ai.tool.call.id", tool_call_id, _guards.OPAQUE_ID),
+            ("gen_ai.tool.type", tool_type, _guards.TOOL_TYPE),
+            ("mcp.method.name", mcp_method, _guards.MCP_METHOD),
+            ("mcp.protocol.version", mcp_protocol_version, _guards.VERSION),
+        ],
+        on_withheld,
+    )
+    attributes["gen_ai.operation.name"] = "execute_tool"
+    attributes["llminsight.provenance"] = provenance
+    name = attributes.get("gen_ai.tool.name")
+    span_name = f"execute_tool {name}" if name else "execute_tool"
+    with _step_span(tracer, span_name, attributes, classify) as recorder:
+        yield recorder
 
 
 def _check_attempts(max_attempts: int) -> None:

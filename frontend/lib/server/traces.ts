@@ -39,6 +39,18 @@ export async function loadTraceList(query: TraceListQuery, now: Date = new Date(
 }
 
 /**
+ * UI-R2: the explorer's trace rail on a detail page: one page of the listing the detail was
+ * opened from (`list` state), for the detail page's own project. One read, no filter options
+ * or project listing (the detail page already reads those).
+ */
+export async function loadTraceRail(query: TraceListQuery, now: Date = new Date(), deps: BackendDeps = {}): Promise<ApiResult<TraceList>> {
+  const scope = pageScope(query.project);
+  if (!scope.ok) return { ok: false, error: scope.error };
+  const list = await getJson(scope.config, "/api/v1/traces", { project: scope.projectId }, traceListParams(query, now), traceListDecoder, deps);
+  return requireTraceScope(list, query);
+}
+
+/**
  * `GET /api/v1/traces/{trace_id}` for one project. The caller validates the id first; an id
  * that is not 32 lowercase hex never reaches the backend.
  */

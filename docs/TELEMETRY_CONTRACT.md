@@ -1,6 +1,6 @@
 # LLM Insight — Telemetry Contract (OTLP/HTTP + GenAI mapping)
 
-**Contract version:** `telemetry-contract/1`. **Attribute mapping version:** `llminsight.attrmap.v1`. **Status:** binding (ADR-13…21, accepted 2026-10-24).
+**Contract version:** `telemetry-contract/1`. **Attribute mapping version:** `llminsight.attrmap.v2` (since Phase 10A, ADR-54; v1 until then, recorded per span in `spans.attributes_schema_version`). **Status:** binding (ADR-13…21, accepted 2026-10-24).
 
 **Verified against** (accessed 2026-10-24):
 
@@ -121,7 +121,9 @@ The request is walked as:
 - A span with an empty name is stored as `unknown_span`, a display fallback only (`spans.name` is `LEN(256)`). A span name that fails the string-safety rules (§3.1) is stored as `redacted_span` and counted. A scope name or version that fails them is stored as `NULL` and counted on every span of that scope.
 - The client's own `Span.dropped_attributes_count` is not stored. Ours is `server_dropped_attributes_count`.
 
-## 3. Attribute allowlist (`llminsight.attrmap.v1`)
+## 3. Attribute allowlist (`llminsight.attrmap.v2`)
+
+**v2 (Phase 10A, ADR-54, 2026-11-20):** v2 adds the agent, tool, retrieval and MCP **identifiers** listed under "Span — GenAI agents, tools and MCP" below, and denies their content keys. Every v1 rule is unchanged, so a v1 span maps to the same stored values under v2. Each span stores the version it was mapped with. The conventions are Development status in the `semantic-conventions-genai` repository (agent spans, MCP), read 2026-11-19.
 
 Anything not listed below is dropped before persistence and counted in `spans.server_dropped_attributes_count`. That column is an `INT` that saturates at 2^31−1. Resource-attribute and scope-field drops count on every span of that resource or scope, and a withheld span name counts as one. Every string value must also pass the string-safety rules of §3.1. Free-text **labels** are truncated to 256 chars after those checks. **Identifiers** are dropped (and counted) rather than truncated, because a shortened identifier is a different identifier. Arrays keep at most 16 items.
 
@@ -154,6 +156,15 @@ Anything not listed below is dropped before persistence and counted in `spans.se
 
 **Alias precedence (ADR-14):** when both the standard name and its alias are present on one span, the **standard value wins**. The alias is dropped and counted.
 
+**Span — GenAI agents, tools and MCP (v2, ADR-54):** identifiers only. Each value passes §3.1 and is dropped (never truncated) when it breaks its format.
+- `gen_ai.agent.name` (≤ 128, `[A-Za-z0-9][A-Za-z0-9._:+/-]*`), `gen_ai.agent.id` (opaque, ≤ 256), `gen_ai.agent.version` (version format).
+- `gen_ai.tool.name` (≤ 128, `[A-Za-z0-9_][A-Za-z0-9_.:/-]*`), `gen_ai.tool.type` (keyword, for example `function`), `gen_ai.tool.call.id` (opaque, ≤ 256).
+- `gen_ai.data_source.id` (≤ 128) for `retrieval` spans.
+- `mcp.method.name` (≤ 64, `[a-z][A-Za-z0-9_./-]*`, for example `tools/call`), `mcp.protocol.version` (version format).
+- Operations `invoke_agent`, `create_agent`, `invoke_workflow`, `plan`, `execute_tool` and `retrieval` are stored like any `gen_ai.operation.name`. They are **not** inference operations: they create no usage row and no cost.
+
+**Span — streaming (v2, ADR-55):** `gen_ai.response.time_to_first_chunk` is a number in **seconds**, kept when it lies in [0, 3600] and dropped (never clamped) otherwise. It is the semconv attribute (Development): the time to the first stream event with new, non-empty output. It is set only when a chunk arrived. `gen_ai.request.stream` (boolean) is allowlisted since v1 and marks a streaming request. Under v2, a `num` attribute is checked against its range only where its spec sets one, so the v1 numbers (`temperature`, `top_p`) are unchanged.
+
 **Span — HTTP (root):** `http.request.method`, `http.route` (template only), `http.response.status_code`, `url.scheme`.
 
 **Span — LLM Insight:**
@@ -166,6 +177,8 @@ Anything not listed below is dropped before persistence and counted in `spans.se
 
 **Always denied** (never stored, even under a misconfigured allowlist; ADR-19):
 - Content: `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.definitions`, `gen_ai.prompt.variable`, `gen_ai.conversation.id`.
+- Conversation identity (Phase 10C, ADR-56): `gen_ai.conversation.id` is never stored. When it appears once on a span as a non-empty string of at most 256 characters without control characters, ingest replaces it with `llminsight.session.hash` = `s1_` + the first 32 hex characters of HMAC-SHA256(K, `<project id>` 0x00 `<raw>`). K = HMAC-SHA256(`LLMI_KEY_PEPPER`, `llminsight.session.v1`). The raw value is used only in memory for that computation and is not counted as dropped. An invalid or repeated value is dropped and counted. `llminsight.session.hash` sent by a client is not allowlisted, so it is dropped and counted.
+- Agent and tool content (v2, ADR-54): `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, `gen_ai.tool.description`, `gen_ai.agent.description`, `mcp.session.id`, `mcp.resource.uri`.
 - URLs and headers: `url.full`, `url.query`, `http.request.header.*`, `http.response.header.*`.
 - Identity: `client.address`, `user.*`, `enduser.*`.
 - Exceptions: `exception.message`, `exception.stacktrace`.

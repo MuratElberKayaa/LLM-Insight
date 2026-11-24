@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { AutoRefresh } from "../../components/auto-refresh";
+import { ContextBar } from "../../components/context-bar";
+import { ComparePanel } from "../../components/models/compare-panel";
 import { LiveRegion } from "../../components/live-region";
 import { FilterGroup, ProvenanceLinks, RangeLinks } from "../../components/filter-bar";
 import { ComparisonCharts, ComparisonNotices, ComparisonTable } from "../../components/models/model-comparison";
@@ -11,6 +13,9 @@ import { RangeForm } from "../../components/range-form";
 import { ScopeFilterForm } from "../../components/scope-filter-form";
 import { EmptyState, ErrorState, Notice } from "../../components/states";
 import { renderOutcome } from "../../lib/auto-refresh";
+import { projectContext, provenanceContext, windowContext } from "../../lib/context-links";
+import { groupTraceLink, pairHref, parseGroupParam, selectPair } from "../../lib/model-compare";
+import { groupKey } from "../../lib/model-groups";
 import { formatUtcMinute, formatUtcTime } from "../../lib/format";
 import { ATTEMPT_STATUS_FILTERS, GROUP_LIMITS, modelHref, modelSearch, modelStateOf, parseModelQuery, withModelFilter } from "../../lib/model-query";
 import { hiddenFields } from "../../lib/project";
@@ -26,7 +31,11 @@ const STATUS_LABEL = { all: "All", ok: "Not failed", error: "Failed" } as const;
 
 export default async function ModelsPage({ searchParams }: PageProps) {
   await connection();
-  const query = parseModelQuery(await searchParams);
+  const sp = await searchParams;
+  const query = parseModelQuery(sp);
+  // UI-R3: the side-by-side pair (`a`, `b`: group keys); additive, the backend never sees them.
+  const aKey = parseGroupParam(sp.a);
+  const bKey = parseGroupParam(sp.b);
   const state = modelStateOf(query);
   const ctx = await loadModels(query);
   const { compare, fetchedAt } = ctx;
@@ -36,10 +45,27 @@ export default async function ModelsPage({ searchParams }: PageProps) {
   const unscoped = withModelFilter(linkState, { provider: null, model: null });
   const filtered = state.provenance !== "all" || state.status !== "all" || hasScope(query);
   const outcome = renderOutcome(fetchedAt, ctx.settledAt, [compare, ctx.options, ctx.projects]);
+  const base = modelHref(linkState);
+  const pair = selectPair(data, aKey, bKey);
+  const links = {
+    traces: (g: Parameters<typeof groupTraceLink>[0]) => groupTraceLink(g, linkState),
+    pairA: (g: Parameters<typeof groupKey>[0]) => pairHref(base, groupKey(g), bKey),
+    pairB: (g: Parameters<typeof groupKey>[0]) => pairHref(base, aKey, groupKey(g)),
+  };
+  const context = [
+    { key: "project", label: "Project", value: projectContext(ctx.projectId, ctx.projects) },
+    { key: "window", label: "Window", value: windowContext(state.window, data?.window ?? null) },
+    { key: "provenance", label: "Attempt provenance", value: provenanceContext(state.provenance) },
+    ...(state.status !== "all" ? [{ key: "status", label: "Attempt status", value: state.status === "error" ? "failed only" : "not failed only" }] : []),
+    ...(state.provider ? [{ key: "provider", label: "Provider", value: state.provider }] : []),
+    ...(state.model ? [{ key: "model", label: "Model", value: state.model }] : []),
+  ].map((e) => ({ ...e, title: e.value }));
 
   return (
     <NavigationTransition outcome={outcome}>
+      <ContextBar items={context} />
       <PageHeader
+        eyebrow="Analyze"
         title="Model comparison"
         description="Inference attempts, errors, latency, tokens and estimated cost per provider, requested model, response model and prompt version (M15), computed by the backend."
         meta={
@@ -61,6 +87,8 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           </>
         }
       />
+      {/* UI-R3: every scope control in one panel, as on the overview and the trace list. */}
+      <section aria-label="Scope and filters" className="mb-6 flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 *:mb-0 sm:p-5" data-testid="scope-panel">
       {/* Provider and model are values of one project: a project switch resets them (Phase 6C-C). */}
       <ProjectSelector context={ctx} action="/models" hidden={hiddenFields(search, ["project", "provider", "model"])} />
       <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-3" data-testid="model-filters">
@@ -81,7 +109,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           ))}
         </FilterGroup>
       </div>
-      <div className="mb-3">
+      <div>
         <ScopeFilterForm
           action="/models"
           hidden={hiddenFields(modelSearch(unscoped), ["provider", "model"])}
@@ -91,9 +119,10 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           idPrefix="models"
         />
       </div>
-      <div className="mb-5">
+      <div className="border-t border-line pt-3">
         <RangeForm action="/models" hidden={hiddenFields(search, ["range", "from", "to"])} window={state.window} shown={data?.window ?? null} />
       </div>
+      </section>
       {query.ignored.length > 0 && (
         <div className="mb-5">
           <Notice tone="info" title="Unsupported filter value ignored" testId="ignored-notice">
@@ -126,8 +155,9 @@ export default async function ModelsPage({ searchParams }: PageProps) {
         ) : data !== null ? (
           <>
             <ComparisonNotices data={data} />
+            <ComparePanel data={data} pair={pair} hidden={hiddenFields(search, ["a", "b"])} clearHref={base} />
             <ComparisonCharts data={data} />
-            <ComparisonTable data={data} />
+            <ComparisonTable data={data} links={links} />
           </>
         ) : null}
         </LiveRegion>

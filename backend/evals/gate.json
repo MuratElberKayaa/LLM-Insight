@@ -1,0 +1,7 @@
+{
+  "dataset": "golden-synthetic-v1",
+  "baseline": "golden-prompt-v1",
+  "candidate": "golden-prompt-v1",
+  "max_regressions": 0,
+  "min_pass_rate": "0.6"
+}

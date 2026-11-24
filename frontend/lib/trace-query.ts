@@ -18,6 +18,8 @@ import { parseWindow, resolveWindowSpec, singleGetter, writeWindow, type Provena
 export type { WindowSpec } from "./time-range";
 
 export const PAGE_SIZES = [10, 25, 50, 100] as const;
+/** Phase 10C: the backend's session hash format (backend/app/services/ingestion/sessions.py). */
+export const SESSION_RE = /^s1_[0-9a-f]{32}$/;
 export type PageSize = (typeof PAGE_SIZES)[number];
 export const DEFAULT_PAGE_SIZE: PageSize = 25;
 export type StatusFilter = "ok" | "error" | "all";
@@ -39,6 +41,8 @@ export interface TraceListQuery {
   cursor: string | null;
   /** 1-based page number for display only (the cursor decides the content). */
   page: number;
+  /** Phase 10C (ADR-56): a pseudonymous session hash (`s1_` + 32 hex), never a raw id. */
+  session?: string | null;
   /** Names of parameters that were present but unsupported (their values were ignored). */
   ignored: string[];
   /** Why a custom range was refused, if one was. */
@@ -63,6 +67,10 @@ export function parseTraceListQuery(params: SearchParams): TraceListQuery {
 
   const { model, provider } = parseScopeFilters(get, ignored);
 
+  const rawSession = get("session");
+  const session = rawSession !== undefined && SESSION_RE.test(rawSession) ? rawSession : null;
+  if (rawSession !== undefined && session === null) ignored.push("session");
+
   const rawLimit = get("limit");
   const limit = PAGE_SIZES.find((n) => String(n) === rawLimit) ?? DEFAULT_PAGE_SIZE;
   if (rawLimit !== undefined && String(limit) !== rawLimit) ignored.push("limit");
@@ -78,7 +86,7 @@ export function parseTraceListQuery(params: SearchParams): TraceListQuery {
   const rawPage = get("page");
   const page = cursor !== null && rawPage !== undefined && PAGE_RE.test(rawPage) ? Number(rawPage) : 1;
 
-  return { project, window, status, provenance, model, provider, limit, cursor, page, ignored, windowProblem: problem };
+  return { project, window, status, provenance, model, provider, session, limit, cursor, page, ignored, windowProblem: problem };
 }
 
 /** `[from, to)` the backend will be asked for: a preset resolved at `now`, or the custom window. */
@@ -91,6 +99,7 @@ export function traceListParams(query: TraceListQuery, now: Date): Record<string
   if (query.provenance !== "all") params.provenance = query.provenance;
   if (query.model !== null) params.model = query.model;
   if (query.provider !== null) params.provider = query.provider;
+  if (query.session) params.session = query.session;
   if (query.cursor !== null) params.cursor = query.cursor;
   return params;
 }
@@ -102,8 +111,8 @@ export type ListState = Omit<TraceListQuery, "ignored" | "windowProblem" | "proj
 
 /** A parsed query as link state (an invalid project never becomes a link). */
 export function listStateOf(query: TraceListQuery): ListState {
-  const { project, window, status, provenance, model, provider, limit, cursor, page } = query;
-  return { project: projectLinkValue(project), window, status, provenance, model, provider, limit, cursor, page };
+  const { project, window, status, provenance, model, provider, session, limit, cursor, page } = query;
+  return { project: projectLinkValue(project), window, status, provenance, model, provider, session: session ?? null, limit, cursor, page };
 }
 
 /** Canonical query string of a list state (defaults omitted, project first). */
@@ -115,6 +124,7 @@ export function traceListSearch(state: ListState, includeProject = true): string
   if (state.provenance !== "all") sp.set("provenance", state.provenance);
   if (state.model !== null) sp.set("model", state.model);
   if (state.provider !== null) sp.set("provider", state.provider);
+  if (state.session) sp.set("session", state.session);
   if (state.limit !== DEFAULT_PAGE_SIZE) sp.set("limit", String(state.limit));
   if (state.cursor !== null) {
     sp.set("cursor", state.cursor);

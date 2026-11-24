@@ -4,7 +4,7 @@
  * code never imports this file (tests/unit/security-static.test.ts).
  */
 
-import type { SpanRecord, TraceDetail, TraceList, TraceListItem, TraceSummary, UsageRecord } from "../../lib/api/trace-types";
+import type { AgentSummary, GenAiStep, SpanRecord, TraceDetail, TraceList, TraceListItem, TraceSummary, UsageRecord } from "../../lib/api/trace-types";
 
 /** An epoch-nanosecond base above 2^53 with sub-microsecond digits (T26). */
 export const BASE_NS = 1792913387428346901n;
@@ -59,6 +59,51 @@ export interface SpanSpec {
   attributes?: SpanRecord["attributes"];
 }
 
+/** Test mirror of the backend's step classification (backend/app/services/genai_steps.py). */
+const KIND_BY_OPERATION: Record<string, GenAiStep["kind"]> = {
+  chat: "inference", text_completion: "inference", generate_content: "inference", embeddings: "inference",
+  invoke_agent: "agent", create_agent: "agent", invoke_workflow: "workflow", plan: "plan", execute_tool: "tool", retrieval: "retrieval",
+};
+const NAME_KEY: Partial<Record<NonNullable<GenAiStep["kind"]>, string>> = { agent: "gen_ai.agent.name", tool: "gen_ai.tool.name", retrieval: "gen_ai.data_source.id", mcp: "mcp.method.name" };
+
+export function stepOf(attributes: SpanRecord["attributes"]): GenAiStep {
+  const text = (k: string) => (typeof attributes[k] === "string" && attributes[k] !== "" ? (attributes[k] as string) : null);
+  const op = text("gen_ai.operation.name");
+  const mcp = text("mcp.method.name");
+  let kind: GenAiStep["kind"] = op !== null ? (KIND_BY_OPERATION[op] ?? null) : null;
+  if (kind === null && op === null && mcp !== null) kind = "mcp";
+  const key = kind === null ? undefined : NAME_KEY[kind];
+  return { kind, name: key === undefined ? null : text(key), mcp_method: mcp };
+}
+
+export function summaryOf(spans: SpanRecord[]): AgentSummary {
+  const tools = new Map<string | null, { calls: number; errors: number }>();
+  let toolErrors = 0;
+  for (const s of spans) {
+    if (s.genai_step.kind !== "tool") continue;
+    const t = tools.get(s.genai_step.name) ?? { calls: 0, errors: 0 };
+    t.calls += 1;
+    if (s.status === "ERROR") {
+      t.errors += 1;
+      toolErrors += 1;
+    }
+    tools.set(s.genai_step.name, t);
+  }
+  const count = (k: string) => spans.filter((s) => s.genai_step.kind === k).length;
+  return {
+    agent_steps: count("agent"),
+    inference_calls: count("inference"),
+    tool_calls: count("tool"),
+    tool_errors: toolErrors,
+    retrievals: count("retrieval"),
+    mcp_calls: spans.filter((s) => s.genai_step.mcp_method !== null).length,
+    tools: [...tools.entries()]
+      .sort(([a, x], [b, y]) => y.calls - x.calls || Number(a === null) - Number(b === null) || (a ?? "").localeCompare(b ?? ""))
+      .map(([name, t]) => ({ name, ...t })),
+    tools_truncated: false,
+  };
+}
+
 export function makeSpan(s: SpanSpec): SpanRecord {
   const parent = s.parent ?? null;
   return {
@@ -79,7 +124,8 @@ export function makeSpan(s: SpanSpec): SpanRecord {
     scope_version: "0.2.0",
     resource_attributes: { "service.name": "synthetic-service" },
     attributes: s.attributes ?? {},
-    attributes_schema_version: "llminsight.attrmap.v1",
+    attributes_schema_version: "llminsight.attrmap.v2",
+    genai_step: stepOf(s.attributes ?? {}),
     provenance: s.provenance ?? "unknown",
     provenance_verified: false,
     server_dropped_attributes_count: 0,
@@ -120,6 +166,7 @@ export function makeDetail(spans: SpanRecord[], usage: UsageRecord[] = [], trace
     trace: makeTrace({ span_count: spans.length, ...trace }, durationNs),
     spans,
     spans_truncated: false,
+    agent_summary: summaryOf(spans),
     usage,
     usage_truncated: false,
     reviews: [],

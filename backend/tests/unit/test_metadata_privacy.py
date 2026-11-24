@@ -178,8 +178,9 @@ def test_a_groq_key_is_refused_as_an_opaque_response_id():
 
 
 def test_security_only_detection_keeps_the_mapping_version():
-    """ADR-41: a new credential format withholds more values and changes nothing else."""
-    assert attrmap.SCHEMA_VERSION == "llminsight.attrmap.v1"
+    """ADR-41: a new credential format withholds more values and changes nothing else. The
+    version moves only with an allowlist change: v2 since ADR-54 (agent and tool identifiers)."""
+    assert attrmap.SCHEMA_VERSION == "llminsight.attrmap.v2"
 
 
 def test_the_sdk_and_the_backend_use_the_same_groq_rule():

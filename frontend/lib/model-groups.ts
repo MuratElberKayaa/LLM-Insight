@@ -29,8 +29,12 @@ export interface GroupPoint {
   failed: number;
   p50: number | null;
   p95: number | null;
+  /** UI-R3: the backend's p99 (null without a sample). */
+  p99: number | null;
   n: number;
   lowSample: boolean;
+  /** UI-R3: fewer than 100 samples (the backend's p99 flag). */
+  lowSampleP99: boolean;
 }
 
 /** Chart rows for the first groups in backend order (the table lists every returned group). */
@@ -43,8 +47,10 @@ export function toGroupPoints(groups: ModelGroup[]): GroupPoint[] {
     failed: g.errors.failed,
     p50: g.latency.p50_ms,
     p95: g.latency.p95_ms,
+    p99: g.latency.p99_ms,
     n: g.latency.n,
     lowSample: g.latency.low_sample.p95,
+    lowSampleP99: g.latency.low_sample.p99,
   }));
 }
 

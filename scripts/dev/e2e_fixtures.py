@@ -65,6 +65,28 @@ from sqlalchemy.orm import Session
 SEEDER = ROOT / "scripts" / "dev" / "seed_trace_fixtures.py"
 HOSTILE = "<script>window.__llmiXss=1</script><img src=x onerror=window.__llmiXss=1>"
 RUN_RE = re.compile(r"^[0-9a-f]{12}$")
+# UI-R2: the run id goes into labels (dataset names, reviewer handles) that the backend refuses
+# when they look like contact data. A plain `token_hex(6)` can hold 10+ consecutive digits
+# (e.g. `27148722459d`), which the label check reads as a phone/long number, so ~2% of runs
+# failed five tests. Each 4-character group now starts with a letter: at most 3 digits in a row,
+# no separator inside, so no digit run or digit group can reach the backend's 9/10-digit limits.
+# The backend check itself is unchanged. Still 12 lowercase hex characters (RUN_RE).
+RUN_GROUPS = 3
+RUN_GROUP_LETTERS = "abcdef"
+RUN_HEX = "0123456789abcdef"
+MAX_RUN_DIGITS = 3
+
+
+def new_run_id() -> str:
+    return "".join(
+        secrets.choice(RUN_GROUP_LETTERS)
+        + "".join(secrets.choice(RUN_HEX) for _ in range(3))
+        for _ in range(RUN_GROUPS)
+    )
+
+
+def longest_digit_run(value: str) -> int:
+    return max((len(m) for m in re.findall(r"\d+", value)), default=0)
 
 
 def names(run: str) -> dict[str, str]:
@@ -116,7 +138,7 @@ def setup(state_path: Path, endpoint: str) -> int:
     settings = get_settings()
     engine = create_db_engine(settings)
     factory = create_session_factory(engine)
-    run = secrets.token_hex(6)
+    run = new_run_id()
     pepper = settings.key_pepper.get_secret_value().encode("utf-8")
     created: dict[str, dict] = {}
     done = False
@@ -296,8 +318,20 @@ def experiment_counts(state_path: Path, experiment_id: int) -> int:
     return 0
 
 
-def add_trace(state_path: Path, endpoint: str) -> int:
-    """Phase 6C-C: one more SYNTHETIC trace to this run's providers project (see the docstring)."""
+# `add-trace --set`: the sets a browser test may send, and the service name it reads back.
+ADD_TRACE_SETS = {
+    "phase6c-new": "phase6c.arrived-later",
+    "ui-r2-agent": "uir2.agent",
+    "ui-r3-sessions": "uir3.chat-1",
+}
+
+
+def add_trace(state_path: Path, endpoint: str, set_name: str = "phase6c-new") -> int:
+    """Phase 6C-C: one more SYNTHETIC trace to this run's providers project (see the docstring).
+    UI-R2: `set_name` picks one of ADD_TRACE_SETS (default: the Phase 6C-C trace)."""
+    if set_name not in ADD_TRACE_SETS:
+        print("error: unknown add-trace set", file=sys.stderr)
+        return 2
     state = json.loads(state_path.read_text(encoding="utf-8"))
     run = state.get("run", "")
     p = state.get("projects", {}).get("providers", {})
@@ -325,14 +359,12 @@ def add_trace(state_path: Path, endpoint: str) -> int:
                 return 2
             k = api_keys.create_key(s, p["id"], pepper)
             key, prefix = k.key, k.prefix
-        result = _seed(
-            key, "phase6c-new", f"e2e-{run}-new-{secrets.token_hex(4)}", endpoint
-        )
+        result = _seed(key, set_name, f"e2e-{run}-new-{secrets.token_hex(4)}", endpoint)
         del key
         if result["rejected_spans"]:
             print("error: ingest rejected the new trace", file=sys.stderr)
             return 1
-        print(json.dumps({"trace": result["traces"]["phase6c.arrived-later"]}))
+        print(json.dumps({"trace": result["traces"][ADD_TRACE_SETS[set_name]]}))
         return 0
     except RuntimeError as exc:
         print(f"error: add-trace failed: {str(exc)[:300]}", file=sys.stderr)
@@ -351,6 +383,9 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--experiment", type=int, default=None)
+    parser.add_argument(
+        "--set", dest="set_name", choices=tuple(ADD_TRACE_SETS), default="phase6c-new"
+    )
     args = parser.parse_args(argv)
     endpoint = os.environ.get("LLMI_SEED_ENDPOINT", "http://127.0.0.1:8000/v1/traces")
     if args.command == "experiment-counts":
@@ -359,7 +394,7 @@ def main(argv: list[str]) -> int:
             return 2
         return experiment_counts(args.state, args.experiment)
     if args.command == "add-trace":
-        return add_trace(args.state, endpoint)
+        return add_trace(args.state, endpoint, args.set_name)
     return (
         setup(args.state, endpoint) if args.command == "setup" else teardown(args.state)
     )

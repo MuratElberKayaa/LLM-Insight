@@ -749,3 +749,108 @@ The architectural review of `reports/phase-8a-0.md` authorized checkpoint 8A-1 (
 - **Consequences:** reports now show how little their samples establish. For the two stored live runs, p = 0.5. No migration, no write path and no provider request were added.
 - **Affected files:** `backend/app/services/ab_statistics.py`, `backend/app/services/experiments/report.py`, `backend/app/api/imported_experiments.py`, `frontend/lib/api/{experiment-types,experiment-schema,imported-experiments}.ts`, `frontend/components/experiments/{values,experiment-report,imported-report}.tsx`, `METRICS_CATALOG.md` (M16), `ARCHITECTURE.md` §5.
 - **Tests:** `backend/tests/unit/test_ab_statistics.py`, `backend/tests/unit/test_experiment_report.py`, `backend/tests/integration/test_experiment_api.py`, `backend/tests/integration/test_imported_experiments.py`, `frontend/tests/unit/{phase4d,imported-experiments}.test.tsx`, `frontend/tests/e2e/phase4d.spec.ts` (text expectation).
+
+### ADR-54 — Agent, tool, retrieval and MCP steps as metadata: `llminsight.attrmap.v2` (amends ADR-13 and ADR-15; ADR-19 unchanged)
+
+- **Status:** accepted 2026-11-20 under the owner's batch authorization (recommended options taken and recorded). Implemented in Phase 10A (`reports/phase-10a.md`).
+- **Context:** LLM applications increasingly run as agents. v1 stored agent and tool spans but dropped all of their GenAI attributes, so a trace showed unnamed `INTERNAL` spans with no tool names, no MCP method and no way to see repeated tool calls. The OTel GenAI conventions define `invoke_agent`, `create_agent`, `invoke_workflow`, `plan`, `execute_tool` and `retrieval` operations and MCP attributes (Development status, `semantic-conventions-genai`).
+- **Decision:**
+  - **Mapping `llminsight.attrmap.v2`.** It allowlists only identifiers: `gen_ai.agent.{name,id,version}`, `gen_ai.tool.{name,type,call.id}`, `gen_ai.data_source.id`, `mcp.method.name` and `mcp.protocol.version`. It always denies the content keys `gen_ai.tool.call.{arguments,result}`, `gen_ai.tool.description`, `gen_ai.agent.description`, `mcp.session.id` and `mcp.resource.uri`. Every v1 rule is unchanged, and each span keeps its mapping version.
+  - **Inference detection (ADR-13) is unchanged.** Agent and tool operations are not inference, so they create no usage or cost rows.
+  - **Read-time classification.** `genai_step {kind, name, mcp_method}` per span and `agent_summary` per trace detail (`backend/app/services/genai_steps.py`), computed from stored metadata and never stored.
+  - **Diagnostics `rules.v2`.** Category `repeated_tool_calls` (group `agent_behaviour`) fires when one trace has at least 5 `execute_tool` spans of the same `gen_ai.tool.name`. It produces one finding per trace, with the hypothesis "possible agent loop", unverified. A failed tool step is already covered by `non_inference_span_error`.
+  - **SDK.** `Telemetry.agent_span` and `Telemetry.tool_span` create INTERNAL spans named per semconv. Their signatures have no content parameter, and their values pass the mirrored v2 rules.
+- **Alternatives rejected:**
+  - Storing tool arguments or results, even redacted: this violates ADR-19, and redaction is heuristic.
+  - Storing `mcp.session.id` or a conversation ID in clear: that is the hashed-session decision of Phase 10C.
+  - Treating `execute_tool` as inference: this would create usage rows without tokens.
+  - A per-tool finding: its ID would collide on the trace subject.
+  - Keeping the version at v1: ADR-15 requires a new version for an allowlist change.
+- **Consequences:** agent traces become readable by step and tool, with no content stored. Spans ingested before v2 keep their v1 attributes; v2 does not re-map them. The threshold of 5 is a heuristic, and the finding says so.
+- **Tests:** `backend/tests/unit/test_genai_steps.py`, `backend/tests/integration/test_phase10a_agent_steps.py`, `sdk/tests/unit/test_agent_steps.py`, `frontend/tests/unit/phase10a.test.tsx`, plus version assertions in 10 earlier tests, each updated with a note.
+
+### ADR-55 — Client time to first chunk (M20) from the semconv span attribute (extends attrmap v2; amends the M20 "not recorded" note)
+
+- **Status:** accepted 2026-11-20 under the owner's batch authorization (recommended options taken and recorded). Implemented in Phase 10B (`reports/phase-10b.md`).
+- **Context:** M20 was reported as "not recorded" because the MVP had no streaming and v1 did not allowlist the attribute. The OTel GenAI conventions (Development) define `gen_ai.response.time_to_first_chunk`: a double in seconds, recommended on streaming requests, set only when a chunk arrived. They also define `gen_ai.request.stream` (boolean), which v1 already allowlisted.
+- **Decision:**
+  - Add the attribute to `llminsight.attrmap.v2`, which is still unreleased in this batch, so there is no v3. It is a number in [0, 3600] seconds; a value outside the range is dropped, never clamped. A `num` spec now honours its range only where one is set, so v1 numbers are unchanged.
+  - Compute M20 with PostgreSQL `percentile_cont` over JSON-number values, converted to milliseconds. Report `streaming_attempts`, `n`, p50, p95 and a low-sample flag per provenance bucket (overview) and per Compare group. With no value it is `available: false` with the reason `no_streaming_attempts` or `not_recorded`.
+  - SDK: `RequestParams.stream=True` emits `gen_ai.request.stream`. `InferenceRecorder.record_first_chunk()` sets the attribute once, from the attempt's start. The chunk itself is never recorded.
+- **Deviation, recorded:** semconv measures from the start of the logical operation, before the first attempt. The SDK measures from the start of the physical attempt, because one span is one attempt. For a first attempt the two are equal up to client set-up time. A retried streaming call measures its own attempt.
+- **Alternatives rejected:**
+  - The `gen_ai.client.inference.time_to_first_chunk` metric instrument: this project ingests spans only.
+  - Estimating M20 from span duration or output tokens: that would be an invented number.
+  - A "first meaningful content" measure (PRD P1): semconv counts reasoning and tool-call deltas as chunks, and separating them needs content.
+- **Consequences:** M20 is real when instrumented and stays explicitly unavailable otherwise. No migration.
+- **Tests:** `backend/tests/unit/test_ttfc.py`, `backend/tests/integration/test_phase10b_ttfc.py`, `sdk/tests/unit/test_streaming_ttfc.py`, `frontend/tests/unit/phase10b.test.tsx`, and the re-recorded overview and compare contract fixtures.
+
+### ADR-56 — Pseudonymous sessions from `gen_ai.conversation.id` (amends ADR-19 for this one key; user identifiers stay denied)
+
+- **Status:** accepted 2026-11-20 under the owner's batch authorization (recommended options taken and recorded). Implemented in Phase 10C (`reports/phase-10c.md`).
+- **Context:** ADR-19 denies `gen_ai.conversation.id`, so multi-turn sessions could not be grouped. Questions such as "which conversation is expensive or failing" had no answer. Other platforms store session and user IDs in clear.
+- **Decision:**
+  - **Server-side keyed pseudonym.** At ingest, a valid raw conversation ID is replaced by `llminsight.session.hash` = `s1_` + 32 hex of HMAC-SHA256(K, project id ‖ 0x00 ‖ raw). K is derived from `LLMI_KEY_PEPPER` for this purpose only, so no new secret is needed. The value is project-scoped, which means the same ID in two projects gives unrelated hashes.
+  - **Raw value never kept.** The raw value is never stored, logged or echoed. A client cannot supply the hash. Invalid, repeated or over-long IDs are dropped and counted.
+  - **Read API.** `GET /api/v1/sessions` lists aggregates per hash. `GET /api/v1/traces?session=` drills down. The dashboard adds a Sessions page.
+  - **Users out of scope.** `user.*` and `enduser.*` stay denied. They need a privacy review first.
+- **Alternatives rejected:**
+  - Storing the raw ID: this breaks ADR-19, and an ID can be an email.
+  - An unkeyed SHA-256: guessable IDs can be confirmed by anyone.
+  - Client-side hashing in the SDK: it only works for this SDK, every client would need the secret, and spoofing is easy.
+  - A random per-ingest token: it does not link the turns of one session.
+  - A `session` column with an index: this needs a migration. It is listed as a scale follow-up.
+- **Consequences:**
+  - The hash is personal data where the ID identifies a person. It is pseudonymous, not anonymous (`SECURITY.md` §1).
+  - Pepper rotation unlinks old and new sessions.
+  - The session query scans the project's span attributes with no JSONB index. This is acceptable at the current local scale; a GIN or expression index is a follow-up.
+- **Tests:** `backend/tests/unit/test_sessions_pseudonym.py`, `backend/tests/integration/test_phase10c_sessions.py` (sentinel raw IDs absent from every stored row and response; cross-project unlinkability; auth and 404), `frontend/tests/unit/phase10c.test.tsx`.
+
+### ADR-57 — Deterministic error patterns by exact fingerprint (complements the diagnostics of ADR-23/§5.6)
+
+- **Status:** accepted 2026-11-20 under the owner's batch authorization (recommended options taken and recorded). Implemented in Phase 10D (`reports/phase-10d.md`).
+- **Context:** the overview lists error types (M04, up to 50), and diagnostics explain one trace at a time. There was no project-level answer to "which kinds of failure recur, where, and since when". Other platforms cluster errors by similarity, often with a language model, which ADR-10 rules out.
+- **Decision:**
+  - **Grouping.** `GET /api/v1/error-patterns` groups every ERROR span of the traces in the window by exact equality of stored identifiers. The fingerprint is `source` (inference/tool/agent/other from `gen_ai.operation.name`), `provider`, `model` (response, else requested; inference only), `tool_name` (tool only) and `error_type`.
+  - **Per pattern.** Each pattern reports counts, first and last trace start, the newest trace ID, and `error_class`. `error_class` is the diagnostics engine's exact-match label, not a cause.
+  - **Overview.** The overview shows the 10 largest patterns. It says when its other filters do not apply.
+- **Alternatives rejected:**
+  - Similarity or LLM clustering: this violates ADR-10 and is not reproducible.
+  - Grouping by span name: it is free text, and redacted names would merge.
+  - Including content or messages: none are stored (ADR-19).
+  - Applying the overview's provider/model filters: a pattern is project-wide, and a partial view would hide tool and agent errors.
+- **Consequences:** recurring failures are visible across inference, tools and agents with no new storage. Counts depend on what the instrumentation records (`error.type` is client-classified).
+- **Tests:** `backend/tests/integration/test_phase10d_error_patterns.py` (exact grouping, ordering, classes, window, limit, auth); `frontend/tests/unit/phase10d.test.tsx`; the route lists in `test_phase5a_rate_limit.py` and `test_health.py`.
+
+### ADR-58 — Offline regression gate on the golden set in CI (extends ADR-23 and ADR-25; no provider call)
+
+- **Status:** accepted 2026-11-20 under the owner's batch authorization (recommended options taken and recorded). Implemented in Phase 10E (`reports/phase-10e.md`).
+- **Context:** the Evaluate → Improve loop ran only on demand, from the dashboard. A prompt change could regress a golden case and still pass CI.
+- **Decision:**
+  - **Gate.** `python -m app.eval_gate --config evals/gate.json` (backend) runs the SYNTHETIC golden set through the scripted mock and the deterministic rule engine. It needs no database, settings, secret, network or model. It compares a candidate prompt version with a baseline on paired cases.
+  - **Fail conditions.** The gate fails when `regressions + lost` (baseline pass → candidate fail or not evaluated) exceeds `max_regressions`, or when the candidate's pass rate is below `min_pass_rate`. The ADR-53 statistics are reported for reading only.
+  - **Exit codes.** 0 pass, 1 fail, 2 configuration error. The JSON report contract is `llminsight.eval_gate.v1`.
+  - **CI.** The `python` job runs the gate after the backend tests with the shipped config (baseline = candidate = `golden-prompt-v1`, `max_regressions` 0, `min_pass_rate` 0.6). It passes today. Pointing `candidate` at a regressing version fails CI; `golden-prompt-v2` does, on G04, G07, G08, G09 and G10.
+- **Alternatives rejected:**
+  - Gating on significance: with 12 cases, a single regression can never be significant.
+  - Running real models in CI: this needs secrets and spend, against the project rules.
+  - Gating on the dashboard's stored experiments: they need a database and are not reproducible from a commit.
+- **Consequences:** the gate is only as good as the golden set and the scripted outputs. Today it guards the mechanism and the rule engine, not a real model. Extending it to a team's own cases needs a case file format (a follow-up).
+- **Tests:** `backend/tests/unit/test_eval_gate.py` (counts, lost passes, the exact rate floor, malformed input, the shipped config passes, v1 → v2 fails on the documented cases with p = 0.453125, configuration errors exit 2).
+
+### ADR-59 — Threshold alert rules evaluated at read time, with no outbound delivery (M21)
+
+- **Status:** accepted 2026-11-20 under the owner's batch authorization (recommended options taken and recorded). Implemented in Phase 10F (`reports/phase-10f.md`).
+- **Context:** M21 (threshold alerts) was P1. Alerts usually mean notifications, which send data off the machine. This project is local-only, and outward-facing actions need explicit review (`CLAUDE.md`, `SECURITY.md` §7).
+- **Decision:**
+  - **Rules file.** Rules live in `backend/alerts/rules.json` (contract `llminsight.alert_rules.v1`). The file is validated strictly: known metrics only, decimal-string thresholds, `min_n` ≥ 1, distinct IDs, at most 20 rules.
+  - **Endpoint.** `GET /api/v1/alerts` evaluates each rule on the overview metrics of the window: M04 error rate, M06 p95, M20 p95 and M10 known cost. A rule fires when `value >= threshold`. Below `min_n` it reports `insufficient_data`; it is never `ok` by default. A known cost with unknown-cost calls is reported as a lower bound.
+  - **Dashboard.** The overview shows the firing rules, or one quiet line when none fire.
+  - **No delivery.** There is no webhook, Slack or email. The response states `delivery: "none"`.
+- **Alternatives rejected:**
+  - Outbound webhooks now: this needs a destination allowlist, secret handling, retry and rate limits, and a threat review.
+  - A background scheduler: this needs a worker (PRD P2).
+  - Rules in the database with a UI editor: this would add a write surface (ADR-27).
+  - Percentile-of-peers anomaly rules: these flag a fixed share by construction (see `NOT_ASSESSED` in diagnostics).
+- **Consequences:** alerts are visible only when someone opens the overview or calls the API. Changing a threshold needs a commit. A malformed rules file is a server error, never a silent "ok".
+- **Tests:** `backend/tests/unit/test_alerts.py`, `backend/tests/integration/test_phase10f_alerts.py`, `frontend/tests/unit/phase10f.test.tsx`.

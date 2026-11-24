@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { ApiResult } from "../api/result";
+import { alertListDecoder, type AlertList } from "../api/alerts";
+import { errorPatternsDecoder, type ErrorPatterns } from "../api/error-patterns";
 import { modelsCompareDecoder, overviewDecoder } from "../api/schema";
 import { traceListDecoder } from "../api/trace-schema";
 import type { TraceList } from "../api/trace-types";
@@ -13,6 +15,9 @@ import { failedContext, loadProjects, pageScope, requireProject, type ProjectCon
 import { loadFilterOptions, requireScope, requireTraceScope } from "./filter-options";
 
 export const COMPARE_LIMIT = "10";
+export const ERROR_PATTERN_LIMIT = "10";
+/** UI-R1: recent traces on the overview (the newest is summarised, the rest listed). */
+export const RECENT_TRACES_LIMIT = "5";
 
 export interface OverviewPageData extends ProjectContext {
   fetchedAt: Date;
@@ -20,10 +25,14 @@ export interface OverviewPageData extends ProjectContext {
   settledAt: number;
   overview: ApiResult<Overview>;
   compare: ApiResult<ModelsCompare>;
-  /** Phase 6C-C: the newest stored trace of the same window and filters (`limit=1`). */
+  /** Phase 6C-C / UI-R1: the newest stored traces of the same window and filters (`limit=5`). */
   latest: ApiResult<TraceList> | null;
   /** Phase 6C-C: providers and models observed in the window (filter suggestions). */
   options: ApiResult<FilterOptions> | null;
+  /** Phase 10D: exact error fingerprints of the window (no other filter applies). */
+  errorPatterns: ApiResult<ErrorPatterns> | null;
+  /** Phase 10F: alert rule states of the window (no other filter applies). */
+  alerts: ApiResult<AlertList> | null;
 }
 
 /** The overview reads plus the project listing, in parallel, for one project and window. */
@@ -31,18 +40,21 @@ export async function loadOverview(query: OverviewQuery, now: Date = new Date(),
   const scope = pageScope(query.project);
   if (!scope.ok) {
     const error = { ok: false as const, error: scope.error };
-    return { ...failedContext(), fetchedAt: now, settledAt: now.getTime(), overview: error, compare: error, latest: null, options: null };
+    return { ...failedContext(), fetchedAt: now, settledAt: now.getTime(), overview: error, compare: error, latest: null, options: null, errorPatterns: null, alerts: null };
   }
   const { config, projectId, explicit } = scope;
   const params = backendParams(query, now);
   const filters = { provider: query.provider, model: query.model };
   const s = { project: projectId };
-  const [overview, compare, latest, options, projects] = await Promise.all([
+  const window = { from: params.from ?? "", to: params.to ?? "" };
+  const [overview, compare, latest, options, projects, errorPatterns, alerts] = await Promise.all([
     getJson(config, "/api/v1/overview", s, params, overviewDecoder, deps),
     getJson(config, "/api/v1/models/compare", s, { ...params, limit: COMPARE_LIMIT }, modelsCompareDecoder, deps),
-    getJson(config, "/api/v1/traces", s, { ...params, limit: "1" }, traceListDecoder, deps),
+    getJson(config, "/api/v1/traces", s, { ...params, limit: RECENT_TRACES_LIMIT }, traceListDecoder, deps),
     loadFilterOptions(config, projectId, { from: params.from ?? "", to: params.to ?? "" }, deps),
     loadProjects(config, deps),
+    getJson(config, "/api/v1/error-patterns", s, { ...window, limit: ERROR_PATTERN_LIMIT }, errorPatternsDecoder, deps),
+    getJson(config, "/api/v1/alerts", s, window, alertListDecoder, deps),
   ]);
   return {
     projectId,
@@ -54,6 +66,8 @@ export async function loadOverview(query: OverviewQuery, now: Date = new Date(),
     compare: requireScope(requireProject(compare, projectId), filters),
     latest: requireTraceScope(latest, filters),
     options,
+    errorPatterns: requireProject(errorPatterns, projectId),
+    alerts: requireProject(alerts, projectId),
   };
 }
 

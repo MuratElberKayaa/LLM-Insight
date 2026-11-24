@@ -239,6 +239,54 @@ class Telemetry:
         ) as recorder:
             yield recorder
 
+    @contextmanager
+    def agent_span(
+        self,
+        *,
+        agent_name: str,
+        operation: str = "invoke_agent",
+        agent_id: str | None = None,
+        agent_version: str | None = None,
+        provider: str | None = None,
+    ) -> Iterator[instrumentation.StepRecorder]:
+        """An INTERNAL agent span with the configured provenance (Phase 10A, ADR-54). See
+        `instrumentation.agent_span`."""
+        with instrumentation.agent_span(
+            self.tracer,
+            on_withheld=self._withheld,
+            provenance=self.config.provenance,
+            agent_name=agent_name,
+            operation=operation,
+            agent_id=agent_id,
+            agent_version=agent_version,
+            provider=provider,
+        ) as recorder:
+            yield recorder
+
+    @contextmanager
+    def tool_span(
+        self,
+        *,
+        tool_name: str,
+        tool_call_id: str | None = None,
+        tool_type: str | None = None,
+        mcp_method: str | None = None,
+        mcp_protocol_version: str | None = None,
+    ) -> Iterator[instrumentation.StepRecorder]:
+        """An INTERNAL tool span with the configured provenance (Phase 10A, ADR-54). See
+        `instrumentation.tool_span`."""
+        with instrumentation.tool_span(
+            self.tracer,
+            on_withheld=self._withheld,
+            provenance=self.config.provenance,
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            tool_type=tool_type,
+            mcp_method=mcp_method,
+            mcp_protocol_version=mcp_protocol_version,
+        ) as recorder:
+            yield recorder
+
     def force_flush(self, timeout_millis: int | None = None) -> bool:
         """Export everything queued now. True only if that finished within the timeout
         (default: `shutdown_timeout_millis`) and no export failed meanwhile. False never

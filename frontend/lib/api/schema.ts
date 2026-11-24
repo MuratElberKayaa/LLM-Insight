@@ -33,6 +33,7 @@ import {
   type ModelGroup,
   type ModelsCompare,
   type Overview,
+  type TimeToFirstChunk,
   type ReferenceListPrice,
   type ProjectList,
   type Split,
@@ -112,6 +113,27 @@ const tokens: Decoder<Tokens> = object<Tokens>({
   }),
 });
 
+/** M20 (Phase 10B, ADR-55): a value exactly when recorded; the reason says why not. */
+export const ttfcDecoder: Decoder<TimeToFirstChunk> = (v, path) => {
+  const t = object<TimeToFirstChunk>({
+    available: boolean,
+    reason: nullable(literal("no_streaming_attempts", "not_recorded")),
+    detail: nullable(string(256)),
+    streaming_attempts: count,
+    n: count,
+    p50_ms: ms,
+    p95_ms: ms,
+    low_sample: object({ p95: boolean }),
+  })(v, path);
+  if (t.available !== t.n > 0 || t.available !== (t.reason === null) || (t.reason === null) !== (t.detail === null)) throw new DecodeError(path, "available exactly with a recorded value, otherwise a reason");
+  if ((t.p50_ms === null) !== (t.n === 0) || (t.p95_ms === null) !== (t.n === 0)) throw new DecodeError(path, "percentiles exactly when recorded");
+  if (t.reason === "no_streaming_attempts" && t.streaming_attempts !== 0) throw new DecodeError(`${path}.reason`, "no streaming attempts only when none was counted");
+  if (t.reason === "not_recorded" && t.streaming_attempts === 0) throw new DecodeError(`${path}.reason`, "not recorded only when streaming attempts exist");
+  if (t.low_sample.p95 !== t.n < 20) throw new DecodeError(`${path}.low_sample`, "low sample below 20 values");
+  if (t.p50_ms !== null && t.p95_ms !== null && t.p50_ms > t.p95_ms) throw new DecodeError(`${path}.p50_ms`, "p50 at most p95");
+  return t;
+};
+
 const unknownByReason = keyed(COST_UNKNOWN_REASONS, count);
 
 const cost: Decoder<Cost> = object<Cost>({
@@ -160,7 +182,7 @@ export const overviewDecoder: Decoder<Overview> = object<Overview>({
       })(v, path),
     }),
     latency: split(USAGE_PROVENANCES, latency),
-    time_to_first_chunk: object({ available: boolean, reason: string(64), detail: string(256) }),
+    time_to_first_chunk: split(USAGE_PROVENANCES, ttfcDecoder),
     tokens: split(USAGE_PROVENANCES, tokens),
     cost: split(USAGE_PROVENANCES, cost),
     price_versions: object({
@@ -205,6 +227,7 @@ const modelGroup: Decoder<ModelGroup> = object<ModelGroup>({
   attempts: count,
   errors: object({ failed: count, succeeded: count, rate: nullable(rate) }),
   latency,
+  time_to_first_chunk: ttfcDecoder,
   tokens,
   usage_source: keyed(USAGE_SOURCES, count),
   cost: object({
@@ -227,6 +250,7 @@ const checkedModelGroup: Decoder<ModelGroup> = (v, path) => {
   if (g.cost.cost_complete !== (g.cost.unknown_cost_calls === 0)) throw new DecodeError(`${path}.cost.cost_complete`, "complete exactly when no cost is unknown");
   if ((g.cost.known_cost_usd === null) !== (g.cost.computed_cost_calls === 0)) throw new DecodeError(`${path}.cost.known_cost_usd`, "a known cost exactly when a call was priced");
   if (g.tokens.n !== g.attempts || g.latency.n > g.attempts) throw new DecodeError(`${path}.tokens.n`, "sample sizes within the group");
+  if (g.time_to_first_chunk.n > g.attempts || g.time_to_first_chunk.streaming_attempts > g.attempts) throw new DecodeError(`${path}.time_to_first_chunk`, "counts within the group");
   const r = g.reference_list_price;
   const rp = `${path}.reference_list_price`;
   if (r.available !== (r.reference_usd !== null) || r.available !== (r.unavailable_reason === null)) throw new DecodeError(rp, "an amount exactly when available");

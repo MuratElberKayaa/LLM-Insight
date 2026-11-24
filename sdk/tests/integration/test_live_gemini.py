@@ -174,7 +174,9 @@ def test_runner_trace_reaches_postgresql_and_the_read_api(priced_backend, projec
     assert by_kind["CLIENT"][0] == f"generate_content {MODEL}"
     assert by_kind["CLIENT"][2] == by_kind["INTERNAL"][3]  # correct parent
     assert by_kind["CLIENT"][4] != "ERROR" and by_kind["CLIENT"][5] == "synthetic"
-    assert by_kind["CLIENT"][6] == "llminsight.attrmap.v1"
+    assert (
+        by_kind["CLIENT"][6] == "llminsight.attrmap.v2"
+    )  # v2 since ADR-54 (agent/tool allowlist); every v1 rule is unchanged
     assert by_kind["CLIENT"][7] == 0  # every Gemini attribute is allowlisted: no change needed
     attrs = client_span(priced_backend, pid, tid)["attributes"]
     assert attrs["gen_ai.provider.name"] == "gcp.gemini"
