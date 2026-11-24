@@ -16,6 +16,9 @@ pytestmark = pytest.mark.integration
 
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
 OTHER_TRACE = "5bf92f3577b34da6a3ce929d0e0e4737"
+# The traces are stored at T0 (2026-10-24T10:00Z). List reads name that day explicitly: the default
+# window is "the last 31 days", so relying on it made these assertions expire on 2026-11-24 10:00Z.
+WINDOW = {"from": "2026-10-24T00:00:00Z", "to": "2026-10-25T00:00:00Z"}
 ROOT, CHILD, VALIDATE = "00f067aa0ba90200", "00f067aa0ba90201", "00f067aa0ba90202"
 SERVER, CLIENT, INTERNAL = 2, 3, 1
 ERROR = 2
@@ -487,10 +490,12 @@ def test_detail_returns_linked_reviews_and_list_tells_reviewed_traces_apart(api_
     }
     assert detail(api_client, other, OTHER_TRACE)["reviews"] == []  # isolation
 
-    listing = api_client.get("/api/v1/traces", params={"project": demo}, headers=ADMIN_AUTH).json()
+    listing = api_client.get(
+        "/api/v1/traces", params={"project": demo, **WINDOW}, headers=ADMIN_AUTH
+    ).json()
     assert [i["reviews"] for i in listing["items"]] == [{"total": 2, "not_closed": 1}]
     other_list = api_client.get(
-        "/api/v1/traces", params={"project": other}, headers=ADMIN_AUTH
+        "/api/v1/traces", params={"project": other, **WINDOW}, headers=ADMIN_AUTH
     ).json()
     assert [i["reviews"] for i in other_list["items"]] == [{"total": 0, "not_closed": 0}]
 
@@ -516,7 +521,7 @@ def test_diagnostics_and_failing_ingest_never_create_reviews(api_client, setup, 
     categories = {f["category"] for f in diag["findings"]}
     assert {"inference_call_failed", "application_validation_failed"} <= categories
     detail(api_client, demo)
-    api_client.get("/api/v1/traces", params={"project": demo}, headers=ADMIN_AUTH)
+    api_client.get("/api/v1/traces", params={"project": demo, **WINDOW}, headers=ADMIN_AUTH)
     assert review_rows(db) == []
     assert not categories & set(ISSUE_TYPES)  # separate vocabularies, nothing to map
 
@@ -528,7 +533,7 @@ def test_read_endpoints_never_write(api_client, setup, db):
         before = c.execute(text("SELECT xmin::text, * FROM failure_reviews")).all()
     for _ in range(3):
         detail(api_client, demo)
-        api_client.get("/api/v1/traces", params={"project": demo}, headers=ADMIN_AUTH)
+        api_client.get("/api/v1/traces", params={"project": demo, **WINDOW}, headers=ADMIN_AUTH)
         api_client.get(
             f"/api/v1/traces/{TRACE}/diagnostics", params={"project": demo}, headers=ADMIN_AUTH
         )

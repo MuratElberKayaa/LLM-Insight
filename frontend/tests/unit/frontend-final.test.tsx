@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { DataTable } from "../../components/data-table";
 import { CaseList } from "../../components/datasets/case-list";
 import type { TestCase } from "../../lib/api/review-types";
 import { decideVisual, parseManifest } from "../setup/visual-policy";
@@ -116,5 +117,18 @@ describe("experiment table at laptop width", () => {
     assert.match(src, /max-w-\[10rem\] whitespace-normal break-words/);
     assert.match(src, /<StateBadge state=\{e\.state\} compact \/>/);
     assert.match(src, /data-testid="experiment-started"/);
+  });
+
+  it("the table fits its container on any font set (CI Linux renders wider than Windows)", () => {
+    assert.match(read("app/experiments/page.tsx"), /testId="experiment-table"\n\s*\/\/[^\n]*\n\s*fit\n/);
+    const cols = [{ key: "a", header: "A long header", render: (r: { v: string }) => r.v }];
+    const fit = renderToStaticMarkup(<DataTable caption="c" columns={cols} rows={[{ v: "x" }]} rowKey={(r) => r.v} fit />);
+    assert.match(fit, /<table class="w-full border-collapse text-sm " data-fit="true">/);
+    assert.match(fit, /<th scope="col" class="whitespace-normal align-bottom/);
+    assert.match(fit, /<td class="whitespace-normal break-words align-top/);
+    // Every other table keeps its natural width and scrolls inside its region.
+    const plain = renderToStaticMarkup(<DataTable caption="c" columns={cols} rows={[{ v: "x" }]} rowKey={(r) => r.v} />);
+    assert.match(plain, /<table class="w-full border-collapse text-sm min-w-max">/);
+    assert.doesNotMatch(plain, /data-fit/);
   });
 });

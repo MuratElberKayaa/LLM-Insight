@@ -105,6 +105,8 @@ export default async function ExperimentsPage({ searchParams }: PageProps) {
                 caption="Experiments of this project, newest first"
                 captionHidden
                 testId="experiment-table"
+                // Fits 1280 px with the sidebar open on any font set (CI Linux renders wider than Windows).
+                fit
                 rows={items}
                 rowKey={(e) => String(e.id)}
                 columns={[
